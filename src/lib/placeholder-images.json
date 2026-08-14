@@ -1,0 +1,249 @@
+{
+  "placeholderImages": [
+    {
+      "id": "hero-home",
+      "description": "A modern truck driving on an open highway at sunset",
+      "imageUrl": "https://images.unsplash.com/photo-1618582948377-cd7eb0e8cb14?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHx0cnVjayUyMGhpZ2h3YXl8ZW58MHx8fHwxNzY4NjgzMTYxfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "truck highway",
+      "category": "General"
+    },
+    {
+      "id": "tech-home",
+      "description": "A driver using a tablet inside a truck cabin with logistics data on screen",
+      "imageUrl": "https://images.unsplash.com/photo-1760456014981-8e64f234790c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxkcml2ZXIlMjB0YWJsZXR8ZW58MHx8fHwxNzY4NzMwMTkzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "driver tablet",
+      "category": "General"
+    },
+    {
+      "id": "about-hero",
+      "description": "A line of modern freight trucks ready for dispatch",
+      "imageUrl": "https://images.unsplash.com/photo-1592838064575-70ed626d3a44?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHx0cnVjayUyMGxvZ2lzdGljc3xlbnwwfHx8fDE3Njg3MzAxOTN8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "freight trucks",
+      "category": "General"
+    },
+    {
+      "id": "funding-division",
+      "description": "Abstract image representing financial growth and investment",
+      "imageUrl": "https://images.unsplash.com/photo-1748439281934-2803c6a3ee36?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxmaW5hbmNlJTIwZ3Jvd3RofGVufDB8fHx8MTc2ODY2Mjc2MHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "finance growth",
+      "category": "General"
+    },
+    {
+      "id": "mall-division",
+      "description": "A clean, modern warehouse aisle with truck parts on shelves",
+      "imageUrl": "https://images.unsplash.com/photo-1720036236694-d0a231c52563?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHx3YXJlaG91c2UlMjBwYXJ0c3xlbnwwfHx8fDE3Njg3MzAxOTN8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "warehouse parts",
+      "category": "Parts"
+    },
+    {
+      "id": "marketplace-division",
+      "description": "A lineup of various trucks and commercial vehicles for sale",
+      "imageUrl": "https://images.unsplash.com/photo-1679694913995-e2cc4205d3e3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8dHJ1Y2tzJTIwZGVhbGVyc2hpcHxlbnwwfHx8fDE3Njg3MzAxOTR8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "trucks dealership",
+      "category": "General"
+    },
+    {
+      "id": "tech-division",
+      "description": "Futuristic heads-up display showing logistics and mapping data",
+      "imageUrl": "https://images.unsplash.com/photo-1587903318972-9ca74ba4579c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxsb2dpc3RpY3MlMjBkYXRhfGVufDB8fHx8MTc2ODczMDE5M3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "logistics data",
+      "category": "General"
+    },
+    {
+      "id": "product-tires",
+      "description": "A stack of new commercial truck tires",
+      "imageUrl": "https://images.unsplash.com/photo-1686715018049-f73970aa97d3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHx0cnVjayUyMHRpcmVzfGVufDB8fHx8MTc2ODczMDE5M3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "truck tires",
+      "category": "Tires"
+    },
+    {
+      "id": "product-engine-oil",
+      "description": "Bottles of heavy-duty engine oil",
+      "imageUrl": "https://images.unsplash.com/photo-1567016958860-87d898933af1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxlbmdpbmUlMjBvaWx8ZW58MHx8fHwxNzY4NjM0NjU4fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "engine oil",
+      "category": "Parts"
+    },
+    {
+      "id": "product-gps",
+      "description": "A modern GPS navigation device for commercial vehicles",
+      "imageUrl": "https://images.unsplash.com/photo-1598984040075-8ef2c799bbba?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHxncHMlMjBkZXZpY2V8ZW58MHx8fHwxNzY4NzMwMTk0fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "gps device",
+      "category": "Equipment"
+    },
+    {
+      "id": "product-truck-seat",
+      "description": "An ergonomic air-ride truck driver seat",
+      "imageUrl": "https://images.unsplash.com/photo-1761618525374-4dc6ea76b39a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHx0cnVjayUyMHNlYXR8ZW58MHx8fHwxNzY4NzMwMTkzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "truck seat",
+      "category": "Parts"
+    },
+    {
+      "id": "value-efficiency",
+      "description": "Streamlined warehouse with automated robots",
+      "imageUrl": "https://images.unsplash.com/photo-1651615832931-1f0540d43ef0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHx3YXJlaG91c2UlMjBhdXRvbWF0aW9ufGVufDB8fHx8MTc2ODczMDE5NHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "warehouse automation",
+      "category": "General"
+    },
+    {
+      "id": "value-community",
+      "description": "A group of diverse truck drivers talking and laughing",
+      "imageUrl": "https://images.unsplash.com/photo-1670509295484-df0c2512fec4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHx0cnVjayUyMGRyaXZlcnN8ZW58MHx8fHwxNzY4NzMwMTkzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "truck drivers",
+      "category": "General"
+    },
+    {
+      "id": "value-innovation",
+      "description": "Abstract image of data streams and neural networks",
+      "imageUrl": "https://images.unsplash.com/photo-1644325349124-d1756b79dd42?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxhYnN0cmFjdCUyMGRhdGF8ZW58MHx8fHwxNzY4NzI3NTc4fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "abstract data",
+      "category": "General"
+    },
+    {
+      "id": "value-integrity",
+      "description": "A secure handshake between two business professionals",
+      "imageUrl": "https://images.unsplash.com/photo-1686771416282-3888ddaf249b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxidXNpbmVzcyUyMGhhbmRzaGFrZXxlbnwwfHx8fDE3Njg2NTg4ODh8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "business handshake",
+      "category": "Services"
+    },
+    {
+      "id": "incentives-hero",
+      "description": "A person earning money and commissions through a network",
+      "imageUrl": "https://images.unsplash.com/photo-1718778449026-fc05939d7650?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxlYXJuaW5nJTIwY29tbWlzc2lvbnxlbnwwfHx8fDE3Njg3MzAxOTN8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "earning commission",
+      "category": "General"
+    },
+    {
+      "id": "funding-asset-finance",
+      "description": "A new truck being financed",
+      "imageUrl": "https://images.unsplash.com/photo-1633155565182-16c06ed45ec5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHx0cnVjayUyMGZpbmFuY2V8ZW58MHx8fHwxNzY4NzMwMTkzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "truck finance",
+      "category": "Services"
+    },
+    {
+      "id": "funding-working-capital",
+      "description": "An image representing cash flow and business operations",
+      "imageUrl": "https://images.unsplash.com/photo-1547341074-7e7851071510?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxidXNpbmVzcyUyMGNhc2h8ZW58MHx8fHwxNzY4NzMwMTk0fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "business cash",
+      "category": "Services"
+    },
+    {
+      "id": "funding-partnership",
+      "description": "A handshake sealing a business partnership deal",
+      "imageUrl": "https://images.unsplash.com/photo-1450101499163-c8848c66ca85?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxidXNpbmVzcyUyMGhhbmRzaGFrZXxlbnwwfHx8fDE3Njg2NTg4ODh8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "business handshake",
+      "category": "Services"
+    },
+    {
+      "id": "parts-1",
+      "description": "Close up of a clean truck engine",
+      "imageUrl": "https://images.unsplash.com/photo-1565730350847-293cbe3fa4a3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHx0cnVjayUyMGVuZ2luZXxlbnwwfHx8fDE3Njg3MzAxOTN8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "truck engine",
+      "category": "Parts"
+    },
+    {
+      "id": "parts-2",
+      "description": "A shiny chrome exhaust pipe",
+      "imageUrl": "https://images.unsplash.com/photo-1760449072788-8ace021a956b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxjaHJvbWUlMjBleGhhdXN0fGVufDB8fHx8MTc2ODczMDE5M3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "chrome exhaust",
+      "category": "Parts"
+    },
+    {
+      "id": "parts-3",
+      "description": "An assortment of gears and bearings",
+      "imageUrl": "https://images.unsplash.com/photo-1701448150058-43d6d199b103?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxnZWFycyUyMGJlYXJpbmdzfGVufDB8fHx8MTc2ODczMDE5M3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "gears bearings",
+      "category": "Parts"
+    },
+    {
+      "id": "services-1",
+      "description": "A mechanic working on a truck engine",
+      "imageUrl": "https://images.unsplash.com/photo-1760044247593-75ac489b252d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHx0cnVjayUyMG1lY2hhbmljfGVufDB8fHx8MTc2ODczMDE5NHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "truck mechanic",
+      "category": "Services"
+    },
+    {
+      "id": "services-2",
+      "description": "A truck going through a high-pressure wash",
+      "imageUrl": "https://images.unsplash.com/photo-1747140820947-91189ae39909?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHx0cnVjayUyMHdhc2h8ZW58MHx8fHwxNzY4NzMwMTkzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "truck wash",
+      "category": "Services"
+    },
+    {
+      "id": "services-3",
+      "description": "A person doing paperwork for logistics",
+      "imageUrl": "https://images.unsplash.com/photo-1604138290658-2bc80c707bbf?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxsb2dpc3RpY3MlMjBwYXBlcndvcmt8ZW58MHx8fHwxNzY4NzMwMTkzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "logistics paperwork",
+      "category": "Services"
+    },
+    {
+      "id": "tires-1",
+      "description": "A close up on a truck tire tread",
+      "imageUrl": "https://images.unsplash.com/photo-1759899343942-476b7bfe9fc0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHx0aXJlJTIwdHJlYWR8ZW58MHx8fHwxNzY4NzMwMTk0fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "tire tread",
+      "category": "Tires"
+    },
+    {
+      "id": "tires-2",
+      "description": "A machine balancing a large truck wheel",
+      "imageUrl": "https://images.unsplash.com/photo-1767611124716-23fa405eae44?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHx3aGVlbCUyMGJhbGFuY2luZ3xlbnwwfHx8fDE3Njg3MzAxOTN8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "wheel balancing",
+      "category": "Tires"
+    },
+    {
+      "id": "tires-3",
+      "description": "A line of different types of truck tires",
+      "imageUrl": "https://images.unsplash.com/photo-1686715018049-f73970aa97d3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHx0cnVjayUyMHRpcmVzfGVufDB8fHx8MTc2ODczMDE5M3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "truck tires",
+      "category": "Tires"
+    },
+    {
+      "id": "equipment-1",
+      "description": "A yellow forklift in a warehouse",
+      "imageUrl": "https://images.unsplash.com/photo-1606231360632-761c20eaf09e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHx3YXJlaG91c2UlMjBmb3JrbGlmdHxlbnwwfHx8fDE3Njg3MzAxOTN8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "warehouse forklift",
+      "category": "Equipment"
+    },
+    {
+      "id": "equipment-2",
+      "description": "Heavy duty chains and binders for securing loads",
+      "imageUrl": "https://images.unsplash.com/photo-1718893180426-c646eed9fa6f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxzZWN1cmluZyUyMGNoYWluc3xlbnwwfHx8fDE3Njg3MzAxOTR8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "securing chains",
+      "category": "Equipment"
+    },
+    {
+      "id": "equipment-3",
+      "description": "A set of professional mechanic tools",
+      "imageUrl": "https://images.unsplash.com/photo-1613214043850-9d78a94ec90b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxtZWNoYW5pYyUyMHRvb2xzfGVufDB8fHx8MTc2ODczMDE5M3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "mechanic tools",
+      "category": "Equipment"
+    },
+    {
+      "id": "sa-auction-mall",
+      "description": "A gavel on a wooden block, signifying an auction",
+      "imageUrl": "https://images.unsplash.com/photo-1662950540732-eed3542179c1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxhdWN0aW9uJTIwZ2F2ZWx8ZW58MHx8fHwxNzY4NjY1Mjc3fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "auction gavel",
+      "category": "Services"
+    },
+    {
+      "id": "supply-chain-hero",
+      "description": "Aerial view of a busy shipping container port",
+      "imageUrl": "https://images.unsplash.com/photo-1578575437130-5278ce68f49a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxRefhpcHBpbmclMjBwb3J0fGVufDB8fHx8MTcxOTIzNDAyOHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "shipping port",
+      "category": "General"
+    },
+    {
+      "id": "wcta-mall-hero",
+      "description": "A secure handshake between two business professionals",
+      "imageUrl": "https://images.unsplash.com/photo-1686771416282-3888ddaf249b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxidXNpbmVzcyUyMGhhbmRzaGFrZXxlbnwwfHx8fDE3Njg2NTg4ODh8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "business handshake",
+      "category": "Services"
+    },
+    {
+      "id": "distribution-courier",
+      "description": "A small fixed body parcel delivery truck on a South African city street",
+      "imageUrl": "https://images.unsplash.com/photo-1586769852836-bc069f19e1b6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHxjb3VyaWVyJTIwdHJ1Y2t8ZW58MHx8fHwxNjg2Nzg0OTI1fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "fixed-body delivery",
+      "category": "General"
+    }
+  ]
+}

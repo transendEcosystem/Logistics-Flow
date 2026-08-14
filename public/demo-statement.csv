@@ -1,0 +1,7 @@
+Date,Description,Reference,Amount
+2024-07-28,"EFT Payment: Wallet Top-up",MEMBER_UID_789,250.00
+2024-07-28,"EFT Payment: Standard Membership",MEMBER_UID_123,425.00
+2024-07-27,"EFT Payment: Wallet Top-up",MEMBER_UID_456,1000.00
+2024-07-27,"EFT Payment: Premium Membership",MEMBER_UID_456,475.00
+2024-07-26,"Commission Payout - Supplier Mall","Global Parts Inc.",155.50
+2024-07-25,"EFT Payment: Basic Membership",MEMBER_UID_ABC,375.00

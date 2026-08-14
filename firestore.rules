@@ -1,0 +1,186 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- CORE AUTHORIZATION HELPERS ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * IS ADMIN CHECK (PRIORITY 1)
+     * High-priority administrative override for platform oversight.
+     */
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.uid in ['0Y3IhZffEPNlMAIhURPnzRgNokL2', 'ylVC4F2FIYV8o9jjq13wCYiAyyM2'] ||
+        ('email' in request.auth.token && request.auth.token.email != null && request.auth.token.email.lower() in ['mkoton100@gmail.com', 'beyondtransport@gmail.com', 'michael@logisticsflow.co.za']) ||
+        request.auth.token.get('admin', false) == true ||
+        request.auth.token.get('superadmin', false) == true ||
+        request.auth.token.get('role', '') in ['admin', 'superadmin'] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['admin', 'superadmin'] ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('declaredPosition', '') == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isSuperAdmin', false) == true ||
+          ('email' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email != null &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email.lower() in ['mkoton100@gmail.com', 'beyondtransport@gmail.com', 'michael@logisticsflow.co.za'])
+        ))
+      );
+    }
+
+    // --- GLOBAL ADMIN OVERRIDE (HIGHEST PRIORITY) ---
+    match /{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
+    /**
+     * IS MEMBER / OWNER CHECK
+     */
+    function isMember(cid) {
+      return isAdmin() || (
+        isSignedIn() && 
+        cid != null && (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == cid) ||
+          (exists(/databases/$(database)/documents/companies/$(cid)) && 
+           get(/databases/$(database)/documents/companies/$(cid)).data.ownerId == request.auth.uid)
+        )
+      );
+    }
+
+    // --- COLLECTION SPECIFIC RULES ---
+
+    match /engagementPings/{pingId} {
+      allow list, get: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /platformTasks/{taskId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /partners/{partnerId} {
+      allow get: if true; 
+      allow list: if isSignedIn();
+      allow write: if isAdmin();
+      
+      match /vouches/{vouchId} {
+        allow read, write: if isSignedIn();
+      }
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create: if isSignedIn();
+      }
+      match /{allSub=**} { allow read, write: if isAdmin(); }
+    }
+
+    match /leads/{leadId} {
+      allow get: if true; 
+      allow list: if isSignedIn();
+      allow write: if isAdmin();
+      
+      match /vouches/{vouchId} {
+        allow read, write: if isSignedIn();
+      }
+      match /{allSub=**} { allow read, write: if isAdmin(); }
+    }
+
+    match /configuration/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    match /memberships/{membershipId} {
+      allow get, list: if true;
+      allow write: if isAdmin();
+    }
+
+    match /shops/{shopId} { 
+      allow read: if true; 
+      match /products/{prodId} { allow read: if true; }
+      match /agreements/{agId} { allow read: if true; }
+    }
+
+    match /visitors/{visitorId} {
+      allow read, write: if true;
+    }
+
+    match /companies/{companyId} {
+      allow get, list, read: if isSignedIn(); 
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/companies/$(companyId)) && get(/databases/$(database)/documents/companies/$(companyId)).data.get('ownerId', '') == request.auth.uid);
+      
+      match /{allSub=**} {
+        allow read, list, write: if isSignedIn() && (isAdmin() || isMember(companyId));
+      }
+    }
+
+    match /users/{userId} {
+      allow get, list, read: if isSignedIn(); 
+      allow update: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn(); 
+      
+      match /{allSub=**} {
+        allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      }
+    }
+
+    match /reconciliations/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /platformTransactions/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /contributions/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /auditLogs/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /platformStaff/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /facilities/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /lendingAssets/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /agreements/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /lendingPayments/{id} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // --- COLLECTION GROUP RULES ---
+    match /{path=**}/transactions/{id} { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    match /{path=**}/adCampaigns/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /{path=**}/shops/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /{path=**}/products/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /{path=**}/vehicleListings/{id} { allow read: if true; allow write: if isAdmin() || isSignedIn(); }
+    match /{path=**}/supportMessages/{id} { allow read, write: if isAdmin() || isSignedIn(); }
+    match /{path=**}/auditLogs/{id} { allow read, write: if isAdmin(); }
+    match /{path=**}/platformTasks/{id} { allow read, write: if isAdmin(); }
+  }
+}

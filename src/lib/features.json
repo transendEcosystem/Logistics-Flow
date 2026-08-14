@@ -1,0 +1,57 @@
+
+{
+  "featureSections": [
+    {
+      "name": "Node & Registry Foundation",
+      "features": [
+        { "key": "node:verified_identity", "name": "Verified Identity Badge" },
+        { "key": "node:reputation_management", "name": "Reputation Management" },
+        { "key": "node:direct_rfqs", "name": "Receive Direct RFQs" },
+        { "key": "registry:unlimited_search", "name": "Unlimited Registry Search" },
+        { "key": "registry:direct_contacts", "name": "Reveal Direct MD/CEO Contacts" },
+        { "key": "registry:mobile_verification", "name": "Verified Mobile Numbers" }
+      ]
+    },
+    {
+      "name": "Loyalty & Information Dividend",
+      "features": [
+        { "key": "loyalty:20_reduction_intelligence", "name": "20% Reduction: Intelligence Access" },
+        { "key": "loyalty:20_reduction_all_nodes", "name": "20% Reduction: All Intelligence Nodes" },
+        { "key": "loyalty:35_reduction_mall", "name": "35% Reduction: Mall Intelligence Node" },
+        { "key": "loyalty:50_reduction_all", "name": "50% Reduction: All Intelligence Nodes" },
+        { "key": "loyalty:branding_studio", "name": "Access: Branding Studio" },
+        { "key": "loyalty:discovery_ai", "name": "Access: Discovery AI" },
+        { "key": "loyalty:crm_sales", "name": "Access: CRM for Sales" },
+        { "key": "loyalty:regional_scans", "name": "Access: Regional Registry Scans" },
+        { "key": "loyalty:lead_signals", "name": "Access: Forensic Lead Signal Tracking" },
+        { "key": "loyalty:priority_ranking", "name": "Access: Priority Marketplace Ranking" }
+      ]
+    },
+    {
+      "name": "AI Marketing & Content Studio",
+      "features": [
+        { "key": "ai:branding_studio", "name": "AI Branding & Content Studio" },
+        { "key": "ai:discovery_tools", "name": "4K AI Video & Discovery Tools" },
+        { "key": "ai:seo_booster", "name": "AI SEO Booster" },
+        { "key": "ai:image_generation", "name": "AI Image Generation" }
+      ]
+    },
+    {
+      "name": "Ecosystem & Execution",
+      "features": [
+        { "key": "ecosystem:access_all_malls", "name": "Access to All Malls" },
+        { "key": "ecosystem:funding_path", "name": "Verified Finance Introduction" },
+        { "key": "loads:post_unlimited", "name": "Ability to Post Unlimited Loads" },
+        { "key": "shop:digital_branch", "name": "Publish Your Shop Profile" }
+      ]
+    },
+    {
+      "name": "Support & Service",
+      "features": [
+        { "key": "support:community", "name": "Community Forum Support" },
+        { "key": "support:priority_email", "name": "Priority Email Support" },
+        { "key": "support:dedicated_manager", "name": "Dedicated Account Manager" }
+      ]
+    }
+  ]
+}
