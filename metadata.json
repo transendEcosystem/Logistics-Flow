@@ -1,0 +1,6 @@
+{
+  "name": "Logistics Flow",
+  "description": "The Digital Ecosystem for the Transport Industry.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

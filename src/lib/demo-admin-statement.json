@@ -1,0 +1,40 @@
+
+{
+  "statementName": "demo-admin-statement.csv",
+  "openingBalance": 50000,
+  "closingBalance": 53550,
+  "transactions": [
+    {
+      "id": 1,
+      "date": "2024-07-15",
+      "description": "Membership Fee Revenue - Standard Plan",
+      "reference": "MEMBER_REVENUE",
+      "amount": 250,
+      "type": "credit"
+    },
+    {
+      "id": 2,
+      "date": "2024-07-16",
+      "description": "Google Ads Campaign - July",
+      "reference": "GOOGLE-ADS",
+      "amount": 1200,
+      "type": "debit"
+    },
+    {
+      "id": 3,
+      "date": "2024-07-18",
+      "description": "Membership Fee Revenue - Premium Plan",
+      "reference": "MEMBER_REVENUE",
+      "amount": 5000,
+      "type": "credit"
+    },
+    {
+      "id": 4,
+      "date": "2024-07-20",
+      "description": "Bank Service Fees",
+      "reference": "BANK-FEES",
+      "amount": 500,
+      "type": "debit"
+    }
+  ]
+}

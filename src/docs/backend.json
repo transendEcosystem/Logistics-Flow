@@ -1,0 +1,114 @@
+
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a single user account in Firebase Authentication.",
+      "properties": {
+        "id": { "type": "string", "description": "The user's Firebase Auth UID." },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "companyId": { "type": ["string", "null"], "description": "The ID of the company this user belongs to in the /companies collection. Null for partners." },
+        "role": { "type": "string", "enum": ["owner", "staff", "partner"], "description": "The user's role in the system." },
+        "passwordChangeRequired": { "type": "boolean", "description": "If true, the user must change their password on next login." },
+        "createdAt": { "type": "object" },
+        "updatedAt": { "type": "object" }
+      },
+      "required": ["id", "firstName", "lastName", "email", "role"]
+    },
+    "Partner": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Partner",
+      "type": "object",
+      "description": "Represents a strategic partner, ISA, Investor, Developer, Supplier, Finance Co or Transporter.",
+      "properties": {
+        "id": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "mobile": { "type": "string" },
+        "companyName": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive", "contacted", "new", "qualified", "invited", "registered"] },
+        "type": { "type": "string", "enum": ["partner", "isa", "investor", "developer", "supplier", "transporter", "finance", "distributor", "lead"] },
+        "minedServiceWording": { "type": "string", "description": "Technical content mined from the site." },
+        "industrialTags": { "type": "array", "items": { "type": "string" } },
+        "address": { "type": "string" },
+        "website": { "type": "string" },
+        "marketingManager": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "email": { "type": "string" },
+            "mobile": { "type": "string" }
+          }
+        },
+        "ceo": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "email": { "type": "string" },
+            "mobile": { "type": "string" }
+          }
+        },
+        "assigneeId": { "type": "string" },
+        "createdAt": { "type": "object" },
+        "updatedAt": { "type": "object" }
+      }
+    },
+    "LendingClient": {
+      "title": "Lending Client",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "type": "string" },
+        "registrationId": { "type": "string" },
+        "code": { "type": "string" },
+        "availableFacility": { "type": "number" }
+      }
+    },
+    "LendingSupplier": {
+      "title": "Lending Supplier",
+      "type": "object",
+      "description": "Authorized asset dealer or equipment manufacturer.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive", "draft"] },
+        "registrationId": { "type": "string" },
+        "website": { "type": "string" }
+      }
+    },
+    "LendingAgreement": {
+      "title": "Lending Agreement",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "type": { "type": "string" },
+        "totalAdvanced": { "type": "number" },
+        "interestRate": { "type": "number" },
+        "status": { "type": "string" }
+      }
+    }
+  },
+  "auth": {
+    "providers": ["password", "anonymous"]
+  },
+  "firestore": {
+    "structure": [
+      { "path": "/users/{userId}", "definition": { "entityName": "User", "schema": { "$ref": "#/entities/User" }, "description": "User profiles." } },
+      { "path": "/partners/{partnerId}", "definition": { "entityName": "Partner", "schema": { "$ref": "#/entities/Partner" }, "description": "Consolidated industrial registry." } },
+      { "path": "/leads/{leadId}", "definition": { "entityName": "Partner", "schema": { "$ref": "#/entities/Partner" }, "description": "Discovery leads." } },
+      { "path": "/lendingClients/{clientId}", "definition": { "entityName": "LendingClient", "schema": { "$ref": "#/entities/LendingClient" }, "description": "Lending borrowers." } },
+      { "path": "/lendingDebtors/{debtorId}", "definition": { "entityName": "LendingClient", "schema": { "$ref": "#/entities/LendingClient" }, "description": "Cessionary load providers." } },
+      { "path": "/lendingSuppliers/{supplierId}", "definition": { "entityName": "LendingSupplier", "schema": { "$ref": "#/entities/LendingSupplier" }, "description": "Authorized dealers." } }
+    ]
+  }
+}
