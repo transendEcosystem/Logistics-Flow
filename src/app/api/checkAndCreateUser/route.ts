@@ -68,6 +68,37 @@ export async function POST(req: NextRequest) {
 
       // 1. Check if profile already exists
       if (userDocSnap.exists && userDocSnap.data()?.companyId) {
+        const existingCompanyId = userDocSnap.data()!.companyId;
+        const emailLower = firebaseUser.email.toLowerCase();
+        const matchingLead = await db.collection('leads').where('email', '==', emailLower).limit(1).get();
+        const leadDoc = matchingLead.docs[0];
+        const leadData = leadDoc?.data();
+
+        // The client creates its profile before this handshake route runs. Bind its invitation now.
+        if (leadDoc && !leadData?.companyId && (!referrerId || leadData.referrerId === referrerId)) {
+          const batch = db.batch();
+          batch.update(leadDoc.ref, {
+            status: 'registered',
+            companyId: existingCompanyId,
+            invitationStatus: 'registered',
+            convertedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          batch.set(db.collection('companies').doc(existingCompanyId), {
+            leadId: leadDoc.id,
+            ...(leadData.companyName ? { companyName: leadData.companyName } : {}),
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+
+          if (leadData.referrerId) {
+            batch.update(db.collection('companies').doc(leadData.referrerId), {
+              referralCount: FieldValue.increment(1),
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          }
+          await batch.commit();
+          return NextResponse.json({ success: true, message: 'Existing profile linked to its referral lead.' });
+        }
         return NextResponse.json({ success: true, message: 'User already exists.' });
       }
       
@@ -140,6 +171,16 @@ export async function POST(req: NextRequest) {
           updatedAt: FieldValue.serverTimestamp(),
       };
       
+      // Reconcile pre-tagged partner-driven customer imports (e.g. CTS Trailers) into a sale-discount entitlement.
+      if (existingRecord?.sourcePartnerId && existingRecord?.discountEligible) {
+          newCompanyData.partnerDiscount = {
+              partnerId: existingRecord.sourcePartnerId,
+              agreementId: existingRecord.discountAgreementId || null,
+              eligible: true,
+              grantedAt: FieldValue.serverTimestamp(),
+          };
+      }
+
       const finalReferrer = referrerId || existingRecord?.referrerId;
       if (finalReferrer) {
           newCompanyData.referrerId = finalReferrer;

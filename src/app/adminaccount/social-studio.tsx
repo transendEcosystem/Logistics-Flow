@@ -132,7 +132,7 @@ export default function SocialStudio({ platform = 'facebook' }: { platform?: Pla
         
         const trackingId = user?.uid || 'ANONYMOUS';
         const campaignSeed = campaignName.replace(/\s/g, '_').toUpperCase() || 'GENERAL';
-        const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://studio--ecosystem-hub.us-central1.hosted.app';
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://logisticsflow.co.za');
         
         // FORENSIC YIELD REDIRECTOR: Uses the API to track the click before landing at /join
         const trackingLink = `${baseUrl}/api/trackEmailOpen/${trackingId}?source=associate_click&campaign=${campaignSeed}&platform=${platform.toUpperCase()}&dest=/join?ref=${trackingId}`;

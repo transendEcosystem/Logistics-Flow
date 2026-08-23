@@ -49,6 +49,7 @@ export function Header() {
   const { cartItems, isCartLoading } = useCart();
 
   const isPublicLandingPage = pathname?.startsWith('/opt-in/') || pathname === '/join' || pathname === '/signin';
+  const isSecurePortal = ['/account', '/adminaccount', '/backend', '/lending', '/supply-chain', '/port-logistics'].some((route) => pathname === route || pathname?.startsWith(`${route}/`));
 
   const handleSignOut = async () => {
     if (!auth) return;
@@ -181,7 +182,7 @@ export function Header() {
             )}
           </div>
           
-          {!isPublicLandingPage && (
+          {!isPublicLandingPage && !isSecurePortal && (
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                 <SheetTrigger asChild>
                     <Button variant="ghost" size="icon" className="sm:hidden">

@@ -35,7 +35,7 @@ export default function DigitalHandshake({ partner, audience }: { partner?: any,
     const companyName = partner?.companyName || 'your business';
     const aud = (audience || '').toLowerCase();
     
-    const baseUrl = 'https://studio--ecosystem-hub.us-central1.hosted.app';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
     const optInLink = `${baseUrl}/opt-in/${partner?.id || 'PROSPECT'}`;
     const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partner?.id || 'anonymous'}`;
 

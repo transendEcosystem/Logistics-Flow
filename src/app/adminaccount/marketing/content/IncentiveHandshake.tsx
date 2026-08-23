@@ -12,7 +12,7 @@ export default function IncentiveHandshake({ partner, incentive }: { partner?: a
     const supplierName = incentive?.supplierName || 'a Verified Community Partner';
     const giftTitle = incentive?.title || 'a R500 Industrial Welcome Gift';
     
-    const baseUrl = 'https://studio--ecosystem-hub.us-central1.hosted.app';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
     const optInLink = `${baseUrl}/opt-in/${partner?.id || 'TEST'}`;
     const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partner?.id || 'anonymous'}`;
 

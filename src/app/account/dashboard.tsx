@@ -27,10 +27,9 @@ function EngagementYieldModule({ companyId, isPaid }: { companyId: string, isPai
             const token = await getClientSideAuthToken();
             if (!token || !companyId) return;
 
-            const response = await fetch('/api/admin', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'getMemberEngagementPings', payload: { companyId } }),
+            const response = await fetch('/api/getEngagementPings', {
+                headers: { 'Authorization': `Bearer ${token}` },
+                cache: 'no-store',
             });
             const result = await response.json();
             if (result.success) {
@@ -187,9 +186,9 @@ export default function AccountDashboard() {
                         <Gem className="h-4 w-4 text-primary" />
                     </CardHeader>
                     <CardContent className="text-left">
-                        <div className="text-2xl font-black capitalize text-primary">{companyData?.membershipId || 'Free'}</div>
+                        <div className="text-2xl font-black capitalize text-primary">{companyData?.transactionMembershipId || 'No transaction plan'}</div>
                         <Button asChild variant="link" size="sm" className="p-0 h-auto font-bold text-primary">
-                            <Link href="/pricing">Upgrade Tier &rarr;</Link>
+                            <Link href="/pricing?purpose=transaction">Upgrade Transaction Plan &rarr;</Link>
                         </Button>
                     </CardContent>
                 </Card>

@@ -26,8 +26,9 @@ export default function TheEliteFilter({ partner }: { partner?: any }) {
 
     const firstName = resolvedName.split(' ')[0];
     const companyName = partner?.companyName || 'your business';
-    const pixelUrl = `https://studio--ecosystem-hub.us-central1.hosted.app/api/trackEmailOpen/${partner?.id || 'anonymous'}`;
-    const optInLink = `https://studio--ecosystem-hub.us-central1.hosted.app/opt-in/${partner?.id || 'TEST'}`;
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
+    const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partner?.id || 'anonymous'}`;
+    const optInLink = `${baseUrl}/opt-in/${partner?.id || 'TEST'}`;
 
     return (
         <div style={{ fontFamily: 'Calibri, sans-serif', fontSize: '12pt', color: '#000000', lineHeight: '1.4' }}>

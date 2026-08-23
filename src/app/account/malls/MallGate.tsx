@@ -91,9 +91,9 @@ const mallConfigs: Record<string, MallConfig> = {
         upgradePlan: 'finance_intelligence',
         buyLabel: 'Search for Funding',
         buyDesc: 'Scan the capital registry for matched lenders.',
-        sellLabel: 'Apply for Finance',
-        sellDesc: 'Submit a formal enquiry to the funding division.',
-        sellHref: '/funding',
+        sellLabel: 'Join as a Finance Provider',
+        sellDesc: 'Define lending products, credit appetite and target market.',
+        sellHref: '/account?view=shop&nodeType=finance',
     },
     'buy-sell': {
         id: 'buy-sell',
@@ -146,7 +146,7 @@ export function MallGate({ mallId }: { mallId: string }) {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left text-foreground">
-                    <Card className="hover:border-primary border-2 transition-all cursor-pointer group shadow-xl bg-white text-left" onClick={() => router.push(config.id === 'finance' ? '/intelligence/finance' : (config.id === 'buy-sell' ? '/mall/buy-sell' : `/mall/${config.id}`))}>
+                    <Card className="hover:border-primary border-2 transition-all cursor-pointer group shadow-xl bg-white text-left" onClick={() => router.push(`/account?view=mall-onboarding&mall=${config.id}&role=buyer`)}>
                         <CardHeader className="p-8 pb-4 text-left">
                             <div className="bg-muted p-4 rounded-2xl w-fit group-hover:bg-primary transition-colors text-left">
                                 <Search className="h-8 w-8 text-foreground group-hover:text-white" />
@@ -159,7 +159,7 @@ export function MallGate({ mallId }: { mallId: string }) {
                         </CardFooter>
                     </Card>
 
-                    <Card className="hover:border-primary border-2 transition-all cursor-pointer group shadow-xl bg-white text-left" onClick={() => router.push(config.sellHref || `/account?view=shop&subview=wizard&nodeType=${config.id}`)}>
+                    <Card className="hover:border-primary border-2 transition-all cursor-pointer group shadow-xl bg-white text-left" onClick={() => router.push(config.sellHref || `/account?view=mall-onboarding&mall=${config.id}&role=provider`)}>
                         <CardHeader className="p-8 pb-4 text-left text-foreground">
                             <div className="bg-muted p-4 rounded-2xl w-fit group-hover:bg-primary transition-colors text-left text-foreground">
                                 {config.id === 'finance' ? <HandCoins className="h-8 w-8 text-foreground group-hover:text-white" /> : <PlusCircle className="h-8 w-8 text-foreground group-hover:text-white" />}

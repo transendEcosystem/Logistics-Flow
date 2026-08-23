@@ -13,7 +13,7 @@ export default function RevenueModel({ partner }: { partner?: any }) {
 
     const firstName = resolvedName.split(' ')[0];
     const companyName = partner?.companyName || 'your business';
-    const pixelUrl = `https://studio--ecosystem-hub.us-central1.hosted.app/api/trackEmailOpen/${partner?.id || 'anonymous'}`;
+    const pixelUrl = `${process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za'}/api/trackEmailOpen/${partner?.id || 'anonymous'}`;
 
     return (
         <div style={{ fontFamily: 'Calibri, sans-serif', fontSize: '12pt', color: '#000000', lineHeight: '1.4' }}>

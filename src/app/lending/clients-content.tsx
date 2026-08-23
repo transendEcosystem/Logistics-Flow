@@ -22,6 +22,7 @@ import AudienceCommunicationsTable from '@/app/adminaccount/marketing/AudienceCo
 import { Separator } from '@/components/ui/separator';
 
 import { EnrichPartnerButton } from '@/app/adminaccount/marketing/EnrichPartnerButton';
+import { CommercialDeepDiveButton } from '@/app/adminaccount/marketing/CommercialDeepDiveButton';
 import { PartnerOversightDialog } from '@/app/adminaccount/marketing/PartnerOversightDialog';
 import { AddCommunicationLogDialog } from '@/app/adminaccount/marketing/AddCommunicationLogDialog';
 import { CommunicationLogDialog } from '@/app/adminaccount/marketing/CommunicationLogDialog';
@@ -142,6 +143,7 @@ export default function ClientsContent() {
         { id: 'actions', header: <div className="text-right">Audit</div>, cell: ({ row }) => (
             <div className="flex justify-end items-center gap-1 text-left">
                 <EnrichPartnerButton partner={row.original} onUpdate={forceRefresh} />
+                <CommercialDeepDiveButton partner={row.original} onUpdate={forceRefresh} />
                 <Button asChild variant="ghost" size="icon" title="Digital Scorecard">
                     <Link href={`/lending/clients/${row.original.id}?tab=analysis`}>
                         <Scale className="h-4 w-4 text-primary" />

@@ -42,6 +42,8 @@ import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 
 import { EnrichPartnerButton } from '@/app/adminaccount/marketing/EnrichPartnerButton';
+import { CommercialDeepDiveButton } from '@/app/adminaccount/marketing/CommercialDeepDiveButton';
+import { ContentHarvestButton } from '@/app/adminaccount/marketing/ContentHarvestButton';
 import { PartnerTasksDialog } from '@/app/adminaccount/marketing/PartnerTasksDialog';
 import { CommunicationLogDialog } from '@/app/adminaccount/marketing/CommunicationLogDialog';
 import { EngageDialog } from '@/app/adminaccount/marketing/EngageDialog';
@@ -329,7 +331,7 @@ function LeadsDatabaseComponent() {
 
   const handleExport = (format: 'Standard' | 'SendGrid') => {
       const dataToExport = leads.map(l => {
-          const baseUrl = 'https://studio--ecosystem-hub.us-central1.hosted.app';
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
           const handshakeUrl = `${baseUrl}/opt-in/${l.id}`;
           const directJoinUrl = `${baseUrl}/join?email=${encodeURIComponent(l.email || '')}&ref=${user?.companyId || 'SYSTEM'}`;
 
@@ -432,6 +434,8 @@ function LeadsDatabaseComponent() {
       cell: ({ row }) => (
         <div className="text-right flex items-center justify-end gap-1 text-foreground text-foreground text-foreground text-foreground text-foreground">
           <EnrichPartnerButton partner={row.original} onUpdate={forceRefresh} />
+          <ContentHarvestButton partner={row.original} onUpdate={forceRefresh} />
+          <CommercialDeepDiveButton partner={row.original} onUpdate={forceRefresh} />
           <Button variant="ghost" size="icon" onClick={() => setEngageLead(row.original)} title="Engage"><Send className="h-4 w-4 text-primary" /></Button>
           <AddCommunicationLogDialog partnerId={row.original.id} collection="leads" onLogAdded={forceRefresh} />
           <CommunicationLogDialog partnerId={row.original.id} partnerName={row.original.companyName} />

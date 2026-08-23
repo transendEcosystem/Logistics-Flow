@@ -73,7 +73,8 @@ export function usePermissions() {
         }
         
         const companyData = user.companyData || {};
-        const membershipId = companyData.membershipId || 'free';
+        const membershipId = companyData.intelligenceMembershipId || companyData.membershipId || 'free';
+        const hasTransactionMembership = Boolean(companyData.transactionMembershipId);
         
         // FOUNDATION TIERS: Renamed from intelligence to 'Access Control'
         const hasAccessTier = ['basic', 'standard', 'premium', 'intelligence'].includes(membershipId);
@@ -111,6 +112,9 @@ export function usePermissions() {
         }
         
         // 3. Operational Presence
+        if (hasTransactionMembership && !isAssociate) {
+            perms.add('create:shop');
+        }
         if (companyData.shopId && !isAssociate) {
             perms.add('edit:shop');
             perms.add('publish:shop');

@@ -7,3 +7,12 @@ runConfig:
   maxInstances: 1
 # Tells App Hosting that this is a Next.js framework-aware backend.
 framework: nextjs
+
+env:
+  - variable: NEXT_PUBLIC_BASE_URL
+    value: https://logisticsflow.co.za
+
+  - variable: GEMINI_API_KEY
+    secret: GEMINI_API_KEY
+    availability:
+      - RUNTIME

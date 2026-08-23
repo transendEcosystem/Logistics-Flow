@@ -10,6 +10,7 @@ import {
   SidebarMenuButton,
   SidebarFooter,
   SidebarInset,
+  SidebarTrigger,
 } from '@/components/ui/sidebar';
 import {
   LogOut,
@@ -211,6 +212,7 @@ function PortLogisticsPortalContent() {
         </Sidebar>
         <SidebarInset>
             <div className="p-6">
+            <SidebarTrigger className="md:hidden mb-4" />
                 <Suspense fallback={<Loader2 className="h-16 w-16 animate-spin text-primary mx-auto my-20" />}>
                     {renderContent()}
                 </Suspense>

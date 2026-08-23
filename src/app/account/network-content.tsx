@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Handshake, Loader2, MessageSquare, PlusCircle, Edit, Trash2, Send, Copy, Search, RefreshCcw } from 'lucide-react';
+import { Activity, ClipboardList, Handshake, Loader2, Mail, MessageSquare, PlusCircle, Edit, Trash2, Send, Copy, Search, RefreshCcw, Smartphone } from 'lucide-react';
 import { DataTable } from '@/components/ui/data-table';
 import { type ColumnDef } from '@/hooks/use-data-table';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +41,21 @@ const leadSchema = z.object({
 
 type LeadFormValues = z.infer<typeof leadSchema>;
 
+const engagementMaterials = {
+    introduction: {
+        subject: 'Invitation to Join Logistics Flow',
+        body: 'Hi [Lead Name],\n\nI would like to invite you to join Logistics Flow, a digital ecosystem built to help businesses access opportunities, reduce operating costs, and grow their network.\n\nCreate your member account using my referral link: [Referral Link]\n\nKind regards,\n[Member Name]',
+    },
+    opportunity: {
+        subject: 'How Logistics Flow Can Benefit Your Business',
+        body: 'Hi [Lead Name],\n\nLogistics Flow connects businesses to supplier, transport, funding, and marketplace opportunities in one ecosystem. I believe it can create practical value for your business.\n\nJoin using my referral link: [Referral Link]\n\nKind regards,\n[Member Name]',
+    },
+    network: {
+        subject: 'Build Your Network with Logistics Flow',
+        body: 'Hi [Lead Name],\n\nLogistics Flow rewards members who help the ecosystem grow. Once you join, you can build your own referral network and participate in the opportunities it creates.\n\nJoin using my referral link: [Referral Link]\n\nKind regards,\n[Member Name]',
+    },
+};
+
 async function performAdminAction(token: string, action: string, payload: any) {
     const response = await fetch('/api/admin', {
         method: 'POST',
@@ -53,12 +68,32 @@ async function performAdminAction(token: string, action: string, payload: any) {
     return result;
 }
 
+async function saveNetworkLead(token: string, lead: Record<string, unknown>) {
+    const response = await fetch('/api/getNetwork', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Unable to save the lead.');
+    return result;
+}
+
 // Shared InviteDialog
 function InviteDialog({ lead, companyId, onInviteSent }: { lead: any, companyId: string, onInviteSent: () => void }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [inviteLink, setInviteLink] = useState('');
     const { toast } = useToast();
+
+    const buildInviteLink = () => {
+        const firstName = lead.firstName || lead.contactPerson?.split(' ')[0] || '';
+        const lastName = lead.lastName || lead.contactPerson?.split(' ').slice(1).join(' ') || '';
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://logisticsflow.co.za');
+        return `${baseUrl}/join?email=${encodeURIComponent(lead.email || '')}&firstName=${encodeURIComponent(firstName)}&lastName=${encodeURIComponent(lastName)}&ref=${companyId}`;
+    };
+
+    const inviteMessage = `Hi ${lead.firstName || lead.contactPerson || ''}, I would like to invite you to join Logistics Flow. Create your member account using my referral link: ${inviteLink}`;
 
     const onOpenChange = (open: boolean) => {
         if (!open) {
@@ -68,33 +103,14 @@ function InviteDialog({ lead, companyId, onInviteSent }: { lead: any, companyId:
     };
 
     const handleGenerateLink = async () => {
-        if (!lead.email) {
-            toast({
-                variant: 'destructive',
-                title: 'Cannot Invite Lead',
-                description: 'This lead does not have an email address. Please edit the lead to add one before inviting.',
-            });
-            return;
-        }
-
         setIsLoading(true);
         try {
             const token = await getClientSideAuthToken();
             if (!token) throw new Error("Authentication failed.");
 
-            // Update lead status in root collection
-            await performAdminAction(token, 'saveCompanyLead', { 
-                companyId, 
-                lead: { id: lead.id, status: 'invited' } 
-            });
+            await saveNetworkLead(token, { id: lead.id, status: 'invited' });
 
-            const firstName = lead.firstName || lead.contactPerson?.split(' ')[0] || '';
-            const lastName = lead.lastName || lead.contactPerson?.split(' ').slice(1).join(' ') || '';
-            
-            const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://studio--ecosystem-hub.us-central1.hosted.app';
-            const link = `${baseUrl}/join?email=${encodeURIComponent(lead.email)}&firstName=${encodeURIComponent(firstName)}&lastName=${encodeURIComponent(lastName)}&ref=${companyId}`;
-            
-            setInviteLink(link);
+            setInviteLink(buildInviteLink());
             
             toast({ title: "Invite Link Generated", description: "You can now share the secure link." });
             onInviteSent();
@@ -112,10 +128,21 @@ function InviteDialog({ lead, companyId, onInviteSent }: { lead: any, companyId:
         toast({ title: 'Link Copied!' });
     };
 
+    const shareViaWhatsApp = () => {
+        if (!inviteLink) return;
+        window.open(`https://wa.me/?text=${encodeURIComponent(inviteMessage)}`, '_blank', 'noopener,noreferrer');
+    };
+
+    const shareViaEmail = () => {
+        if (!inviteLink) return;
+        const subject = encodeURIComponent('Invitation to join Logistics Flow');
+        window.location.href = `mailto:${encodeURIComponent(lead.email || '')}?subject=${subject}&body=${encodeURIComponent(inviteMessage)}`;
+    };
+
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" title="Invite Lead" disabled={lead.source === 'Member' || lead.status === 'invited'}>
+                <Button variant="ghost" size="icon" title={lead.status === 'invited' ? 'Resend Invite' : 'Invite Lead'} disabled={lead.source === 'Member'}>
                     <Send className="h-4 w-4" />
                 </Button>
             </DialogTrigger>
@@ -124,8 +151,8 @@ function InviteDialog({ lead, companyId, onInviteSent }: { lead: any, companyId:
                     <DialogTitle>Invite {lead.companyName}</DialogTitle>
                      <DialogDescription>
                         {inviteLink
-                          ? "Share this secure sign-up link. It will pre-fill their email on the registration form."
-                          : `This will generate a sign-up link for ${lead.email || 'this lead'}.`}
+                                                    ? "Share the invitation by WhatsApp, email, or a copied link. The recipient can update the pre-filled email during sign-up."
+                                                    : `This will generate a reusable sign-up link for ${lead.companyName || 'this lead'}.`}
                     </DialogDescription>
                 </DialogHeader>
                 
@@ -134,18 +161,23 @@ function InviteDialog({ lead, companyId, onInviteSent }: { lead: any, companyId:
                 )}
                 
                 {inviteLink && (
-                    <div className="flex items-center space-x-2 py-4">
-                        <Input value={inviteLink} readOnly />
-                        <Button onClick={copyToClipboard}>
-                           <Copy className="mr-2 h-4 w-4" />
-                           Copy Link
-                        </Button>
+                    <div className="space-y-3 py-4">
+                        <div className="flex items-center space-x-2">
+                            <Input value={inviteLink} readOnly />
+                            <Button onClick={copyToClipboard} size="icon" title="Copy invite link"><Copy className="h-4 w-4" /></Button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            <Button onClick={shareViaWhatsApp} variant="outline"><Smartphone className="mr-2 h-4 w-4" />WhatsApp</Button>
+                            <Button onClick={shareViaEmail} variant="outline"><Mail className="mr-2 h-4 w-4" />Email</Button>
+                        </div>
                     </div>
                 )}
 
                 <DialogFooter>
                     {inviteLink ? (
                         <Button onClick={() => onOpenChange(false)}>Done</Button>
+                    ) : lead.status === 'invited' ? (
+                        <Button onClick={() => setInviteLink(buildInviteLink())}>Open Invite Link</Button>
                     ) : (
                         <>
                             <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isLoading}>Cancel</Button>
@@ -159,6 +191,158 @@ function InviteDialog({ lead, companyId, onInviteSent }: { lead: any, companyId:
             </DialogContent>
         </Dialog>
     );
+}
+
+function LeadEngagementDialog({ lead, companyId, memberName, onEngaged }: { lead: any; companyId: string; memberName?: string; onEngaged: () => void }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [materialKey, setMaterialKey] = useState<keyof typeof engagementMaterials>('introduction');
+    const [isSending, setIsSending] = useState(false);
+    const { toast } = useToast();
+    const material = engagementMaterials[materialKey];
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://logisticsflow.co.za');
+    const referralLink = `${baseUrl}/join?ref=${companyId}`;
+    const recipientName = lead.firstName || lead.contactPerson || lead.companyName || 'there';
+    const message = material.body
+        .replace('[Lead Name]', recipientName)
+        .replace('[Referral Link]', referralLink)
+        .replace('[Member Name]', memberName || 'A Logistics Flow member');
+
+    const launch = async (channel: 'WhatsApp' | 'Email') => {
+        setIsSending(true);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            const response = await fetch('/api/getNetwork', {
+                method: 'PATCH',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ leadId: lead.id, channel, subject: material.subject }),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Unable to record the engagement.');
+            if (channel === 'WhatsApp') {
+                window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+            } else {
+                window.location.href = `mailto:${encodeURIComponent(lead.email || '')}?subject=${encodeURIComponent(material.subject)}&body=${encodeURIComponent(message)}`;
+            }
+            toast({ title: 'Engagement Ready', description: `${channel} outreach was recorded for this lead.` });
+            onEngaged();
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Engagement Failed', description: error.message });
+        } finally {
+            setIsSending(false);
+        }
+    };
+
+    return (
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <DialogTrigger asChild><Button variant="ghost" size="icon" title="Engage lead"><MessageSquare className="h-4 w-4" /></Button></DialogTrigger>
+            <DialogContent className="sm:max-w-2xl">
+                <DialogHeader><DialogTitle>Engage {lead.companyName}</DialogTitle><DialogDescription>Select and share a proven network outreach message.</DialogDescription></DialogHeader>
+                <Select value={materialKey} onValueChange={(value) => setMaterialKey(value as keyof typeof engagementMaterials)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="introduction">Introduction</SelectItem>
+                        <SelectItem value="opportunity">Business Opportunity</SelectItem>
+                        <SelectItem value="network">Network Opportunity</SelectItem>
+                    </SelectContent>
+                </Select>
+                <div className="space-y-2"><Input value={material.subject} readOnly /><Textarea value={message} readOnly className="min-h-64" /></div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => launch('WhatsApp')} disabled={isSending}><Smartphone className="mr-2 h-4 w-4" />WhatsApp</Button>
+                    <Button onClick={() => launch('Email')} disabled={isSending}><Mail className="mr-2 h-4 w-4" />Email</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function DeleteLeadButton({ lead, onDeleted }: { lead: any; onDeleted: () => void }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const { toast } = useToast();
+
+    const deleteLead = async () => {
+        setIsDeleting(true);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            const response = await fetch('/api/getNetwork', {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ leadId: lead.id }),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Unable to delete the lead.');
+            toast({ title: 'Lead Deleted' });
+            setIsOpen(false);
+            onDeleted();
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Delete Failed', description: error.message });
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    return (
+        <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
+            <Button variant="ghost" size="icon" title="Delete lead" onClick={() => setIsOpen(true)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+            <AlertDialogContent>
+                <AlertDialogHeader><AlertDialogTitle>Delete this lead?</AlertDialogTitle><AlertDialogDescription>This removes {lead.companyName} and its member-owned engagement history from your network.</AlertDialogDescription></AlertDialogHeader>
+                <AlertDialogFooter><AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel><AlertDialogAction onClick={deleteLead} className={buttonVariants({ variant: 'destructive' })} disabled={isDeleting}>{isDeleting ? 'Deleting...' : 'Delete Lead'}</AlertDialogAction></AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}
+
+function ClientCrmTools({ client, lifecycleLead, companyId, memberName, onUpdate }: { client: any; lifecycleLead: any; companyId: string; memberName?: string; onUpdate: () => void }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [activePanel, setActivePanel] = useState<'communication' | 'tasks' | 'oversight'>('oversight');
+    const [activity, setActivity] = useState<{ communications: any[]; tasks: any[] }>({ communications: [], tasks: [] });
+    const [isLoading, setIsLoading] = useState(false);
+    const [taskTitle, setTaskTitle] = useState('');
+    const [communicationSubject, setCommunicationSubject] = useState('');
+    const [notes, setNotes] = useState('');
+    const { toast } = useToast();
+
+    const loadActivity = async () => {
+        setIsLoading(true);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            const response = await fetch('/api/getNetwork', { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ leadId: lifecycleLead.id }) });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Unable to load client activity.');
+            setActivity(result.data);
+        } catch (error: any) { toast({ variant: 'destructive', title: 'Activity Load Failed', description: error.message }); }
+        finally { setIsLoading(false); }
+    };
+
+    const addRecord = async (action: 'addCommunication' | 'addTask') => {
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            const response = await fetch('/api/getNetwork', { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ action, leadId: lifecycleLead.id, type: 'Manual', subject: communicationSubject || taskTitle, title: taskTitle, notes }) });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Unable to save client activity.');
+            setTaskTitle(''); setCommunicationSubject(''); setNotes(''); await loadActivity(); onUpdate();
+            toast({ title: action === 'addTask' ? 'Task Added' : 'Communication Logged' });
+        } catch (error: any) { toast({ variant: 'destructive', title: 'CRM Update Failed', description: error.message }); }
+    };
+
+    const openPanel = (panel: 'communication' | 'tasks' | 'oversight') => { setActivePanel(panel); setIsOpen(true); loadActivity(); };
+    return <>
+        <LeadEngagementDialog lead={lifecycleLead} companyId={companyId} memberName={memberName} onEngaged={onUpdate} />
+        <Button variant="ghost" size="icon" title="Add communication" onClick={() => openPanel('communication')}><MessageSquare className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" title="View and manage tasks" onClick={() => openPanel('tasks')}><ClipboardList className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" title="Oversight activity" onClick={() => openPanel('oversight')}><Activity className="h-4 w-4" /></Button>
+        <Dialog open={isOpen} onOpenChange={setIsOpen}><DialogContent className="sm:max-w-2xl"><DialogHeader><DialogTitle>Client CRM: {client.companyName}</DialogTitle><DialogDescription>Communications, follow-up tasks, and oversight activity for this network client.</DialogDescription></DialogHeader>{activePanel === 'communication' && <div className="space-y-2"><Label>Add Communication</Label><Input value={communicationSubject} onChange={event => setCommunicationSubject(event.target.value)} placeholder="Communication subject" /><Textarea value={notes} onChange={event => setNotes(event.target.value)} placeholder="Communication notes" /><Button size="sm" onClick={() => addRecord('addCommunication')} disabled={!communicationSubject}>Log Communication</Button></div>}{activePanel === 'tasks' && <div className="space-y-2"><Label>Add Follow-up Task</Label><Input value={taskTitle} onChange={event => setTaskTitle(event.target.value)} placeholder="Task title" /><Textarea value={notes} onChange={event => setNotes(event.target.value)} placeholder="Task notes" /><Button size="sm" variant="outline" onClick={() => addRecord('addTask')} disabled={!taskTitle}>Add Task</Button></div>}<ScrollArea className="h-52 border rounded-md p-3"><div className="space-y-3">{isLoading ? <Loader2 className="animate-spin mx-auto" /> : <>{activity.communications.map(record => <div key={record.id} className="text-sm border-b pb-2"><p className="font-medium">{record.subject}</p><p className="text-xs text-muted-foreground">Communication · {formatDateSafe(record.timestamp, 'dd MMM yyyy, HH:mm')}</p></div>)}{activity.tasks.map(record => <div key={record.id} className="text-sm border-b pb-2"><p className="font-medium">{record.title}</p><p className="text-xs text-muted-foreground">Task · {record.status || 'pending'}</p></div>)}{!activity.communications.length && !activity.tasks.length && <p className="text-sm text-muted-foreground">No activity recorded for this client yet.</p>}</>}</div></ScrollArea></DialogContent></Dialog>
+    </>;
+}
+
+function RemoveMemberFromNetworkButton({ client, lifecycleLead, onRemoved }: { client: any; lifecycleLead: any; onRemoved: () => void }) {
+    const [isOpen, setIsOpen] = useState(false); const [isRemoving, setIsRemoving] = useState(false); const { toast } = useToast();
+    const removeClient = async () => { setIsRemoving(true); try { const token = await getClientSideAuthToken(); if (!token) throw new Error('Authentication failed.'); const response = await fetch('/api/getNetwork', { method: 'DELETE', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ memberCompanyId: client.id, leadId: lifecycleLead.id }) }); const result = await response.json(); if (!response.ok || !result.success) throw new Error(result.error || 'Unable to remove client.'); toast({ title: 'Client Removed From Network' }); setIsOpen(false); onRemoved(); } catch (error: any) { toast({ variant: 'destructive', title: 'Removal Failed', description: error.message }); } finally { setIsRemoving(false); } };
+    return <AlertDialog open={isOpen} onOpenChange={setIsOpen}><Button variant="ghost" size="icon" title="Remove client from my network" onClick={() => setIsOpen(true)}><Trash2 className="h-4 w-4 text-destructive" /></Button><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Remove client from your network?</AlertDialogTitle><AlertDialogDescription>This detaches {client.companyName} from your referral network but does not delete their member account.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={isRemoving}>Cancel</AlertDialogCancel><AlertDialogAction onClick={removeClient} className={buttonVariants({ variant: 'destructive' })} disabled={isRemoving}>{isRemoving ? 'Removing...' : 'Remove Client'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
 }
 
 function MessageDialog({ lead }: { lead: any }) {
@@ -275,7 +459,7 @@ function LeadDialog({ lead, companyId, onSave, children }: { lead?: any, company
       const token = await getClientSideAuthToken();
       if (!token) throw new Error("Authentication failed.");
 
-      await performAdminAction(token, 'saveCompanyLead', { lead: { ...values, id: lead?.id }, companyId });
+    await saveNetworkLead(token, { ...values, id: lead?.id });
       
       toast({ title: lead ? 'Lead Updated' : 'Lead Added' });
       onSave();
@@ -344,7 +528,14 @@ export default function NetworkContent() {
         try {
             const token = await getClientSideAuthToken();
             if (!token) return;
-            const result = await performAdminAction(token, 'getMyNetwork', {});
+            const response = await fetch('/api/getNetwork', {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: 'no-store',
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || 'Unable to load your network.');
+            }
             setNetwork(result.data || []);
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Network Load Failed', description: e.message });
@@ -375,15 +566,17 @@ export default function NetworkContent() {
           header: <div className="text-right">Actions</div>,
           cell: ({ row }) => (
             <div className="flex items-center justify-end">
-              <MessageDialog lead={row.original} />
-              <InviteDialog lead={row.original} companyId={companyId!} onInviteSent={fetchNetwork} />
-              <LeadDialog lead={row.original} companyId={companyId!} onSave={fetchNetwork}>
-                <Button variant="ghost" size="icon" title="Edit"><Edit className="h-4 w-4" /></Button>
-              </LeadDialog>
+                            {(() => { const lifecycleLead = row.original.source === 'Lead' ? row.original : { ...row.original, id: row.original.sourceLeadId, source: 'Lead' }; return lifecycleLead.id ? <>
+                                {row.original.source === 'Member' ? <ClientCrmTools client={row.original} lifecycleLead={lifecycleLead} companyId={companyId!} memberName={user?.displayName} onUpdate={fetchNetwork} /> : <><LeadEngagementDialog lead={lifecycleLead} companyId={companyId!} memberName={user?.displayName} onEngaged={fetchNetwork} /><InviteDialog lead={lifecycleLead} companyId={companyId!} onInviteSent={fetchNetwork} /></>}
+                                <LeadDialog lead={lifecycleLead} companyId={companyId!} onSave={fetchNetwork}>
+                                    <Button variant="ghost" size="icon" title="Edit lead"><Edit className="h-4 w-4" /></Button>
+                                </LeadDialog>
+                                {row.original.source === 'Member' ? <RemoveMemberFromNetworkButton client={row.original} lifecycleLead={lifecycleLead} onRemoved={fetchNetwork} /> : <DeleteLeadButton lead={lifecycleLead} onDeleted={fetchNetwork} />}
+                            </> : null; })()}
             </div>
           )
         },
-    ], [companyId, fetchNetwork]);
+        ], [companyId, fetchNetwork, user?.displayName]);
     
     return (
         <Card className="text-left">

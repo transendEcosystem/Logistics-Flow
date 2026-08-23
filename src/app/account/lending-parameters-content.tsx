@@ -94,7 +94,7 @@ const lendingSchema = z.object({
 
 type LendingFormValues = z.infer<typeof lendingSchema>;
 
-export default function LendingParametersContent() {
+export default function LendingParametersContent({ onboarding = false }: { onboarding?: boolean }) {
     const { user, isUserLoading, forceRefresh } = useUser();
     const { toast } = useToast();
     const [isSaving, setIsSaving] = useState(false);
@@ -153,7 +153,10 @@ export default function LendingParametersContent() {
             });
 
             if (!response.ok) throw new Error("Update failed.");
-            toast({ title: "Lending Focus Saved", description: "Your investment parameters have been updated." });
+            toast({
+                title: onboarding ? 'Finance Provider Profile Activated' : 'Lending Focus Saved',
+                description: onboarding ? 'Your lending criteria are now ready for matched deal flow.' : 'Your investment parameters have been updated.',
+            });
             if (forceRefresh) forceRefresh();
         } catch (e: any) {
             toast({ variant: 'destructive', title: "Error", description: e.message });
@@ -169,8 +172,8 @@ export default function LendingParametersContent() {
             <div className="flex items-center gap-4 text-left text-foreground text-foreground">
                 <div className="bg-primary/10 p-3 rounded-xl text-left"><Landmark className="h-8 w-8 text-primary" /></div>
                 <div className="text-left text-foreground">
-                    <h1 className="text-3xl font-black font-headline text-left text-foreground">Lending Focus & Portfolio</h1>
-                    <p className="text-muted-foreground text-left">Define your credit appetite per product to receive matched deal flow.</p>
+                    <h1 className="text-3xl font-black font-headline text-left text-foreground">{onboarding ? 'Finance Provider Onboarding' : 'Lending Focus & Portfolio'}</h1>
+                    <p className="text-muted-foreground text-left">{onboarding ? 'Define the lending products, borrower profile, collateral and regions your business is prepared to fund.' : 'Define your credit appetite per product to receive matched deal flow.'}</p>
                 </div>
             </div>
 
@@ -452,7 +455,7 @@ export default function LendingParametersContent() {
                     <div className="bg-slate-50 border-t p-8 flex justify-end mt-12 rounded-2xl shadow-inner text-left text-foreground">
                         <Button type="submit" disabled={isSaving} size="lg" className="h-14 px-12 font-black uppercase tracking-widest gap-2 shadow-xl text-left text-white">
                             {isSaving ? <Loader2 className="h-5 w-5 animate-spin"/> : <Save className="h-5 w-5" />}
-                            Update Global Matching Logic
+                            {onboarding ? 'Activate Finance Provider Profile' : 'Update Global Matching Logic'}
                         </Button>
                     </div>
                 </form>

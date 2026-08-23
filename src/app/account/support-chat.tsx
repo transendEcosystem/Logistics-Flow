@@ -8,10 +8,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Loader2, MessageSquare, Send, Bot, AlertTriangle, RefreshCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useUser, useFirestore, useCollection, getClientSideAuthToken, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { useUser, getClientSideAuthToken } from '@/firebase';
 import { cn } from '@/lib/utils';
-import { supportQuery } from '@/ai/flows/support-flow';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { format as formatDateFns } from 'date-fns';
@@ -29,29 +27,45 @@ interface SupportMessage {
     senderId: string;
     senderName: string;
     timestamp: any;
+    deliveryState?: 'sending' | 'sent' | 'failed';
 }
 
 export default function SupportChatContent() {
     const { user, isUserLoading } = useUser();
-    const firestore = useFirestore();
     const { toast } = useToast();
     const [inputFieldText, setInputFieldText] = useState('');
     const [isSending, setIsSending] = useState(false);
     const [isRetrying, setIsRetrying] = useState(false);
+    const [sendStatus, setSendStatus] = useState('');
     const scrollAreaRef = useRef<HTMLDivElement>(null);
 
     const companyId = useMemo(() => user?.companyId || null, [user]);
 
-    // DEFINITIVE ATOMIC QUERY: Targeting the explicitly matched path
-    const messagesQuery = useMemoFirebase(() => {
-        if (!firestore || !companyId) return null;
-        return query(
-            collection(firestore, 'companies', companyId, 'supportMessages'),
-            orderBy('timestamp', 'asc')
-        );
-    }, [firestore, companyId]);
+    const [messages, setMessages] = useState<SupportMessage[] | null>(null);
+    const [areMessagesLoading, setAreMessagesLoading] = useState(true);
+    const [permissionError, setPermissionError] = useState<Error | null>(null);
 
-    const { data: messages, isLoading: areMessagesLoading, error: permissionError, forceRefresh } = useCollection<SupportMessage>(messagesQuery);
+    const loadMessages = async () => {
+        const token = await getClientSideAuthToken();
+        if (!token || !companyId) {
+            setAreMessagesLoading(false);
+            return;
+        }
+        setAreMessagesLoading(true);
+        try {
+            const response = await fetch('/api/support/messages', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Support messages unavailable.');
+            setMessages(result.messages || []);
+            setPermissionError(null);
+        } catch (error: any) {
+            setPermissionError(error);
+        } finally {
+            setAreMessagesLoading(false);
+        }
+    };
+
+    useEffect(() => { loadMessages(); }, [companyId, user?.uid]);
 
     const isLoading = isUserLoading || areMessagesLoading || isRetrying;
     
@@ -66,7 +80,7 @@ export default function SupportChatContent() {
 
     const handleRetry = () => {
         setIsRetrying(true);
-        forceRefresh();
+        loadMessages();
         setTimeout(() => setIsRetrying(false), 1000);
     };
 
@@ -76,8 +90,18 @@ export default function SupportChatContent() {
         setIsSending(true);
         const userMessageText = inputFieldText;
         setInputFieldText('');
+        const pendingMessageId = `pending-${Date.now()}`;
+        setMessages((current) => [...(current || []), {
+            id: pendingMessageId,
+            text: userMessageText,
+            senderId: user.uid,
+            senderName: user.displayName || 'Member',
+            timestamp: new Date().toISOString(),
+            deliveryState: 'sending',
+        }]);
 
         try {
+            setSendStatus('Saving your message...');
             const token = await getClientSideAuthToken();
             if (!token) throw new Error("Authentication failed.");
 
@@ -91,11 +115,15 @@ export default function SupportChatContent() {
                 companyId: companyId,
             };
             
-            await fetch('/api/addUserDoc', {
+            const userResponse = await fetch('/api/addUserDoc', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ collectionPath: path, data: userMessageData }),
             });
+            const userResult = await userResponse.json();
+            if (!userResponse.ok || !userResult.success) throw new Error(userResult.error || 'Could not save your support message.');
+            setMessages((current) => (current || []).map((message) => message.id === pendingMessageId ? { ...message, id: userResult.id || pendingMessageId, deliveryState: 'sent' } : message));
+            setSendStatus('Message sent. The AI assistant is preparing a response...');
 
             const historyForApi: { role: 'user' | 'model'; content: { text: string; }[] }[] = (messages || [])
                 .filter(m => !!m && typeof m === 'object' && m.senderId && m.text)
@@ -104,7 +132,17 @@ export default function SupportChatContent() {
                     return { role, content: [{ text: msg.text }] };
                 });
 
-            const aiResult = await supportQuery({ query: userMessageText, history: historyForApi });
+            const aiController = new AbortController();
+            const aiTimeout = window.setTimeout(() => aiController.abort(), 45000);
+            const aiResponse = await fetch('/api/support', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: userMessageText, history: historyForApi }),
+                signal: aiController.signal,
+            });
+            window.clearTimeout(aiTimeout);
+            const aiResult = await aiResponse.json();
+            if (!aiResponse.ok || !aiResult.success) throw new Error(aiResult.error || 'The support assistant is unavailable.');
 
             const aiMessageData = {
                 text: aiResult.response,
@@ -115,13 +153,19 @@ export default function SupportChatContent() {
                 companyId: companyId,
             };
 
-            await fetch('/api/addUserDoc', {
+            const aiMessageResponse = await fetch('/api/addUserDoc', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ collectionPath: path, data: aiMessageData }),
             });
+            const aiMessageResult = await aiMessageResponse.json();
+            if (!aiMessageResponse.ok || !aiMessageResult.success) throw new Error(aiMessageResult.error || 'Could not save the assistant response.');
+            setSendStatus('Response received.');
+            await loadMessages();
 
         } catch (error: any) {
+            setMessages((current) => (current || []).map((message) => message.id === pendingMessageId ? { ...message, deliveryState: 'failed' } : message));
+            setSendStatus(`Message status: ${error.message}`);
             toast({ variant: 'destructive', title: 'Send Failed', description: error.message });
             setInputFieldText(userMessageText);
         } finally {
@@ -135,12 +179,12 @@ export default function SupportChatContent() {
                 <Card className="border-destructive bg-destructive/5 max-w-md w-full shadow-lg text-left">
                     <CardHeader>
                         <AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-4" />
-                        <CardTitle className="text-destructive font-black text-center uppercase tracking-tight">Identity Synchronization Required</CardTitle>
-                        <CardDescription className="text-center">Our registry is performing a secure handshake with your profile.</CardDescription>
+                            <CardTitle className="text-destructive font-black text-center uppercase tracking-tight">Support Chat Unavailable</CardTitle>
+                            <CardDescription className="text-center">We could not load your secure support channel.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <p className="text-sm text-muted-foreground leading-relaxed">
-                            To ensure high-fidelity support, we must verify your member node before accessing message streams. This typically completes in a few moments.
+                            {permissionError.message || 'Please retry the secure support channel.'}
                         </p>
                     </CardContent>
                     <CardFooter className="flex flex-col gap-2">
@@ -222,6 +266,7 @@ export default function SupportChatContent() {
                         {isSending ? <Loader2 className="h-5 w-5 animate-spin"/> : <Send className="h-5 w-5" />}
                     </Button>
                 </div>
+                {sendStatus && <p className={cn("text-xs mt-2", sendStatus.startsWith('Message status:') ? 'text-destructive' : 'text-muted-foreground')}>{sendStatus}</p>}
             </CardContent>
         </Card>
     );

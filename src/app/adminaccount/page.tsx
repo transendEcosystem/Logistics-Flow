@@ -10,6 +10,7 @@ import {
   SidebarMenuButton,
   SidebarFooter,
   SidebarInset,
+    SidebarTrigger,
   SidebarMenuSub,
   SidebarMenuSubItem,
   SidebarMenuSubButton,
@@ -101,8 +102,10 @@ import AdminGuides from '@/app/adminaccount/guides';
 import AdsOversight from '@/app/adminaccount/ads-oversight';
 import SocialStudio from '@/app/adminaccount/social-studio';
 import EngagementPipeline from '@/app/adminaccount/marketing/EngagementPipeline';
+import PartnerAgreementsPanel from '@/app/adminaccount/marketing/PartnerAgreementsPanel';
 import DividendManagement from '@/app/adminaccount/dividend-management';
 import HandshakeOversight from '@/app/adminaccount/handshake-oversight';
+import Commercials from '@/app/adminaccount/commercials';
 
 function AdminAuthGuard({ children }: { children: React.ReactNode }) {
     const { user, isUserLoading } = useUser();
@@ -197,6 +200,8 @@ function AdminAccountContent() {
       case 'associate-oversight': return <AssociateOversight />;
       case 'ads-oversight': return <AdsOversight />;
       case 'guides': return <AdminGuides />;
+      case 'partner-agreements': return <PartnerAgreementsPanel />;
+      case 'commercials': return <Commercials />;
       case 'engagement-pipeline': return <EngagementPipeline />;
       default: return <AdminDashboardContent />;
     }
@@ -274,6 +279,7 @@ function AdminAccountContent() {
                       <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'marketing-transporters'} onClick={() => navigate('marketing-transporters')}>Transporters</SidebarMenuSubButton></SidebarMenuSubItem>
                       <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'marketing-finance'} onClick={() => navigate('marketing-finance')}>Finance Co</SidebarMenuSubButton></SidebarMenuSubItem>
                       <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'marketing-investors'} onClick={() => navigate('marketing-investors')}>Investors</SidebarMenuSubButton></SidebarMenuSubItem>
+                      <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'partner-agreements'} onClick={() => navigate('partner-agreements')}><Handshake className="h-3.5 w-3.5 mr-2" />Partner Agreements</SidebarMenuSubButton></SidebarMenuSubItem>
                   </SidebarMenuSub>
               </SidebarMenuItem>
 
@@ -287,9 +293,10 @@ function AdminAccountContent() {
                   </SidebarMenuSub>
               </SidebarMenuItem>
 
-              <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Revenue" isActive={activeView === 'ads-oversight' || activeView.includes('pricing')}><Zap /><span>Revenue Oversight</span></SidebarMenuButton>
+                <SidebarMenuItem>
+                  <SidebarMenuButton tooltip="Revenue" isActive={activeView === 'ads-oversight' || activeView.includes('pricing') || activeView === 'commercials'}><Zap /><span>Revenue Oversight</span></SidebarMenuButton>
                   <SidebarMenuSub>
+                      <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'commercials'} onClick={() => navigate('commercials')}><DollarSign className="h-3.5 w-3.5 mr-2" />Commercials</SidebarMenuSubButton></SidebarMenuSubItem>
                       <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'ads-oversight'} onClick={() => navigate('ads-oversight')}><Sparkles className="h-3.5 w-3.5 mr-2" />Visibility Campaigns</SidebarMenuSubButton></SidebarMenuSubItem>
                       <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'pricing-memberships'} onClick={() => navigate('pricing-memberships')}><Users className="h-3.5 w-3.5 mr-2" />Membership Plans</SidebarMenuSubButton></SidebarMenuSubItem>
                       <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'pricing-dividend'} onClick={() => navigate('pricing-dividend')}><Gift className="h-3.5 w-3.5 mr-2" />Dividend Rewards</SidebarMenuSubButton></SidebarMenuSubItem>
@@ -341,6 +348,7 @@ function AdminAccountContent() {
     </Sidebar>
     <SidebarInset>
         <div className="p-6 text-left text-foreground">
+            <SidebarTrigger className="md:hidden mb-4" />
             {renderContent()}
         </div>
     </SidebarInset>

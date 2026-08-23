@@ -3,6 +3,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import { getAdminApp } from '@/lib/firebase-admin';
+import { getCompanyPartnerDiscount, calculateDiscountedAmount } from '@/lib/partner-discounts';
 
 function deserializeData(data: any): any {
     if (!data) return data;
@@ -56,7 +57,23 @@ export async function POST(req: NextRequest) {
     const collectionPath = `companies/${companyId}/quotes`;
     const collectionRef = db.collection(collectionPath);
     
-    const deserializedData = { ...deserializeData(data), userId: uid, companyId: companyId };
+    const deserializedData: Record<string, any> = { ...deserializeData(data), userId: uid, companyId: companyId };
+
+    // Apply any locked-in partner-sale discount (e.g. CTS Trailers) if the requesting company is tagged for it.
+    const targetPartnerId = deserializedData.partnerId || deserializedData.shopPartnerId;
+    if (targetPartnerId && typeof deserializedData.amount === 'number') {
+        const discountTag = getCompanyPartnerDiscount(userData, String(targetPartnerId));
+        if (discountTag?.agreementId) {
+            const agreementSnap = await db.collection('partnerAgreements').doc(discountTag.agreementId).get();
+            const agreement = agreementSnap.data();
+            if (agreement?.status === 'active') {
+                deserializedData.originalAmount = deserializedData.amount;
+                deserializedData.amount = calculateDiscountedAmount(deserializedData.amount, agreement as any);
+                deserializedData.partnerDiscountApplied = { partnerId: targetPartnerId, agreementId: discountTag.agreementId, discountType: agreement.discountType, discountValue: agreement.discountValue };
+            }
+        }
+    }
+
     const newDocRef = await collectionRef.add(deserializedData);
 
     return NextResponse.json({ success: true, id: newDocRef.id, message: 'Quote created successfully.' });

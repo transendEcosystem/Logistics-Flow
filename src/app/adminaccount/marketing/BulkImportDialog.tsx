@@ -11,6 +11,7 @@ import { Loader2, Upload, ClipboardPaste, Zap, CheckCircle } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface BulkImportDialogProps {
     type: string;
@@ -23,6 +24,9 @@ export function BulkImportDialog({ type, onComplete, children }: BulkImportDialo
     const [isUploading, setIsUploading] = useState(false);
     const [file, setFile] = useState<File | null>(null);
     const [pasteData, setPasteData] = useState('');
+    const [sourcePartnerId, setSourcePartnerId] = useState('');
+    const [discountEligible, setDiscountEligible] = useState(false);
+    const [agreementId, setAgreementId] = useState('');
     const { toast } = useToast();
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,7 +85,7 @@ export function BulkImportDialog({ type, onComplete, children }: BulkImportDialo
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'bulkSavePartners',
-                    payload: { partners: rawPartners, type }
+                    payload: { partners: rawPartners, type, sourcePartnerId: sourcePartnerId.trim() || undefined, discountEligible, agreementId: agreementId.trim() || undefined }
                 }),
             });
 
@@ -114,6 +118,23 @@ export function BulkImportDialog({ type, onComplete, children }: BulkImportDialo
                 </DialogHeader>
                 
                 <Tabs defaultValue="paste" className="py-4">
+                    <div className="space-y-3 mb-4 p-3 border rounded-lg bg-muted/20">
+                        <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Partner Source Tagging (optional)</Label>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                                <Label className="text-xs">Source Partner ID</Label>
+                                <Input placeholder="e.g. cts-trailers" value={sourcePartnerId} onChange={(e) => setSourcePartnerId(e.target.value)} className="h-9" />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-xs">Discount Agreement ID</Label>
+                                <Input placeholder="agreement doc id" value={agreementId} onChange={(e) => setAgreementId(e.target.value)} className="h-9" />
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Checkbox id="discount-eligible" checked={discountEligible} onCheckedChange={(checked) => setDiscountEligible(checked === true)} />
+                            <Label htmlFor="discount-eligible" className="text-xs font-medium">Mark imported records as discount-eligible</Label>
+                        </div>
+                    </div>
                     <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="paste"><ClipboardPaste className="mr-2 h-4 w-4" /> Paste Results</TabsTrigger>
                         <TabsTrigger value="file"><Upload className="mr-2 h-4 w-4" /> Upload File</TabsTrigger>

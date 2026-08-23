@@ -131,7 +131,7 @@ function AddStaffDialog({ companyId, onStaffAdded, canCreate }: { companyId: str
   }
 
   const copyInviteLink = () => {
-    const baseUrl = 'https://studio--ecosystem-hub.us-central1.hosted.app';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
     const signupUrl = `${baseUrl}/join?email=${encodeURIComponent(newUserInfo.email)}&firstName=${encodeURIComponent(newUserInfo.firstName)}&lastName=${encodeURIComponent(newUserInfo.lastName)}`;
     navigator.clipboard.writeText(signupUrl);
     toast({

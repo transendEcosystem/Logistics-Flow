@@ -165,7 +165,7 @@ const tabs = [
 
 export default function NetworkEmails() {
     const { user } = useUser();
-    const baseUrl = 'https://studio--ecosystem-hub.us-central1.hosted.app';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
     const referralLink = user?.companyId ? `${baseUrl}/join?ref=${user.companyId}` : `${baseUrl}/join`;
 
     return (

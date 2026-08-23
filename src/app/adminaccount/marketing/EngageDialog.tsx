@@ -166,6 +166,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
 
   const targetCollection = useMemo(() => {
       if (!currentPartner) return 'partners';
+      if (currentPartner.sourceCollection) return currentPartner.sourceCollection;
       return (currentPartner.source === 'Lead' || !currentPartner.type || currentPartner.type === 'lead') ? 'leads' : 'partners';
   }, [currentPartner]);
 
@@ -295,9 +296,6 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                         </Button>
                         <Button variant="outline" className="font-bold border-blue-200 text-blue-600 hover:bg-green-50" onClick={() => handleLogAndLaunch('outlook')} disabled={isProcessing || !hasEmail}>
                             <Mail className="mr-2 h-4 w-4" /> Outlook
-                        </Button>
-                        <Button className="font-bold shadow-lg text-white" onClick={handleAutomatedDispatch} disabled={isDispatching || !hasEmail}>
-                            {isDispatching ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Zap className="mr-2 h-4 w-4" />} Automated Dispatch
                         </Button>
                     </div>
                 </div>

@@ -23,6 +23,8 @@ import { PartnerTasksDialog } from './PartnerTasksDialog';
 import { PartnerOversightDialog } from './PartnerOversightDialog';
 import { downloadDataAsCSV, formatDateSafe, cn } from '@/lib/utils';
 import { EnrichPartnerButton } from './EnrichPartnerButton';
+import { CommercialDeepDiveButton } from './CommercialDeepDiveButton';
+import { ContentHarvestButton } from './ContentHarvestButton';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
@@ -99,7 +101,7 @@ function PartnerDialog({ open, onOpenChange, partner, onSave, targetType }: { op
     try {
         const token = await getClientSideAuthToken();
         if (!token) throw new Error("Authentication failed.");
-        const collection = partner?.source === 'Lead' ? 'leads' : 'partners';
+        const collection = partner?.source === 'Lead' ? 'leads' : 'strategic_partners';
         
         await performAdminAction(token, 'savePartner', { 
             collection,
@@ -263,7 +265,7 @@ export default function PartnerManagement({ type = 'partner' }: { type?: string 
 
   const handleExport = (format: 'Standard' | 'SendGrid') => {
       const dataToExport = filteredRecords.map(p => {
-          const baseUrl = 'https://studio--ecosystem-hub.us-central1.hosted.app';
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
           const handshakeUrl = `${baseUrl}/opt-in/${p.id}`;
           const directJoinUrl = `${baseUrl}/join?email=${encodeURIComponent(p.email || '')}&ref=${user?.companyId || 'SYSTEM'}`;
 
@@ -424,6 +426,8 @@ export default function PartnerManagement({ type = 'partner' }: { type?: string 
           cell: ({ row }) => (
             <div className="flex justify-end items-center gap-1 text-left">
               <EnrichPartnerButton partner={row.original} onUpdate={() => fetchData()} />
+              <ContentHarvestButton partner={row.original} onUpdate={() => fetchData()} />
+              <CommercialDeepDiveButton partner={row.original} onUpdate={() => fetchData()} />
               <Button variant="ghost" size="icon" onClick={() => handleEngage(row.original)} title="Engage"><Send className="h-4 w-4 text-primary" /></Button>
               <AddCommunicationLogDialog partnerId={row.original.id} collection={row.original.source === 'Lead' ? 'leads' : 'partners'} onLogAdded={() => fetchData()} />
               <CommunicationLogDialog partnerId={row.original.id} partnerName={row.original.companyName} />
@@ -443,7 +447,8 @@ export default function PartnerManagement({ type = 'partner' }: { type?: string 
     try {
       const token = await getClientSideAuthToken();
       if (!token) return;
-      await performAdminAction(token, 'deletePartner', { partnerId: dialog.data.id, source: dialog.data.source });
+    const collection = dialog.data.sourceCollection || (dialog.data.source === 'Lead' ? 'leads' : 'strategic_partners');
+    await performAdminAction(token, 'deletePartner', { partnerId: dialog.data.id, collection });
       toast({ title: 'Deleted' });
       fetchData();
       setDialog({ type: null });

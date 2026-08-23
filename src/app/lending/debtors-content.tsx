@@ -23,6 +23,7 @@ import AudienceCommunicationsTable from '@/app/adminaccount/marketing/AudienceCo
 import { Separator } from '@/components/ui/separator';
 
 import { EnrichPartnerButton } from '@/app/adminaccount/marketing/EnrichPartnerButton';
+import { CommercialDeepDiveButton } from '@/app/adminaccount/marketing/CommercialDeepDiveButton';
 import { PartnerOversightDialog } from '@/app/adminaccount/marketing/PartnerOversightDialog';
 import { AddCommunicationLogDialog } from '@/app/adminaccount/marketing/AddCommunicationLogDialog';
 import { CommunicationLogDialog } from '@/app/adminaccount/marketing/CommunicationLogDialog';
@@ -153,6 +154,7 @@ export default function DebtorsContent() {
         { id: 'actions', header: <div className="text-right">Audit</div>, cell: ({ row }) => (
             <div className="flex justify-end items-center gap-1 text-left text-foreground">
                 <EnrichPartnerButton partner={row.original} onUpdate={forceRefresh} />
+                <CommercialDeepDiveButton partner={row.original} onUpdate={forceRefresh} />
                 <AddCommunicationLogDialog partnerId={row.original.id} collection="lendingDebtors" onLogAdded={forceRefresh} />
                 <CommunicationLogDialog partnerId={row.original.id} partnerName={row.original.name} />
                 <PartnerOversightDialog partner={row.original} onUpdate={forceRefresh} />

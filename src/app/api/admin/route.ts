@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebaseAdmin';
+import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { getAdminApp, verifyAdmin } from '@/lib/firebase-admin';
+import sgMail from '@sendgrid/mail';
 
 function resolveCollection(requestUrl: string, bodyPayload?: any): string {
   try {
@@ -29,6 +31,52 @@ function resolveCollection(requestUrl: string, bodyPayload?: any): string {
   return 'leads';
 }
 
+// Only these fields may be written by AI research ingest, so a malformed paste cannot alter status or ownership fields.
+const FORENSIC_SCALAR_FIELDS = [
+  'companyName',
+  'industrial_category',
+  'website',
+  'email',
+  'phone',
+  'address',
+  'minedServiceWording',
+  'primaryContactRole',
+  'researchConfidence',
+];
+
+const FORENSIC_CONTACT_FIELDS = ['marketingManager', 'operationsManager', 'technicalManager', 'ceo'];
+
+const RESEARCH_COLLECTIONS = [
+  'leads',
+  'partners',
+  'suppliers',
+  'transporters',
+  'strategic_partners',
+  'isa_agents',
+  'digital_associates',
+  'investors',
+  'finance_co',
+  'developers',
+  'drivers',
+  'debtors',
+  'lending_clients',
+  'companies',
+];
+
+// A research record can live in any registry, so the id is resolved across all of them.
+async function findResearchRecord(adminDb: any, recordId: string, preferredCollection?: string) {
+  const ordered = [String(preferredCollection || '').trim(), ...RESEARCH_COLLECTIONS].filter(Boolean);
+  const seen = new Set<string>();
+  for (const collection of ordered) {
+    if (seen.has(collection)) continue;
+    seen.add(collection);
+    const ref = adminDb.collection(collection).doc(recordId);
+    const snapshot = await ref.get();
+    if (snapshot.exists) return { ref, collection, data: snapshot.data() || {} };
+  }
+  return null;
+}
+
 function normalizeRegistryType(rawType?: string): string {
   const value = (rawType || '').toString().toLowerCase();
   if (!value) return 'all';
@@ -47,7 +95,7 @@ function normalizeRegistryType(rawType?: string): string {
 function getMatchingTypeValues(typeName?: string): string[] {
   const normalized = normalizeRegistryType(typeName);
   const map: Record<string, string[]> = {
-    supplier: ['supplier', 'suppliers'],
+    supplier: ['supplier', 'suppliers', 'vendor', 'vendors'],
     transporter: ['transporter', 'transporters', 'haulier', 'hauliers'],
     finance: ['finance', 'finances', 'funder', 'funders', 'lender', 'lenders', 'bank', 'banks'],
     investor: ['investor', 'investors'],
@@ -76,6 +124,7 @@ function getCollectionCandidates(requestUrl: string, bodyPayload?: any): string[
     push('suppliers');
     push('partners');
     push('leads');
+    push('companies');
   } else if (requestType === 'transporter') {
     push('transporters');
     push('partners');
@@ -125,10 +174,10 @@ function matchesRegistryFilters(record: Record<string, any>, filters: Record<str
   const assigneeId = String(filters.assigneeId || '').trim();
 
   if (typeValues.length) {
-    const recordTypeValue = String(record.type || record.role || record.category || record.industrial_category || '').toLowerCase();
-    const normalizedTypes = [recordTypeValue, String(record.type || '').toLowerCase(), String(record.role || '').toLowerCase(), String(record.category || '').toLowerCase(), String(record.industrial_category || '').toLowerCase()];
+    const recordTypeValue = String(record.type || record.role || record.declaredRole || record.category || record.industrial_category || '').toLowerCase();
+    const normalizedTypes = [recordTypeValue, String(record.type || '').toLowerCase(), String(record.role || '').toLowerCase(), String(record.declaredRole || '').toLowerCase(), String(record.category || '').toLowerCase(), String(record.industrial_category || '').toLowerCase()];
     if (!normalizedTypes.some(value => typeValues.some(typeValue => value === typeValue.toLowerCase()))) {
-      const legacyMatch = String(record.industrial_category || record.category || record.type || '').toLowerCase();
+      const legacyMatch = String(record.industrial_category || record.category || record.type || record.declaredRole || '').toLowerCase();
       if (!typeValues.some(typeValue => legacyMatch.includes(typeValue.toLowerCase()))) return false;
     }
   }
@@ -194,8 +243,11 @@ function matchesRegistryFilters(record: Record<string, any>, filters: Record<str
 
 export async function GET(request: Request) {
   try {
+    const { app, error } = getAdminApp();
+    if (!app) throw new Error(error || 'Firebase administration is unavailable.');
+    const db = getFirestore(app);
     const collectionName = resolveCollection(request.url);
-    const snapshot = await adminDb.collection(collectionName).limit(100).get();
+    const snapshot = await db.collection(collectionName).limit(100).get();
     const records = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
@@ -223,6 +275,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { app, error } = getAdminApp();
+    if (!app) throw new Error(error || 'Firebase administration is unavailable.');
+    const db = getFirestore(app);
     let body = {};
     try {
       body = await request.json();
@@ -235,12 +290,450 @@ export async function POST(request: Request) {
     const resolvedPayload = (payload || requestBody || {}) as Record<string, any>;
     const collectionName = resolveCollection(request.url, requestBody);
 
-    if (action?.startsWith('delete')) {
-      const recordId = payload?.id || payload?.leadId || (body as any)?.leadId;
-      if (recordId) {
-        await adminDb.collection(collectionName).doc(recordId).delete();
-        return NextResponse.json({ success: true, deletedId: recordId }, { status: 200 });
+    if (action === 'approveWalletPayment') {
+      const { db: adminDb, adminUid } = await verifyAdmin(request as any);
+      const companyId = String(resolvedPayload.companyId || '').trim();
+      const paymentId = String(resolvedPayload.paymentId || '').trim();
+      if (!companyId || !paymentId) {
+        return NextResponse.json({ success: false, error: 'companyId and paymentId are required.' }, { status: 400 });
       }
+
+      const companyRef = adminDb.collection('companies').doc(companyId);
+      const paymentRef = companyRef.collection('walletPayments').doc(paymentId);
+      const transactionRef = companyRef.collection('transactions').doc();
+
+      await adminDb.runTransaction(async transaction => {
+        const [company, payment] = await Promise.all([transaction.get(companyRef), transaction.get(paymentRef)]);
+        if (!company.exists) throw new Error('Member company was not found.');
+        if (!payment.exists) throw new Error('Wallet payment was not found.');
+        const paymentData = payment.data() || {};
+        if (paymentData.status !== 'pending') throw new Error('This wallet payment has already been processed.');
+        const amount = Number(paymentData.amount || 0);
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Wallet payment amount is invalid.');
+
+        transaction.update(paymentRef, {
+          status: 'approved',
+          approvedAt: FieldValue.serverTimestamp(),
+          approvedBy: adminUid,
+          reconciliationId: String(resolvedPayload.reconciliationId || '').trim(),
+        });
+        transaction.update(companyRef, {
+          walletBalance: FieldValue.increment(amount),
+          availableBalance: FieldValue.increment(amount),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        transaction.set(transactionRef, {
+          transactionId: transactionRef.id,
+          companyId,
+          type: 'credit',
+          amount,
+          date: FieldValue.serverTimestamp(),
+          description: paymentData.description || 'Wallet top-up via EFT',
+          status: 'allocated',
+          sourcePaymentId: paymentId,
+          reconciliationId: String(resolvedPayload.reconciliationId || '').trim(),
+          postedBy: adminUid,
+          postedAt: FieldValue.serverTimestamp(),
+        });
+      });
+
+      return NextResponse.json({ success: true, message: 'Wallet payment approved and allocated.' });
+    }
+
+    if (action === 'getWalletPayments' || action === 'getWalletTransactions') {
+      const { db: adminDb } = await verifyAdmin(request as any);
+      const subcollection = action === 'getWalletPayments' ? 'walletPayments' : 'transactions';
+      const snapshot = await adminDb.collectionGroup(subcollection).get();
+      const data = snapshot.docs.map(entry => {
+        const pathSegments = entry.ref.path.split('/');
+        const companyIndex = pathSegments.indexOf('companies');
+        const companyId = companyIndex >= 0 ? pathSegments[companyIndex + 1] : null;
+        return { id: entry.id, companyId, ...entry.data() };
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
+    if (action === 'getNetworkCommissions') {
+      const { db: adminDb } = await verifyAdmin(request as any);
+      const snapshot = await adminDb.collectionGroup('commissionLedger').get();
+      const data = snapshot.docs.map(entry => {
+        const pathSegments = entry.ref.path.split('/');
+        const companyIndex = pathSegments.indexOf('companies');
+        return {
+          id: entry.id,
+          ownerCompanyId: companyIndex >= 0 ? pathSegments[companyIndex + 1] : null,
+          ...entry.data(),
+        };
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
+    if (action === 'saveServiceProfile') {
+      const { db: adminDb, adminUid } = await verifyAdmin(request as any);
+      const recordId = String(resolvedPayload.partnerId || resolvedPayload.recordId || '').trim();
+      const profile = resolvedPayload.profile;
+
+      if (!recordId || !profile || typeof profile !== 'object') {
+        return NextResponse.json({ success: false, error: 'partnerId and profile are required.' }, { status: 400 });
+      }
+
+      const located = await findResearchRecord(adminDb, recordId, resolvedPayload.collection);
+      if (!located) {
+        return NextResponse.json({ success: false, error: `Record ${recordId} was not found.` }, { status: 404 });
+      }
+
+      const stringList = (value: any) =>
+        Array.isArray(value) ? value.map((entry: any) => String(entry).trim()).filter(Boolean).slice(0, 60) : [];
+
+      const serviceProfile = {
+        serviceTags: stringList(profile.serviceTags).map((tag: string) => tag.toLowerCase()),
+        capabilities: stringList(profile.capabilities),
+        industriesServed: stringList(profile.industriesServed),
+        geographicCoverage: stringList(profile.geographicCoverage),
+        equipmentAssets: stringList(profile.equipmentAssets),
+        certifications: stringList(profile.certifications),
+        valueProps: stringList(profile.valueProps),
+        contentQuality: ['rich', 'thin', 'placeholder'].includes(String(profile.contentQuality)) ? profile.contentQuality : null,
+      };
+
+      const rawShop = profile.shopProfile || {};
+      const shopProfile = {
+        headline: String(rawShop.headline || '').trim(),
+        shortDescription: String(rawShop.shortDescription || '').trim(),
+        longDescription: String(rawShop.longDescription || '').trim(),
+        keywords: stringList(rawShop.keywords).map((word: string) => word.toLowerCase()),
+      };
+
+      const campaignAngles = Array.isArray(profile.campaignAngles)
+        ? profile.campaignAngles.slice(0, 20).map((entry: any) => ({
+            angle: String(entry?.angle || '').trim(),
+            evidence: String(entry?.evidence || '').trim(),
+            targetRole: String(entry?.targetRole || '').trim(),
+          })).filter((entry: any) => entry.angle)
+        : [];
+
+      // Tags and keywords are folded into the indexed blob so retrieval matches on classification as well as raw wording.
+      const existingCorpus = String(located.data.searchCorpus || '');
+      const searchCorpus = [
+        existingCorpus,
+        serviceProfile.serviceTags.join(' '),
+        serviceProfile.capabilities.join(' '),
+        serviceProfile.industriesServed.join(' '),
+        serviceProfile.geographicCoverage.join(' '),
+        shopProfile.keywords.join(' '),
+      ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 60_000);
+
+      await located.ref.set({
+        serviceProfile,
+        shopProfile,
+        campaignAngles,
+        searchCorpus,
+        minedServiceWording: located.data.minedServiceWording || shopProfile.longDescription || null,
+        researchStage: 'service_profile_complete',
+        serviceProfileSavedAt: new Date().toISOString(),
+        serviceProfileSavedBy: adminUid,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      return NextResponse.json({ success: true, id: recordId, collection: located.collection });
+    }
+
+    if (action === 'applyForensicFindings') {
+      const { db: adminDb, adminUid } = await verifyAdmin(request as any);
+      const recordId = String(resolvedPayload.partnerId || resolvedPayload.recordId || '').trim();
+      const findings = resolvedPayload.findings;
+      const overwrite = Boolean(resolvedPayload.overwrite);
+
+      if (!recordId || !findings || typeof findings !== 'object') {
+        return NextResponse.json({ success: false, error: 'partnerId and findings are required.' }, { status: 400 });
+      }
+
+      const located = await findResearchRecord(adminDb, recordId, resolvedPayload.collection);
+      if (!located) {
+        return NextResponse.json({ success: false, error: `Record ${recordId} was not found.` }, { status: 404 });
+      }
+
+      const existing = located.data;
+      const update: Record<string, any> = {};
+      const applied: string[] = [];
+      const skipped: string[] = [];
+
+      const isEmpty = (value: any) =>
+        value === null || value === undefined || value === '' ||
+        (Array.isArray(value) && value.length === 0) ||
+        (typeof value === 'object' && !Array.isArray(value) && Object.values(value).every(v => v === null || v === undefined || v === ''));
+
+      const assign = (field: string, value: any) => {
+        if (isEmpty(value)) return;
+        if (!overwrite && !isEmpty(existing[field])) { skipped.push(field); return; }
+        update[field] = value;
+        applied.push(field);
+      };
+
+      for (const field of FORENSIC_SCALAR_FIELDS) {
+        const value = findings[field];
+        if (typeof value === 'string' || typeof value === 'number') assign(field, String(value).trim());
+      }
+
+      for (const field of FORENSIC_CONTACT_FIELDS) {
+        const raw = findings[field];
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+        const contact = {
+          name: raw.name ? String(raw.name).trim() : '',
+          role: raw.role ? String(raw.role).trim() : '',
+          email: raw.email ? String(raw.email).trim() : '',
+          mobile: raw.mobile ? String(raw.mobile).trim() : '',
+        };
+        assign(field, isEmpty(contact) ? null : contact);
+      }
+
+      if (findings.socialProfiles && typeof findings.socialProfiles === 'object') {
+        const social = ['facebook', 'linkedin', 'instagram', 'twitter'].reduce((acc: Record<string, string>, key) => {
+          const value = findings.socialProfiles[key];
+          if (value) acc[key] = String(value).trim();
+          return acc;
+        }, {});
+        assign('socialProfiles', social);
+      }
+
+      for (const field of ['siteMap', 'otherStaff', 'sourceUrls']) {
+        if (Array.isArray(findings[field]) && findings[field].length) {
+          assign(field, findings[field].filter(Boolean).slice(0, 50));
+        }
+      }
+
+      if (Object.keys(update).length === 0) {
+        return NextResponse.json({ success: true, applied: [], skipped, message: 'No new values to apply.' });
+      }
+
+      await located.ref.set({
+        ...update,
+        researchStage: 'gap_analysis_complete',
+        forensicAppliedAt: new Date().toISOString(),
+        forensicAppliedBy: adminUid,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      return NextResponse.json({ success: true, applied, skipped, collection: located.collection });
+    }
+
+    if (action === 'logForensicInitiated' || action === 'saveCommercialDeepDive' || action === 'logDeepDiveInitiated') {
+      const { db: adminDb, adminUid } = await verifyAdmin(request as any);
+      const recordId = String(resolvedPayload.partnerId || resolvedPayload.recordId || resolvedPayload.id || '').trim();
+      if (!recordId) {
+        return NextResponse.json({ success: false, error: 'A record ID is required.' }, { status: 400 });
+      }
+
+      const located = await findResearchRecord(adminDb, recordId, resolvedPayload.collection);
+      if (!located) {
+        return NextResponse.json({ success: false, error: `Record ${recordId} was not found.` }, { status: 404 });
+      }
+
+      const now = new Date().toISOString();
+      let update: Record<string, any> = { updatedAt: now };
+
+      if (action === 'logForensicInitiated') {
+        update = { ...update, forensicInitiatedAt: now, forensicInitiatedBy: adminUid, researchStage: 'gap_analysis_requested' };
+      } else if (action === 'logDeepDiveInitiated') {
+        update = { ...update, deepDiveInitiatedAt: now, deepDiveInitiatedBy: adminUid, researchStage: 'deep_dive_requested' };
+      } else {
+        const profile = resolvedPayload.commercialProfile;
+        if (!profile || typeof profile !== 'object') {
+          return NextResponse.json({ success: false, error: 'commercialProfile object is required.' }, { status: 400 });
+        }
+        update = {
+          ...update,
+          commercialProfile: profile,
+          deepDiveCompletedAt: now,
+          deepDiveCompletedBy: adminUid,
+          researchStage: 'deep_dive_complete',
+        };
+      }
+
+      await located.ref.set(update, { merge: true });
+      return NextResponse.json({ success: true, id: recordId, collection: located.collection });
+    }
+
+    if (action?.startsWith('delete')) {
+      const recordId = payload?.id || payload?.partnerId || payload?.leadId || (body as any)?.id || (body as any)?.partnerId || (body as any)?.leadId;
+      if (recordId) {
+        const requestedCollection = String(payload?.collection || payload?.sourceCollection || '').trim();
+        const targetCollection = requestedCollection || collectionName;
+        const targetRef = db.collection(targetCollection).doc(String(recordId));
+        const targetSnapshot = await targetRef.get();
+        if (!targetSnapshot.exists) {
+          return NextResponse.json({ success: false, error: `Record ${recordId} was not found in ${targetCollection}.` }, { status: 404 });
+        }
+        await targetRef.delete();
+        return NextResponse.json({ success: true, deletedId: recordId, collection: targetCollection }, { status: 200 });
+      }
+      return NextResponse.json({ success: false, error: 'A record ID is required for deletion.' }, { status: 400 });
+    }
+
+    if (action === 'savePartner') {
+      const partner = payload?.partner;
+      if (!partner || typeof partner !== 'object') {
+        return NextResponse.json({ success: false, error: 'Partner data is required.' }, { status: 400 });
+      }
+
+      const isManagedPartnerType = ['isa', 'associate', 'partner', 'supplier', 'transporter', 'finance', 'investor', 'developer', 'driver'].includes(String(partner.type || '').toLowerCase());
+      const targetCollection = String(payload?.collection || (isManagedPartnerType ? 'partners' : collectionName)).trim();
+      const { id, ...partnerData } = partner;
+      const dataToSave = {
+        ...partnerData,
+        updatedAt: new Date().toISOString(),
+      };
+
+      let linkedCompanyId: string | null = null;
+      if (partner.type === 'isa' && partner.email) {
+        const matchedUsers = await db.collection('users').where('email', '==', String(partner.email).trim().toLowerCase()).limit(1).get();
+        const matchedCompanyId = matchedUsers.docs[0]?.data()?.companyId;
+        if (matchedCompanyId) {
+          linkedCompanyId = String(matchedCompanyId);
+          dataToSave.linkedCompanyId = linkedCompanyId;
+        }
+      }
+
+      if (id) {
+        await db.collection(targetCollection).doc(String(id)).set(dataToSave, { merge: true });
+        if (partner.type === 'isa' && linkedCompanyId) {
+          await db.collection('companies').doc(linkedCompanyId).set({
+            isaStatus: partner.status === 'active' ? 'active' : 'inactive',
+            isaPartnerId: String(id),
+            updatedAt: new Date().toISOString(),
+          }, { merge: true });
+        }
+        return NextResponse.json({ success: true, id, collection: targetCollection, message: 'Record updated successfully' }, { status: 200 });
+      }
+
+      const docRef = await db.collection(targetCollection).add({
+        ...dataToSave,
+        createdAt: new Date().toISOString(),
+      });
+      if (partner.type === 'isa' && linkedCompanyId) {
+        await db.collection('companies').doc(linkedCompanyId).set({
+          isaStatus: partner.status === 'active' ? 'active' : 'inactive',
+          isaPartnerId: docRef.id,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      }
+      return NextResponse.json({ success: true, id: docRef.id, collection: targetCollection, message: 'Record created successfully' }, { status: 200 });
+    }
+
+    if (action === 'createPartnerAgreement') {
+      const agreement = resolvedPayload?.agreement;
+      if (!agreement?.partnerId || !agreement?.partnerName) {
+        return NextResponse.json({ success: false, error: 'partnerId and partnerName are required.' }, { status: 400 });
+      }
+      const docRef = await db.collection('partnerAgreements').add({
+        partnerId: String(agreement.partnerId),
+        partnerName: String(agreement.partnerName),
+        discountType: agreement.discountType === 'fixed' ? 'fixed' : 'percentage',
+        discountValue: Number(agreement.discountValue) || 0,
+        appliesTo: agreement.appliesTo || 'partner-sales-only',
+        eligibilityRule: agreement.eligibilityRule === 'any-member' ? 'any-member' : 'tagged-customer',
+        status: 'proposed',
+        notes: agreement.notes || '',
+        effectiveFrom: agreement.effectiveFrom || null,
+        effectiveTo: agreement.effectiveTo || null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      return NextResponse.json({ success: true, id: docRef.id, message: 'Partner agreement created.' }, { status: 200 });
+    }
+
+    if (action === 'updatePartnerAgreementStatus') {
+      const agreementId = String(resolvedPayload?.agreementId || '').trim();
+      const status = String(resolvedPayload?.status || '').trim();
+      const allowedStatuses = ['proposed', 'accepted', 'active', 'expired'];
+      if (!agreementId || !allowedStatuses.includes(status)) {
+        return NextResponse.json({ success: false, error: 'A valid agreementId and status are required.' }, { status: 400 });
+      }
+      await db.collection('partnerAgreements').doc(agreementId).set({
+        status,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      return NextResponse.json({ success: true, message: `Agreement status set to ${status}.` }, { status: 200 });
+    }
+
+    if (action === 'listPartnerAgreements') {
+      const snapshot = await db.collection('partnerAgreements').get();
+      const agreements = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      return NextResponse.json({ success: true, agreements }, { status: 200 });
+    }
+
+    if (action === 'bulkSavePartners') {
+      const rawPartners: any[] = Array.isArray(resolvedPayload?.partners) ? resolvedPayload.partners : [];
+      const importType = String(resolvedPayload?.type || '').trim();
+      const sourcePartnerId = String(resolvedPayload?.sourcePartnerId || '').trim();
+      const discountEligible = Boolean(resolvedPayload?.discountEligible);
+      const agreementId = String(resolvedPayload?.agreementId || '').trim();
+
+      if (rawPartners.length === 0) {
+        return NextResponse.json({ success: false, error: 'No records provided for import.' }, { status: 400 });
+      }
+
+      const targetCollection = resolveCollection(request.url, { type: importType });
+      const batch = db.batch();
+      let count = 0;
+
+      for (const record of rawPartners) {
+        if (!record || typeof record !== 'object') continue;
+        const docRef = db.collection(targetCollection).doc();
+        const dataToSave: Record<string, any> = {
+          ...record,
+          id: docRef.id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        if (sourcePartnerId) {
+          dataToSave.sourcePartnerId = sourcePartnerId;
+          dataToSave.sourceType = 'existing-customer-import';
+          dataToSave.discountEligible = discountEligible;
+          if (agreementId) dataToSave.discountAgreementId = agreementId;
+        }
+        batch.set(docRef, dataToSave);
+        count += 1;
+      }
+
+      await batch.commit();
+      return NextResponse.json({ success: true, count, collection: targetCollection, message: `Imported ${count} records into ${targetCollection}.` }, { status: 200 });
+    }
+
+    if (action === 'dispatchEngagement') {
+      const partnerId = String(resolvedPayload?.partnerId || '').trim();
+      const email = String(resolvedPayload?.email || '').trim();
+      const subject = String(resolvedPayload?.subject || '').trim();
+      const html = String(resolvedPayload?.html || '').trim();
+      const targetCollection = String(resolvedPayload?.collection || 'partners').trim();
+      const allowedCollections = ['partners', 'leads', 'strategic_partners', 'suppliers', 'transporters', 'finance_co', 'investors', 'isa_agents', 'digital_associates'];
+
+      if (!partnerId || !email || !subject || !html) {
+        return NextResponse.json({ success: false, error: 'Recipient, subject, and message content are required.' }, { status: 400 });
+      }
+      if (!allowedCollections.includes(targetCollection)) {
+        return NextResponse.json({ success: false, error: `Unsupported target collection: ${targetCollection}.` }, { status: 400 });
+      }
+      if (!process.env.SENDGRID_API_KEY) {
+        return NextResponse.json({ success: false, error: 'Email dispatch is not configured. SENDGRID_API_KEY is missing.' }, { status: 503 });
+      }
+
+      sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+      await sgMail.send({
+        to: email,
+        from: 'michael@logisticsflow.co.za',
+        subject,
+        html,
+      });
+
+      await db.collection(targetCollection).doc(partnerId).set({
+        lastOutreachSubject: subject,
+        lastOutreachAt: new Date().toISOString(),
+        lastOutreachChannel: 'Email',
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      return NextResponse.json({ success: true, message: 'Engagement email dispatched successfully.' }, { status: 200 });
     }
 
     if (action === 'searchRegistry') {
@@ -265,22 +758,19 @@ export async function POST(request: Request) {
 
       for (const candidateCollection of collectionCandidates) {
         try {
-          let queryRef: FirebaseFirestore.Query = adminDb.collection(candidateCollection);
+          let queryRef: FirebaseFirestore.Query = db.collection(candidateCollection);
 
-          if (typeValues.length) {
+          if (typeValues.length && candidateCollection !== 'companies') {
             queryRef = queryRef.where('type', 'in', typeValues);
           }
 
           const snapshot = await queryRef.limit(maxQueryWindow).get();
           for (const doc of snapshot.docs) {
-            const record = { id: doc.id, ...doc.data() };
-            if (!collectedRecords.has(doc.id)) {
-              collectedRecords.set(doc.id, record);
+            const record = { id: doc.id, ...doc.data(), sourceCollection: candidateCollection };
+            const recordKey = `${candidateCollection}:${doc.id}`;
+            if (!collectedRecords.has(recordKey)) {
+              collectedRecords.set(recordKey, record);
             }
-          }
-
-          if (collectedRecords.size > 0) {
-            break;
           }
         } catch (e) {
           // Ignore collections that are unavailable or not configured; other candidates may still work.
@@ -313,7 +803,7 @@ export async function POST(request: Request) {
         delete dataToSave.payload;
       }
 
-      const docRef = await adminDb.collection(collectionName).add({
+      const docRef = await db.collection(collectionName).add({
         ...(typeof dataToSave === 'object' ? dataToSave : {}),
         createdAt: new Date().toISOString()
       });
@@ -325,7 +815,7 @@ export async function POST(request: Request) {
       }, { status: 200 });
     }
 
-    const snapshot = await adminDb.collection(collectionName).limit(100).get();
+    const snapshot = await db.collection(collectionName).limit(100).get();
     const records = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()

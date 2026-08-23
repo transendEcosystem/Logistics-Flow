@@ -2,6 +2,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminApp } from '@/lib/firebase-admin';
+import { getAuth } from 'firebase-admin/auth';
 
 /**
  * PUBLIC API ENDPOINT
@@ -15,14 +16,21 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { partnerId, status } = await req.json();
+    const authorization = req.headers.get('authorization') || '';
+    if (!authorization.startsWith('Bearer ')) {
+      return NextResponse.json({ success: false, error: 'Sign-in required before completing the handshake.' }, { status: 401 });
+    }
+    await getAuth(app).verifyIdToken(authorization.slice(7));
+    const { partnerId, status, collection: requestedCollection = 'partners' } = await req.json();
+    const allowedCollections = ['partners', 'leads', 'strategic_partners'];
+    const collectionName = allowedCollections.includes(requestedCollection) ? requestedCollection : null;
 
-    if (!partnerId || !['accepted', 'declined'].includes(status)) {
+    if (!partnerId || !['accepted', 'declined'].includes(status) || !collectionName) {
         return NextResponse.json({ success: false, error: 'Bad Request: partnerId and valid status required.' }, { status: 400 });
     }
     
     const db = getFirestore(app);
-    const partnerRef = db.collection('partners').doc(partnerId);
+    const partnerRef = db.collection(collectionName).doc(partnerId);
     const partnerSnap = await partnerRef.get();
 
     if (!partnerSnap.exists) {

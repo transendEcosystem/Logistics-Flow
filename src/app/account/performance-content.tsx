@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Loader2, Users, Target, TrendingUp, Handshake, UserCheck, Download } from 'lucide-react';
@@ -13,9 +13,12 @@ import { useToast } from '@/hooks/use-toast';
 import { formatDateSafe } from '@/lib/utils';
 import { format as formatDateFns } from 'date-fns';
 
+type CommissionEntry = { referredCompanyName?: string; referredCompanyId?: string; commissionAmount?: number };
+
 export default function PerformanceContent() {
     const { user, isUserLoading } = useUser();
     const [networkData, setNetworkData] = useState<any[]>([]);
+    const [commissionEntries, setCommissionEntries] = useState<CommissionEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
@@ -27,14 +30,20 @@ export default function PerformanceContent() {
             const token = await getClientSideAuthToken();
             if (!token) throw new Error("You must be logged in to view your network.");
             
-            const response = await fetch('/api/getNetwork', {
+                        const [networkResponse, earningsResponse] = await Promise.all([
+                            fetch('/api/getNetwork', {
                 method: 'GET',
                 headers: { 'Authorization': `Bearer ${token}` },
-            });
-            const result = await response.json();
-            if (!result.success) throw new Error(result.error || 'Failed to fetch network data.');
+                            }),
+                            fetch('/api/getEarnings', { headers: { 'Authorization': `Bearer ${token}` }, cache: 'no-store' }),
+                        ]);
+                        const result = await networkResponse.json();
+                        const earningsResult = await earningsResponse.json();
+                        if (!networkResponse.ok || !result.success) throw new Error(result.error || 'Failed to fetch network data.');
+                        if (!earningsResponse.ok || !earningsResult.success) throw new Error(earningsResult.error || 'Failed to fetch network earnings.');
             
             setNetworkData(result.data || []);
+                        setCommissionEntries(earningsResult.entries || []);
         } catch (e: any) {
             setError(e.message);
         } finally {
@@ -48,11 +57,18 @@ export default function PerformanceContent() {
         }
     }, [user, isUserLoading, loadNetworkData]);
 
+    const isPaidMember = (record: any) => record.source === 'Member' && Boolean(record.intelligenceMembershipId || (record.membershipId && record.membershipId !== 'free'));
+
     const stats = {
         totalReferrals: networkData.length,
-        activeReferrals: networkData.filter(m => m.status === 'active').length,
-        conversionRate: networkData.length > 0 ? (networkData.filter(m => m.status === 'active').length / networkData.length) * 100 : 0,
+        activeReferrals: networkData.filter(isPaidMember).length,
+        conversionRate: networkData.length > 0 ? (networkData.filter(isPaidMember).length / networkData.length) * 100 : 0,
     };
+
+    const commissionByMember = useMemo(() => new Map(commissionEntries.reduce((totals: Map<string, number>, entry) => {
+        if (entry.referredCompanyId) totals.set(entry.referredCompanyId, (totals.get(entry.referredCompanyId) || 0) + Number(entry.commissionAmount || 0));
+        return totals;
+    }, new Map<string, number>())), [commissionEntries]);
 
     const memberGrowthData = networkData
         .reduce((acc: Record<string, {name: string, NewMembers: number, date: Date}>, member: any) => {
@@ -114,7 +130,8 @@ export default function PerformanceContent() {
             'Company Name': member.companyName,
             'Owner Name': member.ownerName,
             'Owner Email': member.ownerEmail,
-            'Membership': member.membershipId,
+            'Membership': member.intelligenceMembershipId || member.membershipId || 'free',
+            'Commission Earned': commissionByMember.get(member.id) || 0,
             'Status': member.status,
             'Joined At': new Date(member.createdAt).toLocaleDateString(),
         }));
@@ -166,7 +183,7 @@ export default function PerformanceContent() {
                     </CardHeader>
                     <CardContent>
                         <p className="text-2xl font-bold">{stats.totalReferrals}</p>
-                        <p className="text-xs text-muted-foreground">Total members who joined using your link.</p>
+                        <p className="text-xs text-muted-foreground">Leads and members in your network.</p>
                     </CardContent>
                 </Card>
                 <Card>
@@ -176,7 +193,7 @@ export default function PerformanceContent() {
                     </CardHeader>
                     <CardContent>
                         <p className="text-2xl font-bold">{stats.activeReferrals}</p>
-                        <p className="text-xs text-muted-foreground">Members who have upgraded to a paid plan.</p>
+                        <p className="text-xs text-muted-foreground">Referred members with a paid membership.</p>
                     </CardContent>
                 </Card>
                 <Card>
@@ -216,19 +233,24 @@ export default function PerformanceContent() {
 
             <Card>
                  <CardHeader>
-                    <CardTitle>Recent Referrals</CardTitle>
+                    <CardTitle>My Network</CardTitle>
+                    <CardDescription>Leads and converted members in your network, with their membership and revenue-share outcome.</CardDescription>
                 </CardHeader>
                 <CardContent>
                      <Table>
-                        <TableHeader><TableRow><TableHead>Member Name</TableHead><TableHead>Company</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>Type</TableHead><TableHead>Company / Lead</TableHead><TableHead>Contact</TableHead><TableHead>Status</TableHead><TableHead>Membership</TableHead><TableHead className="text-right">Commission Earned</TableHead></TableRow></TableHeader>
                         <TableBody>
-                            {networkData.slice(0, 5).map(member => (
+                            {networkData.map(member => (
                                 <TableRow key={member.id}>
-                                    <TableCell className="font-medium">{member.ownerName}</TableCell>
-                                    <TableCell>{member.companyName}</TableCell>
+                                    <TableCell><Badge variant={member.source === 'Member' ? 'default' : 'secondary'} className="capitalize">{member.source === 'Member' ? 'member' : 'lead'}</Badge></TableCell>
+                                    <TableCell className="font-medium">{member.companyName}</TableCell>
+                                    <TableCell><div>{member.ownerName || member.contactPerson || '-'}</div><div className="text-xs text-muted-foreground">{member.ownerEmail || member.email || ''}</div></TableCell>
                                     <TableCell><Badge variant={member.status === 'active' ? 'default' : 'secondary'} className="capitalize">{member.status}</Badge></TableCell>
+                                    <TableCell className="capitalize">{member.intelligenceMembershipId || member.membershipId || '-'}</TableCell>
+                                    <TableCell className="text-right">{member.source === 'Member' ? formatCurrency(commissionByMember.get(member.id) || 0) : '-'}</TableCell>
                                 </TableRow>
                             ))}
+                            {!networkData.length && <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">You have not added any leads or referred members yet.</TableCell></TableRow>}
                         </TableBody>
                     </Table>
                 </CardContent>

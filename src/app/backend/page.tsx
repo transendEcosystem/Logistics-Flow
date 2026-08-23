@@ -12,6 +12,7 @@ import {
   SidebarMenuButton,
   SidebarFooter,
   SidebarInset,
+  SidebarTrigger,
   SidebarMenuSub,
   SidebarMenuSubItem,
   SidebarMenuSubButton,
@@ -387,6 +388,7 @@ function BackendContent() {
         </Sidebar>
         <SidebarInset>
             <div className="p-6 text-left">
+            <SidebarTrigger className="md:hidden mb-4" />
                 <Suspense fallback={<div className="flex justify-center items-center py-20 text-left"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>}>
                     {renderContent()}
                 </Suspense>

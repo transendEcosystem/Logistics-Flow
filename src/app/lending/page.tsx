@@ -12,6 +12,7 @@ import {
   SidebarMenuButton,
   SidebarFooter,
   SidebarInset,
+  SidebarTrigger,
   SidebarMenuSub,
   SidebarMenuSubItem,
   SidebarMenuSubButton,
@@ -228,6 +229,7 @@ function LendingPortalContent() {
       </Sidebar>
       <SidebarInset>
         <div className="p-8 text-left text-foreground">
+            <SidebarTrigger className="md:hidden mb-4" />
             <Suspense fallback={<div className="py-20 text-center text-foreground"><Loader2 className="animate-spin h-10 w-10 text-primary mx-auto" /></div>}>
                 {renderContent()}
             </Suspense>

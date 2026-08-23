@@ -23,6 +23,7 @@ import { PartnerTasksDialog } from './PartnerTasksDialog';
 import { PartnerOversightDialog } from './PartnerOversightDialog';
 import { downloadDataAsCSV, formatDateSafe, cn } from '@/lib/utils';
 import { EnrichPartnerButton } from './EnrichPartnerButton';
+import { CommercialDeepDiveButton } from './CommercialDeepDiveButton';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
@@ -210,6 +211,24 @@ export default function ISAManagement() {
     });
   }, [allRecords, statusFilter, categoryFilter, assigneeFilter, tagFilter]);
 
+  const handleApproveApplication = useCallback(async (record: any) => {
+    try {
+      const token = await getClientSideAuthToken();
+      if (!token) throw new Error('Authentication failed.');
+      const response = await fetch('/api/isaApplications', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve', applicationId: record.id }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || 'Unable to approve the ISA application.');
+      toast({ title: 'ISA Approved', description: `${record.contactPerson || record.companyName} can now earn ISA commissions.` });
+      fetchData();
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Approval Failed', description: error.message });
+    }
+  }, [fetchData, toast]);
+
   const columns: ColumnDef<any>[] = useMemo(() => {
     const cols: ColumnDef<any>[] = [
       { 
@@ -276,6 +295,8 @@ export default function ISAManagement() {
       { id: 'actions', header: 'Actions', cell: ({ row }) => (
         <div className="flex justify-end items-center gap-1 text-left text-foreground">
           <EnrichPartnerButton partner={row.original} onUpdate={() => fetchData()} />
+          <CommercialDeepDiveButton partner={row.original} onUpdate={() => fetchData()} />
+          {row.original.applicationStatus === 'pending' && <Button variant="ghost" size="icon" onClick={() => handleApproveApplication(row.original)} title="Approve ISA application"><UserCheck className="h-4 w-4 text-primary" /></Button>}
           <Button variant="ghost" size="icon" onClick={() => handleEngage(row.original)} title="Engage"><Send className="h-4 w-4 text-primary" /></Button>
           <AddCommunicationLogDialog 
               partnerId={row.original.id} 
@@ -291,7 +312,7 @@ export default function ISAManagement() {
       ) },
     ];
     return cols.filter(c => visibleColumns[c.accessorKey as string] || visibleColumns[c.id as string]);
-  }, [fetchData, handleEngage, visibleColumns]);
+  }, [fetchData, handleApproveApplication, handleEngage, visibleColumns]);
 
   async function handleDeleteRecord() {
     if (!dialog.data) return;

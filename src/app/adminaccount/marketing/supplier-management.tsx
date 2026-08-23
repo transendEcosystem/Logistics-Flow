@@ -28,6 +28,8 @@ import { PartnerTasksDialog } from './PartnerTasksDialog';
 import { AddCommunicationLogDialog } from './AddCommunicationLogDialog';
 import { downloadDataAsCSV, formatDateSafe, cn } from '@/lib/utils';
 import { EnrichPartnerButton } from './EnrichPartnerButton';
+import { CommercialDeepDiveButton } from './CommercialDeepDiveButton';
+import { ContentHarvestButton } from './ContentHarvestButton';
 import { BulkImportDialog } from './BulkImportDialog';
 import { Label } from '@/components/ui/label';
 import { TagSelector, extractRegistryCategories, extractRegistryTags } from '@/components/ui/TagSelector';
@@ -493,6 +495,8 @@ export default function SupplierManagement() {
       { id: 'actions', header: 'Actions', cell: ({ row }: { row: { original: any } }) => (
           <div className="flex justify-end gap-1 text-foreground">
             <EnrichPartnerButton partner={row.original} onUpdate={() => fetchData()} />
+            <ContentHarvestButton partner={row.original} onUpdate={() => fetchData()} />
+            <CommercialDeepDiveButton partner={row.original} onUpdate={() => fetchData()} />
             <Button variant="ghost" size="icon" onClick={() => handleEngage(row.original)}><Send className="h-4 w-4 text-primary" /></Button>
             <AddCommunicationLogDialog 
                 partnerId={row.original.id} 

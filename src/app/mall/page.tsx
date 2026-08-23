@@ -122,13 +122,13 @@ export default function MallPage() {
     }
 
     const createModalConfig = (mallId: string, mallHref: string): ModalConfig => {
-        const baseSellHref = user ? '/account?view=shop' : '/join?role=vendor';
+        const baseSellHref = user ? `/account?view=shop&nodeType=${mallId}` : `/join?role=${mallId === 'finance' ? 'finance' : 'vendor'}`;
 
         let config: Partial<ModalConfig> = {};
 
         const buyerAction = () => {
             setIsModalOpen(false);
-            router.push(mallHref);
+            router.push(user ? `/account?view=mall-onboarding&mall=${mallId}&role=buyer` : mallHref);
         }
 
         switch(mallId) {
@@ -137,7 +137,7 @@ export default function MallPage() {
                     title: "Warehouse Mall Intent",
                     description: "Are you sourcing storage capacity, or are you listing a warehouse branch?",
                     primary: { label: "I need Storage", description: "Source capacity and calculate fees.", action: buyerAction },
-                    secondary: { label: "I am an Operator", description: "List your warehouse branch.", action: () => showIncentive(user ? '/account?view=shop' : '/join?role=warehouse', 'Warehouse') }
+                    secondary: { label: "I am an Operator", description: "List your warehouse branch.", action: () => showIncentive(user ? '/account?view=mall-onboarding&mall=warehouse&role=provider' : '/join?role=warehouse', 'Warehouse') }
                 };
                 break;
             case 'distribution':
@@ -145,7 +145,7 @@ export default function MallPage() {
                     title: "Distribution Mall Intent",
                     description: "Are you sourcing local urban delivery, or listing an inner-city fixed-body fleet?",
                     primary: { label: "I need local Spokes", description: "Source final-mile capacity.", action: buyerAction },
-                    secondary: { label: "I am a Distributor", description: "List your local delivery fleet.", action: () => showIncentive(user ? '/account?view=shop' : '/join?role=distributor', 'Distributor') }
+                    secondary: { label: "I am a Distributor", description: "List your local delivery fleet.", action: () => showIncentive(user ? '/account?view=mall-onboarding&mall=transporter&role=provider' : '/join?role=distributor', 'Distributor') }
                 };
                 break;
             case 'transporter':
@@ -153,7 +153,7 @@ export default function MallPage() {
                     title: "Transport Mall Intent",
                     description: "Are you booking long-haul transport, or listing an arterial fleet?",
                     primary: { label: "I need Long-Haul", description: "Source arterial capacity.", action: buyerAction },
-                    secondary: { label: "I am a Transporter", description: "List your arterial fleet.", action: () => showIncentive(user ? '/account?view=shop' : '/join?role=transporter', 'Transporter') }
+                    secondary: { label: "I am a Transporter", description: "List your arterial fleet.", action: () => showIncentive(user ? '/account?view=mall-onboarding&mall=transporter&role=provider' : '/join?role=transporter', 'Transporter') }
                 };
                 break;
             case 'loads':

@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from '@/components/ui/button';
-import { Loader2, Store, PlusCircle, ShieldAlert, Edit, ArrowLeft, Warehouse, Truck, ShieldCheck, Landmark, PackageSearch, ShoppingCart, Zap, Eye, Clock, ExternalLink, ArrowRight, CheckCircle, BarChart3, TrendingUp, Info, MapPin } from 'lucide-react';
+import { Loader2, Store, PlusCircle, ShieldAlert, Edit, ArrowLeft, Warehouse, Truck, ShieldCheck, Landmark, PackageSearch, ShoppingCart, Zap, Eye, Clock, ExternalLink, ArrowRight, CheckCircle, BarChart3, TrendingUp, Info, MapPin, Lock } from 'lucide-react';
 import { useUser, useFirestore, getClientSideAuthToken, useDoc, useMemoFirebase, useCollection } from '@/firebase';
 import { doc, query, collection, orderBy, limit, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -12,6 +12,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { Badge } from '@/components/ui/badge';
 import { useSearchParams, useRouter } from 'next/navigation';
 import PromoteNodeContent from './promote-node-content';
+import LendingParametersContent from './lending-parameters-content';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn, formatDateSafe, formatCurrency } from '@/lib/utils';
 import Link from 'next/link';
@@ -79,6 +80,7 @@ const nodeConfig: Record<string, { title: string; description: string; icon: any
     transport: { title: "Fleet Node", description: "Configure vehicle assets, service lanes, and technical profile.", icon: Truck },
     'buy-sell': { title: "Marketplace Node", description: "Manage vehicle inventory, sales agreements, and communications.", icon: ShoppingCart },
     supplier: { title: "Supplier Shop", description: "Manage your digital storefront and product catalogue.", icon: Store },
+    finance: { title: "Finance Provider Profile", description: "Publish funding products, lending criteria, and specialist finance capabilities.", icon: Landmark },
     default: { title: "Industrial Node", description: "Manage your professional presence across the ecosystem.", icon: Landmark }
 };
 
@@ -150,8 +152,24 @@ export default function ShopContent() {
   };
 
   const isLoading = isUserLoading || isUserDataLoading || isCompanyLoading || arePermissionsLoading;
+    const hasTransactionMembership = Boolean(companyData?.transactionMembershipId);
 
   if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
+
+    if (!hasTransactionMembership) {
+        return (
+            <div className="text-center py-24 border-4 border-dashed rounded-3xl bg-muted/10">
+                <div className="bg-white p-6 rounded-full w-fit mx-auto mb-6 shadow-sm"><Lock className="h-12 w-12 text-muted-foreground opacity-50" /></div>
+                <h3 className="text-2xl font-black uppercase tracking-tight">Transaction Membership Required</h3>
+                <p className="mt-2 text-muted-foreground max-w-md mx-auto font-medium">Your Intelligence membership is active. Choose a transaction plan to create a business profile and list products, capacity, or deals.</p>
+                                <Button asChild size="lg" className="mt-10 h-14 px-10 font-black uppercase tracking-tight"><Link href={`/pricing?purpose=transaction&nodeType=${nodeType}`}>Choose Transaction Plan</Link></Button>
+            </div>
+        );
+    }
+
+    if (nodeType === 'finance') {
+        return <LendingParametersContent onboarding />;
+    }
 
   if (!!companyData?.shopId) {
     if (isEditing) {
@@ -282,12 +300,12 @@ export default function ShopContent() {
         <div className="bg-white p-6 rounded-full w-fit mx-auto mb-6 shadow-sm text-center">
             <config.icon className="h-12 w-12 text-muted-foreground opacity-30 mx-auto" />
         </div>
-        <h3 className="text-2xl font-black uppercase tracking-tight text-center">Initialize {config.title}</h3>
-        <p className="mt-2 text-muted-foreground max-w-sm mx-auto font-medium text-center">Connect your business to the digital grid. This initiates the handshake required to list deals and capacity.</p>
+        <h3 className="text-2xl font-black uppercase tracking-tight text-center">Create Your {config.title} Profile</h3>
+        <p className="mt-2 text-muted-foreground max-w-sm mx-auto font-medium text-center">Your Intelligence membership is active. Create an optional business profile to list products, capacity, and deals.</p>
         <div className="mt-10 text-center">
             <Button size="lg" className="h-16 px-16 text-lg font-black uppercase tracking-tight shadow-xl text-white" onClick={handleCreateShop} disabled={isCreating || !can('create', 'shop')}>
                 {isCreating ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <PlusCircle className="mr-2 h-6 w-6" />}
-                Activate {config.title}
+                Create Business Profile
             </Button>
         </div>
     </div>

@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
 
     const buyerCompanyRef = db.collection('companies').doc(buyerCompanyId);
     const sellerCompanyRef = db.collection('companies').doc(sellerCompanyId);
+    const salesIncentivesRef = db.collection('configuration').doc('salesIncentives');
     
     const activeAgreementQuery = db.collection(`companies/${sellerCompanyId}/shops/${items[0].shopId}/agreements`).where('status', '==', 'active').limit(1);
     
@@ -43,14 +44,19 @@ export async function POST(req: NextRequest) {
       if (!buyerCompanyDoc.exists || (buyerCompanyDoc.data()?.availableBalance || 0) < totalAmount) {
         throw new Error('Insufficient available funds.');
       }
+      const buyerCompanyData = buyerCompanyDoc.data()!;
+      const referrerRef = buyerCompanyData.referrerId ? db.collection('companies').doc(buyerCompanyData.referrerId) : null;
       
-      const sellerCompanyDoc = await transaction.get(sellerCompanyRef);
+      const [sellerCompanyDoc, mallCommissionsDoc, activeAgreementSnap, salesIncentivesDoc, referrerSnap] = await Promise.all([
+        transaction.get(sellerCompanyRef),
+        transaction.get(db.doc('configuration/mallCommissions')),
+        transaction.get(activeAgreementQuery),
+        transaction.get(salesIncentivesRef),
+        referrerRef ? transaction.get(referrerRef) : Promise.resolve(null),
+      ]);
       if (!sellerCompanyDoc.exists) {
           throw new Error('Seller company not found.');
       }
-      
-      const mallCommissionsDoc = await transaction.get(db.doc('configuration/mallCommissions'));
-      const activeAgreementSnap = await transaction.get(activeAgreementQuery);
       
       let platformDiscountPercent = 2.5; // Default commission
       if (!activeAgreementSnap.empty && activeAgreementSnap.docs[0].data().percentage > 0) {
@@ -61,6 +67,7 @@ export async function POST(req: NextRequest) {
       
       const platformCommission = totalAmount * (platformDiscountPercent / 100);
       const sellerAmount = totalAmount - platformCommission;
+      const productRecords: any[] = [];
 
       for (const item of items) {
           const privateProductRef = db.doc(`companies/${sellerCompanyId}/shops/${item.shopId}/products/${item.id}`);
@@ -74,6 +81,7 @@ export async function POST(req: NextRequest) {
           if (productData?.stock === undefined || productData.stock < item.quantity) {
               throw new Error(`Insufficient stock for ${item.name}. Available: ${productData?.stock || 0}, Requested: ${item.quantity}.`);
           }
+            productRecords.push(productData);
           transaction.update(privateProductRef, { stock: FieldValue.increment(-item.quantity) });
           transaction.update(publicProductRef, { stock: FieldValue.increment(-item.quantity) });
       }
@@ -124,6 +132,37 @@ export async function POST(req: NextRequest) {
             chartOfAccountsCode: '4220',
             companyId: sellerCompanyId,
         });
+
+        if (referrerRef && referrerSnap) {
+          const incentives = salesIncentivesDoc.data() || {};
+          const isIncentivesProduct = productRecords.some(product => product?.isIncentivesProduct === true);
+          const commissionRate = Number(isIncentivesProduct
+            ? incentives.incentivesProductCommissionPercent
+            : incentives.transactionCommissionPercent);
+
+          if (commissionRate > 0) {
+            const commissionAmount = Math.round(platformCommission * (commissionRate / 100) * 100) / 100;
+            const commissionRef = referrerRef.collection('commissionLedger').doc(platformTxRef.id);
+            const payoutEligibleAt = new Date();
+            payoutEligibleAt.setMonth(payoutEligibleAt.getMonth() + 1, 7);
+            const benefitType = isIncentivesProduct ? 'incentives_product_revenue_share' : 'transaction_revenue_share';
+
+            transaction.set(commissionRef, {
+              id: commissionRef.id,
+              type: benefitType,
+              status: 'accrued',
+              referredCompanyId: buyerCompanyId,
+              referredCompanyName: buyerCompanyData.companyName || 'Referred member',
+              grossAmount: totalAmount,
+              retainedPlatformRevenue: platformCommission,
+              commissionRate,
+              commissionAmount,
+              sourceTransactionId: platformTxRef.id,
+              earnedAt: FieldValue.serverTimestamp(),
+              payoutEligibleAt,
+            });
+          }
+        }
       }
     });
 

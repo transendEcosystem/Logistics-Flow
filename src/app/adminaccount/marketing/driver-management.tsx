@@ -23,6 +23,7 @@ import { PartnerTasksDialog } from './PartnerTasksDialog';
 import { PartnerOversightDialog } from './PartnerOversightDialog';
 import { downloadDataAsCSV, formatDateSafe, cn } from '@/lib/utils';
 import { EnrichPartnerButton } from './EnrichPartnerButton';
+import { CommercialDeepDiveButton } from './CommercialDeepDiveButton';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
@@ -257,6 +258,7 @@ export default function DriverManagement() {
       { id: 'actions', header: 'Actions', cell: ({ row }) => (
         <div className="flex justify-end items-center gap-1 text-left text-foreground text-foreground text-foreground">
           <EnrichPartnerButton partner={row.original} onUpdate={() => fetchData()} />
+          <CommercialDeepDiveButton partner={row.original} onUpdate={() => fetchData()} />
           <Button variant="ghost" size="icon" onClick={() => handleEngage(row.original)} title="Engage"><Send className="h-4 w-4 text-primary" /></Button>
           <AddCommunicationLogDialog 
               partnerId={row.original.id} 

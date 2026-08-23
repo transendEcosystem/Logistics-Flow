@@ -230,7 +230,7 @@ export default function DeveloperManagement() {
     }
   };
   
-  const baseUrl = 'https://studio--ecosystem-hub.us-central1.hosted.app';
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
   const inviteLink = dialogState.type === 'invite' && dialogState.data
     ? `${baseUrl}/join?email=${encodeURIComponent(dialogState.data.email)}&firstName=${encodeURIComponent(dialogState.data.firstName)}&lastName=${encodeURIComponent(dialogState.data.lastName)}${dialogState.data.phone ? `&phone=${encodeURIComponent(dialogState.data.phone)}` : ''}`
     : '';

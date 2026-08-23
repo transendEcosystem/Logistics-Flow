@@ -107,7 +107,7 @@ const tabs = [
 
 export default function InvestorEmails({ partner }: { partner?: any }) {
     const { user } = useUser();
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://studio--ecosystem-hub.us-central1.hosted.app';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://logisticsflow.co.za');
 
     const referralLink = React.useMemo(() => {
         if (!partner) return `${baseUrl}/join`;

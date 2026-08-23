@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { ShieldCheck, CheckCircle, Loader2, AlertCircle, Scale, FileText, Lock, Mail, Info, ArrowRight, Zap, Phone, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useDoc, useFirestore, useMemoFirebase, getClientSideAuthToken } from '@/firebase';
+import { useDoc, useFirestore, useMemoFirebase, getClientSideAuthToken, useUser } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import Link from 'next/link';
@@ -15,6 +15,7 @@ export default function OptInPage() {
     const params = useParams();
     const partnerId = params.partnerId as string;
     const firestore = useFirestore();
+    const { user, isUserLoading } = useUser();
     const { toast } = useToast();
     
     const [isProcessing, setIsProcessing] = useState(false);
@@ -36,11 +37,26 @@ export default function OptInPage() {
         return doc(firestore, 'leads', partnerId);
     }, [firestore, partnerId]);
 
+    const strategicPartnerRef = useMemoFirebase(() => {
+        if (!firestore || !partnerId) return null;
+        return doc(firestore, 'strategic_partners', partnerId);
+    }, [firestore, partnerId]);
+
     const { data: partner, isLoading: isPartnerLoading } = useDoc(partnerRef);
     const { data: lead, isLoading: isLeadLoading } = useDoc(leadRef);
+    const { data: strategicPartner, isLoading: isStrategicPartnerLoading } = useDoc(strategicPartnerRef);
 
-    const activeRecord = useMemo(() => partner || lead, [partner, lead]);
-    const isLoading = isPartnerLoading && isLeadLoading;
+    const activeRecord = useMemo(() => partner || lead || strategicPartner, [partner, lead, strategicPartner]);
+    const activeCollection = partner ? 'partners' : lead ? 'leads' : strategicPartner ? 'strategic_partners' : 'partners';
+    const isLoading = isPartnerLoading && isLeadLoading && isStrategicPartnerLoading;
+    const invitePath = `/opt-in/${partnerId}`;
+
+    useEffect(() => {
+        if (isUserLoading || !activeRecord || user) return;
+        const email = activeRecord.email || activeRecord.marketingManager?.email || '';
+        const emailParam = email ? `&email=${encodeURIComponent(email)}` : '';
+        window.location.replace(`/signin?redirect=${encodeURIComponent(invitePath)}${emailParam}`);
+    }, [activeRecord, invitePath, isUserLoading, user]);
 
     const canAccept = useMemo(() => {
         return marketingConsent && popiConsent && termsConsent;
@@ -52,8 +68,8 @@ export default function OptInPage() {
         try {
             const response = await fetch('/api/recordConsent', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ partnerId, status }),
+                headers: { 'Authorization': `Bearer ${await getClientSideAuthToken() || ''}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ partnerId, status, collection: activeCollection }),
             });
             const result = await response.json();
             if (!response.ok || !result.success) throw new Error(result.error || "Failed.");
@@ -73,7 +89,7 @@ export default function OptInPage() {
             const response = await fetch('/api/requestVerification', {
                 method: 'POST',
                 headers: { 'Authorization': token ? `Bearer ${token}` : '', 'Content-Type': 'application/json' },
-                body: JSON.stringify({ partnerId, collection: partner ? 'partners' : 'leads' }),
+                body: JSON.stringify({ partnerId, collection: activeCollection }),
             });
             const result = await response.json();
             if (result.success) {
@@ -87,7 +103,7 @@ export default function OptInPage() {
         }
     };
 
-    if (isLoading) return <div className="flex justify-center items-center min-h-screen"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
+    if (isLoading || isUserLoading || !user) return <div className="flex justify-center items-center min-h-screen"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
 
     if (!activeRecord && !isLoading) {
         return (
@@ -103,7 +119,7 @@ export default function OptInPage() {
         );
     }
 
-    if (completed) {
+    if (completed || activeRecord?.consentStatus === 'accepted') {
         const signupUrl = `/join?email=${encodeURIComponent(activeRecord?.email || '')}&firstName=${encodeURIComponent(activeRecord?.firstName || '')}&lastName=${encodeURIComponent(activeRecord?.lastName || '')}&ref=${partnerId}`;
         return (
             <div className="flex justify-center items-center min-h-screen p-4 text-left text-foreground">

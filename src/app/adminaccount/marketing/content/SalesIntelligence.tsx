@@ -26,7 +26,7 @@ export default function SalesIntelligence({ partner }: { partner?: any }) {
     const firstName = resolvedName.split(' ')[0];
     const companyName = partner?.companyName || 'your business';
     
-    const baseUrl = 'https://studio--ecosystem-hub.us-central1.hosted.app';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
     const signupLink = `${baseUrl}/join?email=${encodeURIComponent(partner?.email || '')}&firstName=${encodeURIComponent(firstName)}&ref=${partner?.id || 'SYSTEM'}`;
     const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partner?.id || 'anonymous'}`;
 

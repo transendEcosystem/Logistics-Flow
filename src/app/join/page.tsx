@@ -208,7 +208,15 @@ function JoinFormComponent() {
       setAuthActionInitiated(true);
       forceRefresh();
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Join Failed', description: error.message });
+      if (error?.code === 'auth/email-already-in-use') {
+        toast({
+          title: 'Account Already Exists',
+          description: 'This email already has a Logistics Flow account. Redirecting you to sign in.',
+        });
+        router.push(`/signin?redirect=${encodeURIComponent(redirectParam || '/account')}&email=${encodeURIComponent(values.email)}`);
+      } else {
+        toast({ variant: 'destructive', title: 'Join Failed', description: error.message });
+      }
       setIsLoading(false);
     }
   };
@@ -262,7 +270,10 @@ function JoinFormComponent() {
                 </ScrollArea>
             </CardContent>
             <CardFooter className="bg-slate-50 border-t p-6 flex justify-center">
-                <p className="text-xs text-muted-foreground italic text-center">Choosing a role allows the AI to curate the most profitable matches for your dashboard.</p>
+              <div className="space-y-2 text-center">
+                <p className="text-xs text-muted-foreground italic">Choosing a role allows the AI to curate the most profitable matches for your dashboard.</p>
+                <p className="text-sm font-medium text-foreground">Already a member? <Link href={`/signin?redirect=${encodeURIComponent(redirectParam || '/account')}${emailParam ? `&email=${encodeURIComponent(emailParam)}` : ''}`} className="font-bold text-primary underline underline-offset-4">Sign in here</Link></p>
+              </div>
             </CardFooter>
           </Card>
           </div>

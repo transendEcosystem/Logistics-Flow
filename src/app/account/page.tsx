@@ -12,6 +12,7 @@ import {
   SidebarMenuButton,
   SidebarFooter,
   SidebarInset,
+  SidebarTrigger,
   SidebarMenuSub,
   SidebarMenuSubItem,
   SidebarMenuSubButton,
@@ -43,7 +44,8 @@ import {
   Share2,
   Mic,
   Palette,
-  Target
+  Target,
+  TrendingUp
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -73,6 +75,9 @@ import MyFacilitiesContent from './facilities-content';
 import ShopContent from './shop-content';
 import TrustIdentityContent from './trust-identity-content';
 import HumanCapitalContent from './human-capital-content';
+import PerformanceContent from './performance-content';
+import EarningsContent from './earnings-content';
+import MallOnboardingContent from './mall-onboarding-content';
 
 // Mall Gate Components
 import { MallGate } from './malls/MallGate';
@@ -139,11 +144,14 @@ function AccountPageContent() {
       case 'activity': return <ActivityFeed />;
       case 'support-chat': return <SupportChatContent />;
       case 'network': return <NetworkContent />;
+      case 'performance': return <PerformanceContent />;
+      case 'earnings': return <EarningsContent />;
       case 'marketing-studio': return <MarketingStudio />;
       case 'my-facilities': return <MyFacilitiesContent />;
       case 'search-history': return <IntelligenceHistory />;
       case 'trust-identity': return <TrustIdentityContent />;
       case 'human-capital': return <HumanCapitalContent />;
+      case 'mall-onboarding': return <MallOnboardingContent />;
       case 'connect-loyalty': return <LoyaltyPlanPage />;
       case 'connect-rewards': return <RewardsPlanPage />;
       case 'connect-actions': return <ActionsPlanPage />;
@@ -166,6 +174,15 @@ function AccountPageContent() {
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Dashboard" isActive={activeView === 'dashboard'} onClick={() => navigate('dashboard')}><LayoutDashboard /><span>Dashboard</span></SidebarMenuButton>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="My Network" isActive={activeView === 'network'} onClick={() => navigate('network')}><Handshake /><span>My Network</span></SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Network Performance" isActive={activeView === 'performance'} onClick={() => navigate('performance')}><TrendingUp /><span>Network Performance</span></SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="ISA Earnings" isActive={activeView === 'earnings'} onClick={() => navigate('earnings')}><Wallet /><span>ISA Earnings</span></SidebarMenuButton>
+              </SidebarMenuItem>
           </SidebarGroup>
 
           {/* ASSOCIATE / CREATOR TOOLS SECTION */}
@@ -175,9 +192,6 @@ function AccountPageContent() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton tooltip="AI Studio" isActive={activeView === 'marketing-studio'} onClick={() => navigate('marketing-studio')}><Palette /><span>AI Marketing Studio</span></SidebarMenuButton>
-                    </SidebarMenuItem>
-                    <SidebarMenuItem>
-                        <SidebarMenuButton tooltip="My Network" isActive={activeView === 'network'} onClick={() => navigate('network')}><Handshake /><span>My Network</span></SidebarMenuButton>
                     </SidebarMenuItem>
                     <SidebarMenuItem>
                         <SidebarMenuButton tooltip="Human Capital" isActive={activeView === 'human-capital'} onClick={() => navigate('human-capital')}><Users /><span>Human Capital logs</span></SidebarMenuButton>
@@ -196,6 +210,8 @@ function AccountPageContent() {
                         <SidebarMenuSub>
                             <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-loads'} onClick={() => navigate('mall-loads')}>Search Loads</SidebarMenuSubButton></SidebarMenuSubItem>
                             <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'shop' && nodeType === 'loads'} onClick={() => navigate('shop', 'loads')}>My Brokerage Hub</SidebarMenuSubButton></SidebarMenuSubItem>
+                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'loads' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=loads&role=buyer')}>Carrier Capacity Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
+                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'loads' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=mall-onboarding&mall=loads&role=provider')}>Load Provider Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
                         </SidebarMenuSub>
                     </SidebarMenuItem>
 
@@ -205,6 +221,8 @@ function AccountPageContent() {
                         <SidebarMenuSub>
                             <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-warehouse'} onClick={() => navigate('mall-warehouse')}>Source Storage</SidebarMenuSubButton></SidebarMenuSubItem>
                             <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'shop' && nodeType === 'warehouse'} onClick={() => navigate('shop', 'warehouse')}>My Warehouse Hub</SidebarMenuSubButton></SidebarMenuSubItem>
+                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'warehouse' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=warehouse&role=buyer')}>Storage Requirement Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
+                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'warehouse' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=mall-onboarding&mall=warehouse&role=provider')}>Warehouse Capacity Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
                         </SidebarMenuSub>
                     </SidebarMenuItem>
 
@@ -214,6 +232,8 @@ function AccountPageContent() {
                         <SidebarMenuSub>
                             <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-transporter'} onClick={() => navigate('mall-transporter')}>Source Capacity</SidebarMenuSubButton></SidebarMenuSubItem>
                             <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'shop' && nodeType === 'transport'} onClick={() => navigate('shop', 'transport')}>My Fleet Node</SidebarMenuSubButton></SidebarMenuSubItem>
+                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'transporter' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=transporter&role=buyer')}>Transport Requirement Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
+                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'transporter' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=mall-onboarding&mall=transporter&role=provider')}>Fleet & Route Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
                         </SidebarMenuSub>
                     </SidebarMenuItem>
 
@@ -223,17 +243,27 @@ function AccountPageContent() {
                         <SidebarMenuSub>
                             <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-supplier'} onClick={() => navigate('mall-supplier')}>Registry Search</SidebarMenuSubButton></SidebarMenuSubItem>
                             <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'shop' && nodeType === 'supplier'} onClick={() => navigate('shop', 'supplier')}>My Shop Profile</SidebarMenuSubButton></SidebarMenuSubItem>
+                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'supplier' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=supplier&role=buyer')}>Procurement Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
+                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'supplier' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=mall-onboarding&mall=supplier&role=provider')}>Supplier Capability Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
                         </SidebarMenuSub>
                     </SidebarMenuItem>
 
                     {/* FINANCE FLOW */}
                     <SidebarMenuItem>
                         <SidebarMenuButton tooltip="Finance Mall" isActive={activeView === 'mall-finance'} onClick={() => navigate('mall-finance')}><Landmark /><span>Finance Mall</span></SidebarMenuButton>
+                      <SidebarMenuSub>
+                        <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'finance' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=shop&nodeType=finance')}>Finance Provider Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
+                        <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'finance' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=finance&role=buyer')}>Borrower Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
+                      </SidebarMenuSub>
                     </SidebarMenuItem>
 
                     {/* MARKETPLACE */}
                     <SidebarMenuItem>
                         <SidebarMenuButton tooltip="Marketplace" isActive={activeView === 'mall-buy-sell'} onClick={() => navigate('mall-buy-sell')}><ShoppingCart /><span>Buy & Sell Mall</span></SidebarMenuButton>
+                      <SidebarMenuSub>
+                        <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'buy-sell' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=buy-sell&role=buyer')}>Asset Buyer Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
+                        <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'buy-sell' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=mall-onboarding&mall=buy-sell&role=provider')}>Asset Seller Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
+                      </SidebarMenuSub>
                     </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroup>
@@ -274,6 +304,7 @@ function AccountPageContent() {
       </Sidebar>
       <SidebarInset>
         <div className="p-4 md:p-8 text-left text-foreground">
+            <SidebarTrigger className="md:hidden mb-4" />
             <Suspense fallback={<div className="flex justify-center items-center py-20"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>}>
                 {renderContent()}
             </Suspense>

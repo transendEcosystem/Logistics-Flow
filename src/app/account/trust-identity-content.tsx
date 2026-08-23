@@ -1,14 +1,14 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { 
     Fingerprint, ShieldCheck, Scale, FileText, Download, AlertTriangle, 
     Trash2, Loader2, CheckCircle, Info, ExternalLink, MessageSquareQuote,
-    Lock, Ban, ShieldAlert, UserCheck, Smartphone
+    Lock, Ban, ShieldAlert, UserCheck, Smartphone, KeyRound
 } from 'lucide-react';
-import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useUser, useFirestore, useCollection, useMemoFirebase, getClientSideAuthToken } from '@/firebase';
 import { collection, query, where, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +29,46 @@ export default function TrustIdentityContent() {
     const firestore = useFirestore();
     const { toast } = useToast();
     const [isProcessing, setIsProcessing] = useState(false);
+    const [devices, setDevices] = useState<any[]>([]);
+    const [isDevicesLoading, setIsDevicesLoading] = useState(false);
+
+    const loadDevices = async () => {
+        const token = await getClientSideAuthToken();
+        if (!token) return;
+        setIsDevicesLoading(true);
+        try {
+            const response = await fetch('/api/auth/devices', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+            const result = await response.json();
+            if (result.success) setDevices(result.devices || []);
+        } finally {
+            setIsDevicesLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!user?.uid) return;
+        const storageKey = 'logistics-flow-device-id';
+        let deviceId = localStorage.getItem(storageKey);
+        if (!deviceId) {
+            deviceId = crypto.randomUUID();
+            localStorage.setItem(storageKey, deviceId);
+        }
+        getClientSideAuthToken().then((token) => {
+            if (!token) return;
+            fetch('/api/auth/devices', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ deviceId, label: `${navigator.platform || 'Browser'} device` }),
+            }).then(() => loadDevices()).catch(() => undefined);
+        });
+    }, [user?.uid]);
+
+    const revokeDevice = async (deviceId: string) => {
+        const token = await getClientSideAuthToken();
+        if (!token) return;
+        await fetch(`/api/auth/devices?deviceId=${encodeURIComponent(deviceId)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+        setDevices((current) => current.filter((device) => device.id !== deviceId));
+    };
 
     // 1. FETCH REVIEWS & VOUCHES
     const reviewsQuery = useMemoFirebase(() => {
@@ -180,6 +220,9 @@ export default function TrustIdentityContent() {
                             <TabsTrigger value="popi" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
                                 <FileText className="h-3.5 w-3.5" /> Data Profile (POPI)
                             </TabsTrigger>
+                            <TabsTrigger value="security" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
+                                <Lock className="h-3.5 w-3.5" /> Security
+                            </TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="reputation" className="mt-8 space-y-6 text-left">
@@ -234,6 +277,29 @@ export default function TrustIdentityContent() {
                                         Download My Data Profile (.json)
                                     </Button>
                                 </CardContent>
+                            </Card>
+                        </TabsContent>
+
+                        <TabsContent value="security" className="mt-8 space-y-6 text-left">
+                            <Card className="border-none shadow-xl bg-white text-left">
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-xl"><Smartphone className="h-5 w-5 text-primary" /> Trusted Devices</CardTitle>
+                                    <CardDescription>Review browsers that have accessed this account. IP and browser details are security signals, not device identity.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    {isDevicesLoading ? <Loader2 className="animate-spin h-5 w-5 text-primary" /> : devices.length === 0 ? <p className="text-sm text-muted-foreground">No device sessions recorded yet.</p> : devices.map((device) => (
+                                        <div key={device.id} className="flex items-center justify-between gap-4 border rounded-lg p-3">
+                                            <div className="min-w-0">
+                                                <p className="font-bold text-sm truncate">{device.label}</p>
+                                                <p className="text-xs text-muted-foreground truncate">Last seen {new Date(device.lastSeenAt).toLocaleString()} | IP signal: {device.lastIp}</p>
+                                            </div>
+                                            <Button variant="ghost" size="icon" title="Revoke device" onClick={() => revokeDevice(device.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                        </div>
+                                    ))}
+                                </CardContent>
+                            </Card>
+                            <Card className="border border-primary/20 bg-primary/5">
+                                <CardContent className="p-5 flex gap-3"><KeyRound className="h-5 w-5 text-primary shrink-0" /><div><p className="font-bold">Authenticator protection</p><p className="text-sm text-muted-foreground">Authenticator-app MFA will be enabled after Firebase Identity Platform MFA is configured. The security control will not be presented as active before then.</p></div></CardContent>
                             </Card>
                         </TabsContent>
                     </Tabs>

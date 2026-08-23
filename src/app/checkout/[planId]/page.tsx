@@ -42,6 +42,8 @@ function CheckoutComponent() {
   
   const planId = params.planId as string;
   const cycle = searchParams.get('cycle') || 'monthly';
+    const purchasePurpose = searchParams.get('purpose');
+    const requestedNodeType = searchParams.get('nodeType');
   
   const isConnectPlan = ['loyalty', 'rewards', 'actions'].includes(planId);
 
@@ -138,7 +140,9 @@ function CheckoutComponent() {
             companyId: companyData.id,
             amount: planDisplay.price,
             description: `Plan Activation: ${planDisplay.name} (${cycle})`,
-            planType: planDisplay.type === 'earning' || planDisplay.type === 'node' ? 'node' : (planDisplay.type === 'connect' ? 'connect' : 'membership'), 
+            planType: purchasePurpose === 'transaction' || planDisplay.type === 'access'
+                ? 'transaction'
+                : (planDisplay.type === 'earning' || planDisplay.type === 'node' ? 'node' : (planDisplay.type === 'connect' ? 'connect' : 'membership')), 
             planId: planId,
             cycle: cycle,
         };
@@ -154,12 +158,12 @@ function CheckoutComponent() {
             throw new Error(result.error || 'Activation failed.');
         }
 
-        toast({
-            title: 'Activation Successful!',
-            description: `Your ${planDisplay.name} is now active. Opening setup wizard...`,
-        });
-        
-        router.push('/account?view=shop&subview=wizard');
+        toast({ title: 'Activation Successful!', description: `Your ${planDisplay.name} is now active.` });
+        const isTransactionPurchase = purchasePurpose === 'transaction' || planDisplay.type === 'access';
+        const shopDestination = requestedNodeType
+            ? `/account?view=shop&nodeType=${encodeURIComponent(requestedNodeType)}`
+            : '/account?view=shop&subview=wizard';
+        router.push(isTransactionPurchase ? shopDestination : '/account');
 
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Process Failed', description: error.message });

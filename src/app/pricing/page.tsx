@@ -4,12 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Check, ArrowRight, Loader2, Zap, ShieldCheck, Database, Search, LayoutDashboard, ShoppingBasket, Star, Truck, ShoppingCart, Landmark, Store, PackageSearch, AlertCircle, Lock, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query } from 'firebase/firestore';
 import { cn, formatCurrency } from '@/lib/utils';
 import { Badge } from "@/components/ui/badge";
 import { Separator } from '@/components/ui/separator';
 import * as React from 'react';
+import { Suspense } from 'react';
 import featuresData from '@/lib/features.json';
 
 const formatLimit = (val: number | undefined | null) => {
@@ -18,9 +20,14 @@ const formatLimit = (val: number | undefined | null) => {
     return val.toLocaleString();
 };
 
-export default function MembershipPage() {
+function MembershipPageContent() {
   const { user } = useUser();
   const firestore = useFirestore();
+    const searchParams = useSearchParams();
+    const transactionPurpose = searchParams.get('purpose') === 'transaction';
+    const nodeType = searchParams.get('nodeType');
+    const transactionQuery = new URLSearchParams({ purpose: 'transaction' });
+    if (nodeType) transactionQuery.set('nodeType', nodeType);
 
   const membershipsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -39,7 +46,7 @@ export default function MembershipPage() {
             if (p.isActive === false) return false;
             const isCore = coreIds.includes(p.id?.toLowerCase());
             const isAccessType = p.type === 'access';
-            return isCore || isAccessType;
+            return transactionPurpose ? isAccessType : (isCore || isAccessType);
         })
         .sort((a,b) => (a.price || 0) - (b.price || 0));
   }, [dbPlans]);
@@ -53,11 +60,9 @@ export default function MembershipPage() {
       <div className="container mx-auto px-4 py-16 md:py-24 text-left">
         
         <div className="text-center max-w-3xl mx-auto mb-20 space-y-4">
-          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20 font-bold uppercase tracking-widest px-4 py-1">Node Access Control</Badge>
-          <h1 className="text-4xl md:text-7xl font-black font-headline tracking-tight text-foreground uppercase leading-none text-center">Activate Your <br/><span className="text-primary">Ecosystem Node</span>.</h1>
-          <p className="mt-6 text-xl text-muted-foreground leading-relaxed font-medium text-center">
-            Choose the access tier that matches your monthly transaction volume. Secure your digital standing in the grid.
-          </p>
+          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20 font-bold uppercase tracking-widest px-4 py-1">{transactionPurpose ? 'Transaction Membership' : 'Node Access Control'}</Badge>
+          <h1 className="text-4xl md:text-7xl font-black font-headline tracking-tight text-foreground uppercase leading-none text-center">{transactionPurpose ? <>Choose Your <br/><span className="text-primary">Transaction Plan</span>.</> : <>Activate Your <br/><span className="text-primary">Ecosystem Node</span>.</>}</h1>
+                    <p className="mt-6 text-xl text-muted-foreground leading-relaxed font-medium text-center">{transactionPurpose ? 'A transaction membership unlocks your business profile, listings, and commercial node tools. Intelligence remains a separate membership.' : 'Choose the access tier that matches your monthly transaction volume. Secure your digital standing in the grid.'}</p>
         </div>
 
         {isLoading ? (
@@ -138,7 +143,7 @@ export default function MembershipPage() {
                         
                         <CardFooter className="p-8 bg-slate-50 border-t text-left">
                             <Button asChild className={cn("w-full h-14 font-black uppercase tracking-widest shadow-md group text-white", !plan.isPopular && "bg-slate-800 hover:bg-slate-700")}>
-                                <Link href={`/checkout/${plan.id}`}>
+                                <Link href={`/checkout/${plan.id}${transactionPurpose ? `?${transactionQuery.toString()}` : ''}`}>
                                     Activate Access <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                                 </Link>
                             </Button>
@@ -174,4 +179,8 @@ export default function MembershipPage() {
       </div>
     </div>
   );
+}
+
+export default function MembershipPage() {
+    return <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>}><MembershipPageContent /></Suspense>;
 }

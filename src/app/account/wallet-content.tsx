@@ -138,6 +138,9 @@ export default function WalletContent() {
     const { toast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState<string>('');
+    const [walletOverview, setWalletOverview] = useState<{ transactions: any[]; pendingPayments: any[] } | null>(null);
+    const [isLoadingOverview, setIsLoadingOverview] = useState(true);
+    const [overviewError, setOverviewError] = useState<any>(null);
 
     const userDocRef = useMemoFirebase(() => {
         if (!firestore || !user) return null;
@@ -153,30 +156,32 @@ export default function WalletContent() {
     }, [firestore, companyId]);
     const { data: companyData, isLoading: isCompanyLoading, forceRefresh: forceRefreshCompany } = useDoc(companyDocRef);
 
-    const transactionsQuery = useMemoFirebase(() => {
-        if (!firestore || !companyId) return null;
-        return query(
-            collection(firestore, `companies/${companyId}/transactions`), 
-            orderBy('date', 'desc'), 
-            limit(5)
-        );
-    }, [firestore, companyId]);
+    const loadWalletOverview = useCallback(async () => {
+        if (!user) return;
+        setIsLoadingOverview(true);
+        setOverviewError(null);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            const response = await fetch('/api/getWalletOverview', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Unable to load wallet data.');
+            setWalletOverview({ transactions: result.transactions || [], pendingPayments: result.pendingPayments || [] });
+        } catch (error: any) {
+            setOverviewError(error);
+        } finally {
+            setIsLoadingOverview(false);
+        }
+    }, [user]);
 
-    const pendingPaymentsQuery = useMemoFirebase(() => {
-        if (!firestore || !companyId) return null;
-        return query(
-            collection(firestore, `companies/${companyId}/walletPayments`),
-            orderBy('createdAt', 'desc'),
-            limit(5)
-        );
-    }, [firestore, companyId]);
+    useEffect(() => { loadWalletOverview(); }, [loadWalletOverview]);
 
     
     const { data: techPricing, isLoading: isTechPricingLoading } = useConfig<{ eftTopUpFee?: number }>('techPricing');
     const { data: bankDetails, isLoading: isBankDetailsLoading } = useConfig<any>('bankDetails');
 
-    const { data: transactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection(transactionsQuery);
-    const { data: pendingPayments, isLoading: isLoadingPayments, error: paymentsError, forceRefresh: forceRefreshPayments } = useCollection(pendingPaymentsQuery);
+    const transactions = walletOverview?.transactions || [];
+    const pendingPayments = walletOverview?.pendingPayments || [];
     
     const { forceRefresh: forceRefreshPayouts } = useCollection(useMemoFirebase(() => {
         if (!firestore || !companyId) return null;
@@ -188,8 +193,8 @@ export default function WalletContent() {
     
     const availableBalance = companyData?.availableBalance || 0;
 
-    const isLoading = isUserLoading || isUserDocLoading || isCompanyLoading || isLoadingTransactions || isLoadingPayments || isTechPricingLoading || isBankDetailsLoading;
-    const error = transactionsError || paymentsError;
+    const isLoading = isUserLoading || isUserDocLoading || isCompanyLoading || isLoadingOverview || isTechPricingLoading || isBankDetailsLoading;
+    const error = overviewError;
     
     const handlePayoutRequestSuccess = () => {
         forceRefreshCompany();
@@ -240,7 +245,7 @@ export default function WalletContent() {
 
             toast({ title: "Proof Submitted!", description: "An admin will review and credit your wallet shortly."});
             setPaymentAmount('');
-            forceRefreshPayments();
+            loadWalletOverview();
         } catch (e: any) {
             toast({ variant: 'destructive', title: "Submission Failed", description: e.message });
         } finally {

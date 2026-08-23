@@ -12,7 +12,7 @@ const EmailTemplate = ({ subject, content, partner, referralLink }: { subject: s
         const name = partner?.firstName || (partner?.contactPerson ? partner.contactPerson.split(' ')[0] : 'Partner');
         const company = partner?.companyName || '[Your Company]';
         
-        const baseUrl = 'https://studio--ecosystem-hub.us-central1.hosted.app';
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
         text = text.replace(/\[Partner Name\]/g, name);
         text = text.replace(/\[Name\]/g, name);
         text = text.replace(/\[Lead Name\]/g, name);
@@ -111,7 +111,7 @@ const tabs = [
 
 export default function PartnerEmails({ partner }: { partner?: any }) {
     const { user } = useUser();
-    const baseUrl = 'https://studio--ecosystem-hub.us-central1.hosted.app';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
     
     const referralLink = React.useMemo(() => {
         if (!partner) return `${baseUrl}/join`;

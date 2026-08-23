@@ -21,7 +21,7 @@ const EmailTemplate = ({ subject, content, partner, referralLink }: { subject: s
         text = text.replace(/\[Referral Link\]/g, referralLink);
         
         // Ensure the opt-in link carries the associate role for automated tagging
-        const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://studio--ecosystem-hub.us-central1.hosted.app';
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://logisticsflow.co.za');
         const optInUrl = `${baseUrl}/opt-in/${partner?.id || 'TEST'}?role=associate`;
         
         text = text.replace(/\[Opt-in Link\]/g, optInUrl);
@@ -157,7 +157,7 @@ const tabs = [
 
 export default function AssociateEmails({ partner }: { partner?: any }) {
     const { user } = useUser();
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://studio--ecosystem-hub.us-central1.hosted.app';
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://logisticsflow.co.za');
 
     const referralLink = React.useMemo(() => {
         if (!partner) return `${baseUrl}/join?role=associate`;

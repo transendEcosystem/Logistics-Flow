@@ -27,8 +27,9 @@ export default function TheWedge({ partner, audience }: { partner?: any, audienc
     const firstName = resolvedName.split(' ')[0];
     const companyName = partner?.companyName || 'your business';
     const aud = (audience || '').toLowerCase();
-    const pixelUrl = `https://studio--ecosystem-hub.us-central1.hosted.app/api/trackEmailOpen/${partner?.id || 'anonymous'}`;
-    const optInLink = `https://studio--ecosystem-hub.us-central1.hosted.app/opt-in/${partner?.id || 'TEST'}`;
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
+    const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partner?.id || 'anonymous'}`;
+    const optInLink = `${baseUrl}/opt-in/${partner?.id || 'TEST'}`;
 
     const painPoint = aud === 'transporter' ? 'empty return miles' : 'stagnant sales cycles';
     const specificGap = aud === 'transporter' ? 'RC1 Fleet Verification' : 'Product Node Synchronization';

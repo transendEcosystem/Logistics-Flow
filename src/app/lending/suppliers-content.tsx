@@ -17,6 +17,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { cn, fetchFromAdminAPI } from '@/lib/utils';
 import { EditSupplierWizard } from './edit-supplier';
 import { EnrichPartnerButton } from '@/app/adminaccount/marketing/EnrichPartnerButton';
+import { CommercialDeepDiveButton } from '@/app/adminaccount/marketing/CommercialDeepDiveButton';
 import { PartnerOversightDialog } from '@/app/adminaccount/marketing/PartnerOversightDialog';
 import { AddCommunicationLogDialog } from '@/app/adminaccount/marketing/AddCommunicationLogDialog';
 import { CommunicationLogDialog } from '@/app/adminaccount/marketing/CommunicationLogDialog';
@@ -144,6 +145,7 @@ export default function SuppliersContent() {
         { id: 'actions', header: <div className="text-right">Audit</div>, cell: ({ row }) => (
             <div className="flex justify-end items-center gap-1 text-left text-foreground text-foreground">
                 <EnrichPartnerButton partner={row.original} onUpdate={forceRefresh} />
+                <CommercialDeepDiveButton partner={row.original} onUpdate={forceRefresh} />
                 <AddCommunicationLogDialog partnerId={row.original.id} collection="lendingSuppliers" onLogAdded={forceRefresh} />
                 <CommunicationLogDialog partnerId={row.original.id} partnerName={row.original.name} />
                 <PartnerOversightDialog partner={row.original} onUpdate={forceRefresh} />

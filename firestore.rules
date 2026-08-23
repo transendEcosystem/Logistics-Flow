@@ -88,6 +88,13 @@ service cloud.firestore {
       match /{allSub=**} { allow read, write: if isAdmin(); }
     }
 
+    match /strategic_partners/{partnerId} {
+      allow get: if true;
+      allow list: if isSignedIn();
+      allow write: if isAdmin();
+      match /{allSub=**} { allow read, write: if isAdmin(); }
+    }
+
     match /configuration/{allPaths=**} {
       allow read: if true;
       allow write: if isAdmin();
@@ -112,6 +119,39 @@ service cloud.firestore {
       allow get, list, read: if isSignedIn(); 
       allow create: if isSignedIn();
       allow update, delete: if isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/companies/$(companyId)) && get(/databases/$(database)/documents/companies/$(companyId)).data.get('ownerId', '') == request.auth.uid);
+
+      // Members can see their own wallet history and pending EFT requests.
+      // Wallet balances and allocation records remain administrator-controlled.
+      match /transactions/{transactionId} {
+        allow read: if isAdmin() || isMember(companyId);
+        allow write: if isAdmin();
+      }
+
+      match /walletPayments/{paymentId} {
+        allow read: if isAdmin() || isMember(companyId);
+        allow write: if isAdmin();
+      }
+
+      match /supportMessages/{messageId} {
+        allow read: if isAdmin() || (
+          isSignedIn() && (
+            get(/databases/$(database)/documents/companies/$(companyId)).data.get('ownerId', '') == request.auth.uid ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('companyId', '') == companyId
+          )
+        );
+        allow create: if isAdmin() || (
+          isSignedIn() && (
+            get(/databases/$(database)/documents/companies/$(companyId)).data.get('ownerId', '') == request.auth.uid ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('companyId', '') == companyId
+          )
+        );
+        allow update: if isAdmin() || (
+          isSignedIn() && (
+            get(/databases/$(database)/documents/companies/$(companyId)).data.get('ownerId', '') == request.auth.uid ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('companyId', '') == companyId
+          )
+        );
+      }
       
       match /{allSub=**} {
         allow read, list, write: if isSignedIn() && (isAdmin() || isMember(companyId));

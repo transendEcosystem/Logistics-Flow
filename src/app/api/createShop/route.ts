@@ -33,10 +33,20 @@ export async function POST(req: NextRequest) {
         const companyDoc = await companyRef.get();
         const companyData = companyDoc.data();
 
+        if (!companyData?.transactionMembershipId) {
+            return NextResponse.json({ success: false, error: 'A transaction membership is required before creating a business profile.' }, { status: 403 });
+        }
+
         const isTransporter = companyData?.shopType === 'transporter' || userData?.declaredPosition === 'transporter';
 
         // Fetch loyalty settings
-        const loyaltyConfigDoc = await db.collection('configuration').doc('loyaltySettings').get();
+        const [transactionPlanDoc, loyaltyConfigDoc] = await Promise.all([
+            db.collection('memberships').doc(companyData.transactionMembershipId).get(),
+            db.collection('configuration').doc('loyaltySettings').get(),
+        ]);
+        if (!transactionPlanDoc.exists || transactionPlanDoc.data()?.isActive === false || !transactionPlanDoc.data()?.features?.includes('shop:digital_branch')) {
+            return NextResponse.json({ success: false, error: 'The selected transaction membership does not include business profile access.' }, { status: 403 });
+        }
         const loyaltyConfig = loyaltyConfigDoc.data();
         
         // Differentiate points based on role

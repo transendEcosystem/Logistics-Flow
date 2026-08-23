@@ -17,16 +17,21 @@ async function processPlanPurchase(db: FirebaseFirestore.Firestore, adminUid: st
 
     const companyRef = db.doc(`companies/${companyId}`);
     const adPricingRef = db.doc('configuration/adPricing');
+    const salesIncentivesRef = db.doc('configuration/salesIncentives');
     
     return await db.runTransaction(async (transaction) => {
-        const [companySnap, adPricingSnap] = await Promise.all([
-            transaction.get(companyRef),
-            transaction.get(adPricingRef)
-        ]);
-
+        const companySnap = await transaction.get(companyRef);
         if (!companySnap.exists) throw new Error("Member profile not found.");
-        
+
         const companyData = companySnap.data()!;
+        const referrerRef = planType === 'membership' && companyData.referrerId
+            ? db.doc(`companies/${companyData.referrerId}`)
+            : null;
+        const [adPricingSnap, salesIncentivesSnap, referrerSnap] = await Promise.all([
+            transaction.get(adPricingRef),
+            transaction.get(salesIncentivesRef),
+            referrerRef ? transaction.get(referrerRef) : Promise.resolve(null),
+        ]);
         const currentBalance = Number(companyData?.availableBalance || 0);
 
         // 1. AD-SPECIFIC PRICING VALIDATION
@@ -81,6 +86,33 @@ async function processPlanPurchase(db: FirebaseFirestore.Firestore, adminUid: st
             companyId: companyId,
         });
 
+        if (planType === 'membership' && referrerRef && referrerSnap) {
+            const referrerData = referrerSnap.data();
+            const commissionRate = Number(salesIncentivesSnap.data()?.membershipCommissionPercent ?? 30);
+
+            if (commissionRate > 0) {
+                const commissionAmount = Math.round(amount * (commissionRate / 100) * 100) / 100;
+                const commissionRef = referrerRef.collection('commissionLedger').doc(platformTransactionRef.id);
+                const payoutEligibleAt = new Date();
+                payoutEligibleAt.setMonth(payoutEligibleAt.getMonth() + 1, 7);
+
+                transaction.set(commissionRef, {
+                    id: commissionRef.id,
+                    type: 'membership_revenue_share',
+                    status: 'accrued',
+                    referredCompanyId: companyId,
+                    referredCompanyName: companyData.companyName || 'Referred member',
+                    membershipId: planId,
+                    grossAmount: amount,
+                    commissionRate,
+                    commissionAmount,
+                    sourceTransactionId: platformTransactionRef.id,
+                    earnedAt: FieldValue.serverTimestamp(),
+                    payoutEligibleAt,
+                });
+            }
+        }
+
         // 7. APPLY ACTIVATION LOGIC
         if (planType === 'ad_broadcast') {
             const adRef = companyRef.collection('adCampaigns').doc();
@@ -103,9 +135,17 @@ async function processPlanPurchase(db: FirebaseFirestore.Firestore, adminUid: st
             if (cycle === 'annual') nextBilling.setFullYear(nextBilling.getFullYear() + 1);
             else nextBilling.setMonth(nextBilling.getMonth() + 1);
 
-            if (planType === 'membership' || planId === 'intelligence') {
+            if (planType === 'transaction') {
+                transaction.update(companyRef, {
+                    transactionMembershipId: planId,
+                    transactionBillingCycle: cycle || 'monthly',
+                    transactionNextBillingDate: nextBilling,
+                    status: 'active',
+                });
+            } else if (planType === 'membership' || planId === 'intelligence') {
                 transaction.update(companyRef, {
                     membershipId: planId,
+                    intelligenceMembershipId: planId,
                     billingCycle: cycle || 'monthly',
                     nextBillingDate: nextBilling,
                     status: 'active', 
