@@ -40,6 +40,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ShieldAlert } from 'lucide-react';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { PermissionsDialog } from '@/app/backend/permissions-content';
 
 const staffFormSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
@@ -82,6 +83,7 @@ function AddStaffDialog({ companyId, onStaffAdded, canCreate }: { companyId: str
         
         const staffData = {
           ...values,
+          email: values.email.toLowerCase(),
           companyId: companyId, 
           status: 'unconfirmed',
         };
@@ -132,7 +134,7 @@ function AddStaffDialog({ companyId, onStaffAdded, canCreate }: { companyId: str
 
   const copyInviteLink = () => {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
-    const signupUrl = `${baseUrl}/join?email=${encodeURIComponent(newUserInfo.email)}&firstName=${encodeURIComponent(newUserInfo.firstName)}&lastName=${encodeURIComponent(newUserInfo.lastName)}`;
+    const signupUrl = `${baseUrl}/join?email=${encodeURIComponent(newUserInfo.email)}&firstName=${encodeURIComponent(newUserInfo.firstName)}&lastName=${encodeURIComponent(newUserInfo.lastName)}&companyId=${encodeURIComponent(companyId)}`;
     navigator.clipboard.writeText(signupUrl);
     toast({
         title: 'Sign-up Link Copied!',
@@ -390,6 +392,7 @@ export default function StaffContent({ companyId: propCompanyId }: { companyId?:
         cell: ({ row }) => (
             <div className="text-right">
                 <StaffActionMenu staffMember={row.original} onUpdate={forceRefresh} onEdit={() => handleEdit(row.original)} />
+                {canCreateStaff && <PermissionsDialog staffMember={row.original} onSave={forceRefresh} />}
             </div>
         ),
     },
@@ -412,9 +415,9 @@ export default function StaffContent({ companyId: propCompanyId }: { companyId?:
           <CardHeader className="flex flex-row items-center justify-between">
               <div>
                   <CardTitle className="text-2xl font-bold flex items-center gap-2">
-                      <Users /> Staff Management
+                      <Users /> Staff, Roles & Permissions
                   </CardTitle>
-                  <CardDescription>Add, edit, and manage permissions for all staff members in your company.</CardDescription>
+                    <CardDescription>Add staff profiles, assign roles, and manage permissions for your company team.</CardDescription>
               </div>
               <TooltipProvider>
                 <Tooltip>

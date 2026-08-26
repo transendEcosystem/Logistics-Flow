@@ -39,6 +39,36 @@ export async function GET(req: NextRequest) {
       return serialize({ id: entry.id, path: entry.ref.path, ownerCompanyId: path[path.indexOf('companies') + 1], ...entry.data() });
     }).sort((left: any, right: any) => timestampValue(right.earnedAt) - timestampValue(left.earnedAt));
     const revenue = revenueSnapshot.docs.map(entry => serialize({ id: entry.id, ...entry.data() }));
+    const commissionRevenue = {
+      intelligence: commissions.filter((entry: any) => entry.type === 'membership_revenue_share').reduce((sum: number, entry: any) => sum + Number(entry.grossAmount || 0), 0),
+      transaction: commissions.filter((entry: any) => entry.type === 'transaction_revenue_share').reduce((sum: number, entry: any) => sum + Number(entry.retainedPlatformRevenue || 0), 0),
+      products: commissions.filter((entry: any) => entry.type === 'incentives_product_revenue_share').reduce((sum: number, entry: any) => sum + Number(entry.retainedPlatformRevenue || 0), 0),
+    };
+    const transactionRevenue = revenue.reduce((totals: any, entry: any) => {
+      const amount = Number(entry.amount || entry.retainedPlatformRevenue || 0);
+      const type = String(entry.type || entry.revenueType || entry.category || '').toLowerCase();
+      if (type.includes('reward_retention') || type.includes('cashback_retention')) totals.supplierRewardRetention += amount;
+      else if (type.includes('finance_origination')) totals.financeOriginationCommission += amount;
+      else if (type.includes('load_brokerage')) totals.loadBrokerageCommission += amount;
+      else if (type.includes('buy_sell_brokerage') || type.includes('vehicle_brokerage')) totals.buySellBrokerageCommission += amount;
+      else if (type.includes('brokerage') || type.includes('origination')) totals.brokerageCommission += amount;
+      else if (type.includes('product') || type.includes('incentive')) totals.products += amount;
+      else if (type.includes('transaction') || type.includes('mall') || type.includes('commission')) totals.transaction += amount;
+      else if (type.includes('membership') || type.includes('intelligence') || type.includes('access')) totals.intelligence += amount;
+      else totals.unclassified += amount;
+      return totals;
+    }, { intelligence: 0, transaction: 0, products: 0, supplierRewardRetention: 0, financeOriginationCommission: 0, loadBrokerageCommission: 0, buySellBrokerageCommission: 0, brokerageCommission: 0, unclassified: 0 });
+    const actualRevenue = {
+      intelligence: Math.max(commissionRevenue.intelligence, transactionRevenue.intelligence),
+      transaction: Math.max(commissionRevenue.transaction, transactionRevenue.transaction),
+      products: Math.max(commissionRevenue.products, transactionRevenue.products),
+      supplierRewardRetention: transactionRevenue.supplierRewardRetention,
+      financeOriginationCommission: transactionRevenue.financeOriginationCommission,
+      loadBrokerageCommission: transactionRevenue.loadBrokerageCommission,
+      buySellBrokerageCommission: transactionRevenue.buySellBrokerageCommission,
+      brokerageCommission: transactionRevenue.brokerageCommission,
+      unclassified: transactionRevenue.unclassified,
+    };
 
     const networkOwners = companies.map((owner: any) => {
       const referredMembers = companies.filter((company: any) => company.referrerId === owner.id);
@@ -99,6 +129,7 @@ export async function GET(req: NextRequest) {
       members: companies.length,
       paidMembers: companies.filter((company: any) => company.intelligenceMembershipId || (company.membershipId && company.membershipId !== 'free')).length,
       platformRevenue: revenue.reduce((sum: number, entry: any) => sum + Number(entry.amount || 0), 0),
+      actualRevenue,
       accruedCommissions: commissions.filter((entry: any) => entry.status === 'accrued').reduce((sum: number, entry: any) => sum + Number(entry.commissionAmount || 0), 0),
       dueCommissions: commissions.filter((entry: any) => entry.status === 'accrued' && entry.payoutEligibleAt && new Date(entry.payoutEligibleAt) <= new Date()).reduce((sum: number, entry: any) => sum + Number(entry.commissionAmount || 0), 0),
     };
@@ -131,14 +162,43 @@ export async function POST(req: NextRequest) {
     const runRef = db.collection('commissionPayoutRuns').doc();
     const batch = db.batch();
     const total = entries.reduce((sum, entry) => sum + Number(entry.data().commissionAmount || 0), 0);
+    const ownerTotals = new Map<string, number>();
+    entries.forEach(entry => {
+      const segments = entry.ref.path.split('/');
+      const companyIndex = segments.indexOf('companies');
+      const ownerCompanyId = companyIndex >= 0 ? segments[companyIndex + 1] : null;
+      if (ownerCompanyId) ownerTotals.set(ownerCompanyId, (ownerTotals.get(ownerCompanyId) || 0) + Number(entry.data().commissionAmount || 0));
+    });
     batch.set(runRef, {
       id: runRef.id,
       paymentReference: String(paymentReference).trim(),
       total,
       commissionPaths,
-      status: 'paid',
+      status: 'wallet_credited',
       paidBy: adminUid,
       paidAt: FieldValue.serverTimestamp(),
+    });
+    ownerTotals.forEach((amount, ownerCompanyId) => {
+      const ownerRef = db.collection('companies').doc(ownerCompanyId);
+      const walletTransactionRef = ownerRef.collection('transactions').doc();
+      batch.update(ownerRef, {
+        walletBalance: FieldValue.increment(amount),
+        availableBalance: FieldValue.increment(amount),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      batch.set(walletTransactionRef, {
+        transactionId: walletTransactionRef.id,
+        companyId: ownerCompanyId,
+        type: 'credit',
+        amount,
+        date: FieldValue.serverTimestamp(),
+        description: 'Network commission monthly wallet credit',
+        status: 'allocated',
+        source: 'commission_payout',
+        payoutRunId: runRef.id,
+        settlementReference: String(paymentReference).trim(),
+        postedBy: adminUid,
+      });
     });
     entries.forEach(entry => batch.update(entry.ref, { status: 'paid', payoutRunId: runRef.id, paymentReference: String(paymentReference).trim(), paidAt: FieldValue.serverTimestamp() }));
     await batch.commit();

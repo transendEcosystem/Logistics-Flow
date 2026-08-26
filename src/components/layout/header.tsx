@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Truck, Menu, User, ChevronDown, ShieldCheck, Building, LogOut, ShoppingCart, Landmark, Network, Ship } from "lucide-react";
+import { Truck, Menu, User, ChevronDown, ShieldCheck, Building, LogOut, ShoppingCart, Landmark, Network, Ship, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useCart } from "@/context/CartContext";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getPrimaryBusinessDomain } from "@/lib/business-domain";
 
 const mainNavLinks = [
   { href: "/", label: "Home" },
@@ -81,6 +82,26 @@ export function Header() {
 
   const isAdmin = user && (user.email === 'beyondtransport@gmail.com' || user.email === 'mkoton100@gmail.com');
   const isWctaMember = user?.claims?.wcta === true || user?.companyData?.referrerId === 'WCTA';
+  const primaryRole = getPrimaryBusinessDomain(user);
+  const portalRoles = Array.from(new Set([primaryRole, ...(user?.companyData?.activeBusinessRoles || [])].filter(Boolean))) as string[];
+  const [activeRole, setActiveRole] = React.useState(primaryRole);
+
+  React.useEffect(() => {
+    const storedRole = window.localStorage.getItem('logistics-flow-active-role');
+    if (storedRole && portalRoles.includes(storedRole)) setActiveRole(storedRole);
+    const handleRoleChange = (event: Event) => {
+      const role = (event as CustomEvent<string>).detail;
+      if (portalRoles.includes(role)) setActiveRole(role);
+    };
+    window.addEventListener('logistics-flow-role-changed', handleRoleChange);
+    return () => window.removeEventListener('logistics-flow-role-changed', handleRoleChange);
+  }, [primaryRole, portalRoles.join('|')]);
+
+  const switchPortal = (role: string) => {
+    window.localStorage.setItem('logistics-flow-active-role', role);
+    setActiveRole(role);
+    router.push(`/account?view=dashboard&role=${encodeURIComponent(role)}`);
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -154,6 +175,12 @@ export function Header() {
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
                         <DropdownMenuItem asChild><Link href="/account">My Account</Link></DropdownMenuItem>
+                        {portalRoles.length > 0 && <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuLabel>Switch Portal</DropdownMenuLabel>
+                          {portalRoles.map(role => <DropdownMenuItem key={role} onClick={() => switchPortal(role)}>{role[0].toUpperCase() + role.slice(1)} Portal{role === activeRole ? ' (Active)' : ''}</DropdownMenuItem>)}
+                          <DropdownMenuItem asChild><Link href="/account/additional-role?role=transporter"><Target className="mr-2 h-4 w-4" />Add Role</Link></DropdownMenuItem>
+                        </>}
                         {(isAdmin || isWctaMember) && (
                             <>
                                 <DropdownMenuItem asChild><Link href="/supply-chain">Supply Chain Portal</Link></DropdownMenuItem>

@@ -294,7 +294,7 @@ function AdminAccountContent() {
               </SidebarMenuItem>
 
                 <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Revenue" isActive={activeView === 'ads-oversight' || activeView.includes('pricing') || activeView === 'commercials'}><Zap /><span>Revenue Oversight</span></SidebarMenuButton>
+                    <SidebarMenuButton tooltip="Revenue" isActive={activeView === 'ads-oversight' || activeView.includes('pricing') || activeView === 'commercials'}><Zap /><span>Revenue Oversight</span></SidebarMenuButton>
                   <SidebarMenuSub>
                       <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'commercials'} onClick={() => navigate('commercials')}><DollarSign className="h-3.5 w-3.5 mr-2" />Commercials</SidebarMenuSubButton></SidebarMenuSubItem>
                       <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'ads-oversight'} onClick={() => navigate('ads-oversight')}><Sparkles className="h-3.5 w-3.5 mr-2" />Visibility Campaigns</SidebarMenuSubButton></SidebarMenuSubItem>

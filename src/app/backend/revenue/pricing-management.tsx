@@ -7,11 +7,11 @@ import * as z from 'zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, PlusCircle, Save, Edit, Trash2, Eye, EyeOff, Layers, Info, Search, Store, Zap } from 'lucide-react';
+import { Loader2, PlusCircle, Save, Edit, Trash2, Eye, EyeOff, Layers, Info, Search, Store, Zap, DollarSign } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { getClientSideAuthToken, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { getClientSideAuthToken, useFirestore, useCollection, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, query, doc } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -41,6 +41,7 @@ const planSchema = z.object({
   name: z.string().min(1, 'Plan name is required'),
   description: z.string().min(1, 'Description is required'),
   price: z.coerce.number().min(0),
+  annualDiscount: z.coerce.number().min(0).max(100).default(0),
   type: z.enum(['access', 'data_silo']).default('access'),
   intelligenceQueries: z.coerce.number().min(0),
   shopProducts: z.coerce.number().min(0),
@@ -62,7 +63,7 @@ function PlanDialog({ plan, onSave }: { plan?: any; onSave: () => void }) {
   const methods = useForm<PlanFormValues>({
     resolver: zodResolver(planSchema),
     defaultValues: plan || {
-        id: '', name: '', description: '', price: 0, type: 'access',
+        id: '', name: '', description: '', price: 0, annualDiscount: 0, type: 'access',
         intelligenceQueries: 0, shopProducts: 0, loadsLimit: 0,
         features: [], isPopular: false, isActive: true
     }
@@ -70,8 +71,8 @@ function PlanDialog({ plan, onSave }: { plan?: any; onSave: () => void }) {
 
   useEffect(() => {
     if (isOpen) {
-        if (plan) methods.reset({ ...plan, isActive: plan.isActive !== false });
-        else methods.reset({ id: '', name: '', description: '', price: 0, type: 'access', intelligenceQueries: 0, shopProducts: 0, loadsLimit: 0, features: [], isPopular: false, isActive: true });
+        if (plan) methods.reset({ ...plan, annualDiscount: Number(plan.annualDiscount || 0), isActive: plan.isActive !== false });
+        else methods.reset({ id: '', name: '', description: '', price: 0, annualDiscount: 0, type: 'access', intelligenceQueries: 0, shopProducts: 0, loadsLimit: 0, features: [], isPopular: false, isActive: true });
     }
   }, [isOpen, plan, methods]);
 
@@ -147,8 +148,11 @@ function PlanDialog({ plan, onSave }: { plan?: any; onSave: () => void }) {
                 <FormField name="price" render={({ field }) => (
                     <FormItem className="text-left text-foreground"><FormLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Monthly Price (R)</FormLabel><FormControl><Input type="number" {...field} className="bg-white border-2" /></FormControl></FormItem>
                 )} />
+              <FormField name="annualDiscount" render={({ field }) => (
+                <FormItem className="text-left text-foreground"><FormLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Annual Discount (%)</FormLabel><FormControl><Input type="number" {...field} className="bg-white border-2" /></FormControl></FormItem>
+              )} />
                 <FormField name="isPopular" render={({ field }) => (
-                    <FormItem className="flex items-center space-x-2 pt-8 text-left text-foreground"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel className="cursor-pointer text-xs font-bold uppercase">Highlight</FormLabel></FormItem>
+                <FormItem className="flex items-center space-x-2 pt-8 text-left text-foreground"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel className="cursor-pointer text-xs font-bold uppercase">Highlight</FormLabel></FormItem>
                 )} />
                 <FormField name="isActive" render={({ field }) => (
                     <FormItem className="flex items-center space-x-2 pt-8 text-left text-foreground"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel className="cursor-pointer text-primary font-bold text-xs uppercase">Active</FormLabel></FormItem>
@@ -210,6 +214,35 @@ export default function PricingManagement() {
 
   const q = useMemoFirebase(() => firestore ? query(collection(firestore, 'memberships')) : null, [firestore]);
   const { data: plans, isLoading, forceRefresh } = useCollection(q);
+  const rolePricingRef = useMemoFirebase(() => firestore ? doc(firestore, 'configuration', 'roleMembershipPricing') : null, [firestore]);
+  const { data: rolePricing, forceRefresh: refreshRolePricing } = useDoc<{ additionalRoleMonthlyPrice?: number }>(rolePricingRef);
+  const [additionalRolePrice, setAdditionalRolePrice] = useState('250');
+  const [isSavingRolePrice, setIsSavingRolePrice] = useState(false);
+
+  useEffect(() => {
+    if (rolePricing?.additionalRoleMonthlyPrice !== undefined) setAdditionalRolePrice(String(rolePricing.additionalRoleMonthlyPrice));
+  }, [rolePricing]);
+
+  const saveRolePrice = async () => {
+    const price = Number(additionalRolePrice);
+    if (!Number.isFinite(price) || price < 0) {
+      toast({ variant: 'destructive', title: 'Invalid role price', description: 'Enter a non-negative monthly price.' });
+      return;
+    }
+    setIsSavingRolePrice(true);
+    try {
+      const token = await getClientSideAuthToken();
+      if (!token) throw new Error('Authentication failed.');
+      const response = await fetch('/api/updateConfigDoc', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ path: 'configuration/roleMembershipPricing', data: { additionalRoleMonthlyPrice: price, updatedAt: { _methodName: 'serverTimestamp' } } }) });
+      if (!response.ok) throw new Error('Could not save the role price.');
+      toast({ title: 'Additional role price saved' });
+      refreshRolePricing();
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Could not save role price', description: error.message });
+    } finally {
+      setIsSavingRolePrice(false);
+    }
+  };
 
   const handleDelete = async (id: string) => {
     try {
@@ -249,6 +282,10 @@ export default function PricingManagement() {
 
   return (
     <div className="space-y-12 text-left text-foreground">
+      <Card className="border-none shadow-xl bg-white">
+        <CardHeader><CardTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5 text-primary" /> Additional Role Membership</CardTitle><CardDescription>Set the monthly price charged when an existing company adds a second business role.</CardDescription></CardHeader>
+        <CardContent className="flex max-w-md items-end gap-3"><div className="flex-1"><Label htmlFor="additional-role-price">Monthly Price (R)</Label><Input id="additional-role-price" type="number" min="0" value={additionalRolePrice} onChange={event => setAdditionalRolePrice(event.target.value)} /></div><Button onClick={saveRolePrice} disabled={isSavingRolePrice}><Save className="mr-2 h-4 w-4" />Save Price</Button></CardContent>
+      </Card>
       <div className="flex justify-between items-center text-left">
         <div className="text-left text-foreground">
             <CardTitle className="text-3xl font-black font-headline flex items-center gap-3 text-left text-foreground">

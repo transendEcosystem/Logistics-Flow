@@ -40,6 +40,7 @@ import { roles } from '@/lib/roles';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { getPrimaryBusinessDomain } from '@/lib/business-domain';
 
 const formSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
@@ -63,7 +64,7 @@ function JoinFormComponent() {
   const { user, isUserLoading, forceRefresh } = useUser();
   
   const redirectParam = searchParams.get('redirect');
-  const initialRole = searchParams.get('role');
+  const initialRole = getPrimaryBusinessDomain({ declaredRole: searchParams.get('role') }) || searchParams.get('role');
   const isRestricted = searchParams.get('restricted') === 'true';
 
   const [selectedPosition, setSelectedPosition] = useState<string | null>(initialRole);
@@ -73,15 +74,23 @@ function JoinFormComponent() {
   const firstNameParam = searchParams.get('firstName');
   const lastNameParam = searchParams.get('lastName');
   const phoneParam = searchParams.get('phone');
+  const invitationCompanyId = searchParams.get('companyId');
 
   // Filter roles based on restricted status (Funding origins)
   const displayedRoles = useMemo(() => {
     if (isRestricted) {
-        // High-intent filter for In-house funding: Suppliers (Vendors) and Transporters only
-        return roles.filter(r => r.id === 'vendor' || r.id === 'transporter');
+        return roles.filter(r => r.id === 'vendor' || r.id === 'transporter').map(role => role.id === 'vendor'
+          ? { ...role, id: 'supplier', title: 'Suppliers', cta: 'Join as a Supplier' }
+          : role);
     }
-    return roles;
-  }, [isRestricted]);
+    const directRole = searchParams.get('role');
+    if (directRole && !['vendor', 'supplier', 'transporter', 'lender'].includes(directRole)) {
+      return roles.filter(role => role.id === directRole);
+    }
+    return roles
+      .filter(role => role.id === 'vendor' || role.id === 'transporter' || role.id === 'lender')
+      .map(role => role.id === 'vendor' ? { ...role, id: 'supplier', title: 'Suppliers', cta: 'Join as a Supplier' } : role);
+  }, [isRestricted, searchParams]);
 
   useEffect(() => {
     if (authActionInitiated && !isUserLoading && user?.uid) {
@@ -183,6 +192,7 @@ function JoinFormComponent() {
             status: 'active',
             shopType: selectedPosition === 'transporter' ? 'transporter' : 'vendor',
             declaredRole: selectedPosition,
+            primaryBusinessDomain: getPrimaryBusinessDomain({ declaredRole: selectedPosition }),
             referrerId: referrerId || null,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
@@ -196,7 +206,7 @@ function JoinFormComponent() {
       fetch('/api/checkAndCreateUser', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ referrerId, role: selectedPosition }),
+          body: JSON.stringify({ referrerId, role: selectedPosition, invitationCompanyId }),
       }).catch(e => console.warn("Background API call:", e));
       
       fetch('/api/auth/session', {

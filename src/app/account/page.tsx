@@ -17,6 +17,7 @@ import {
   SidebarMenuSubItem,
   SidebarMenuSubButton,
 } from '@/components/ui/sidebar';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   LogOut,
   LayoutDashboard,
@@ -42,6 +43,7 @@ import {
   Fingerprint,
   Video,
   Share2,
+  ClipboardList,
   Mic,
   Palette,
   Target,
@@ -78,6 +80,13 @@ import HumanCapitalContent from './human-capital-content';
 import PerformanceContent from './performance-content';
 import EarningsContent from './earnings-content';
 import MallOnboardingContent from './mall-onboarding-content';
+import QuestionnairesContent from './questionnaires-content';
+import LoadBoardContent from './load-board-content';
+import FleetContent from './fleet-content';
+import BusinessDomainContent from './business-domain-content';
+import { getPrimaryBusinessDomain } from '@/lib/business-domain';
+import { usePermissions } from '@/hooks/use-permissions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Mall Gate Components
 import { MallGate } from './malls/MallGate';
@@ -90,6 +99,16 @@ function AccountPageContent() {
   const initialView = searchParams.get('view') || 'dashboard';
   const nodeType = searchParams.get('nodeType');
   const [activeView, setActiveView] = useState(initialView);
+  const primaryBusinessDomain = getPrimaryBusinessDomain(user);
+  const availableRoles = Array.from(new Set([primaryBusinessDomain, ...(user?.companyData?.activeBusinessRoles || [])].filter(Boolean))) as string[];
+  const requestedRole = searchParams.get('role');
+  const activeRole = requestedRole && availableRoles.includes(requestedRole) ? requestedRole : primaryBusinessDomain || 'supplier';
+  const { can: canAccess } = usePermissions(activeRole);
+
+  useEffect(() => {
+    window.localStorage.setItem('logistics-flow-active-role', activeRole);
+    window.dispatchEvent(new CustomEvent('logistics-flow-role-changed', { detail: activeRole }));
+  }, [activeRole]);
 
   useEffect(() => {
     setActiveView(initialView);
@@ -127,6 +146,12 @@ function AccountPageContent() {
 
   const isAssociate = user.declaredPosition === 'associate' || user.role === 'associate';
 
+  const switchRole = (role: string) => {
+    const view = searchParams.get('view') || 'dashboard';
+    window.localStorage.setItem('logistics-flow-active-role', role);
+    router.push(`/account?view=${view}&role=${role}`, { scroll: false });
+  };
+
   const renderContent = () => {
     if (activeView === 'mall-loads' || activeView === 'mall-warehouse' || activeView === 'mall-transporter' || activeView === 'mall-supplier' || activeView === 'mall-finance' || activeView === 'mall-buy-sell') {
         const mallId = activeView.replace('mall-', '');
@@ -152,6 +177,10 @@ function AccountPageContent() {
       case 'trust-identity': return <TrustIdentityContent />;
       case 'human-capital': return <HumanCapitalContent />;
       case 'mall-onboarding': return <MallOnboardingContent />;
+      case 'questionnaires': return <QuestionnairesContent />;
+      case 'load-board': return <LoadBoardContent />;
+      case 'fleet-profile': return <FleetContent />;
+      case 'business-domain': return <BusinessDomainContent />;
       case 'connect-loyalty': return <LoyaltyPlanPage />;
       case 'connect-rewards': return <RewardsPlanPage />;
       case 'connect-actions': return <ActionsPlanPage />;
@@ -166,8 +195,12 @@ function AccountPageContent() {
         <SidebarHeader>
           <div className="flex items-center gap-2 p-2">
             <div className="bg-primary/10 p-2 rounded-full"><Box className="h-6 w-6 text-primary" /></div>
-            <h2 className="text-lg font-semibold text-sidebar-foreground">Member Hub</h2>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-semibold text-sidebar-foreground">{activeRole[0].toUpperCase() + activeRole.slice(1)} Portal</h2>
+              {availableRoles.length > 1 && <Select value={activeRole} onValueChange={switchRole}><SelectTrigger className="h-7 border-0 bg-transparent p-0 text-xs text-sidebar-foreground/70"><SelectValue /></SelectTrigger><SelectContent>{availableRoles.map(role => <SelectItem key={role} value={role}>{role[0].toUpperCase() + role.slice(1)} Portal</SelectItem>)}</SelectContent></Select>}
+            </div>
           </div>
+          <Button variant="outline" size="sm" className="mx-2 mb-2" onClick={() => router.push('/account/additional-role?role=transporter')}>Add Role</Button>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
@@ -201,72 +234,36 @@ function AccountPageContent() {
           )}
 
           {!isAssociate && (
+              <>
               <SidebarGroup>
-                <SidebarGroupLabel>Commercial Flows</SidebarGroupLabel>
+                <SidebarGroupLabel>My Business</SidebarGroupLabel>
                 <SidebarMenu>
-                    {/* LOADS FLOW */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton tooltip="Loads" isActive={activeView.includes('loads') || (activeView === 'shop' && nodeType === 'loads')}><PackageSearch /><span>Loads Mall</span></SidebarMenuButton>
-                        <SidebarMenuSub>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-loads'} onClick={() => navigate('mall-loads')}>Search Loads</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'shop' && nodeType === 'loads'} onClick={() => navigate('shop', 'loads')}>My Brokerage Hub</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'loads' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=loads&role=buyer')}>Carrier Capacity Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'loads' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=mall-onboarding&mall=loads&role=provider')}>Load Provider Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                        </SidebarMenuSub>
-                    </SidebarMenuItem>
-
-                    {/* WAREHOUSE FLOW */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton tooltip="Warehouse" isActive={activeView.includes('warehouse') || (activeView === 'shop' && nodeType === 'warehouse')}><Warehouse /><span>Warehouse Mall</span></SidebarMenuButton>
-                        <SidebarMenuSub>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-warehouse'} onClick={() => navigate('mall-warehouse')}>Source Storage</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'shop' && nodeType === 'warehouse'} onClick={() => navigate('shop', 'warehouse')}>My Warehouse Hub</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'warehouse' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=warehouse&role=buyer')}>Storage Requirement Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'warehouse' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=mall-onboarding&mall=warehouse&role=provider')}>Warehouse Capacity Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                        </SidebarMenuSub>
-                    </SidebarMenuItem>
-
-                    {/* TRANSPORT FLOW */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton tooltip="Transport" isActive={activeView.includes('transporter') || (activeView === 'shop' && nodeType === 'transport')}><Truck /><span>Transport Mall</span></SidebarMenuButton>
-                        <SidebarMenuSub>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-transporter'} onClick={() => navigate('mall-transporter')}>Source Capacity</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'shop' && nodeType === 'transport'} onClick={() => navigate('shop', 'transport')}>My Fleet Node</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'transporter' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=transporter&role=buyer')}>Transport Requirement Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'transporter' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=mall-onboarding&mall=transporter&role=provider')}>Fleet & Route Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                        </SidebarMenuSub>
-                    </SidebarMenuItem>
-
-                    {/* SUPPLIER FLOW */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton tooltip="Suppliers" isActive={activeView.includes('supplier') || (activeView === 'shop' && nodeType === 'supplier')}><Building /><span>Supplier Mall</span></SidebarMenuButton>
-                        <SidebarMenuSub>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-supplier'} onClick={() => navigate('mall-supplier')}>Registry Search</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'shop' && nodeType === 'supplier'} onClick={() => navigate('shop', 'supplier')}>My Shop Profile</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'supplier' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=supplier&role=buyer')}>Procurement Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                            <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'supplier' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=mall-onboarding&mall=supplier&role=provider')}>Supplier Capability Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                        </SidebarMenuSub>
-                    </SidebarMenuItem>
-
-                    {/* FINANCE FLOW */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton tooltip="Finance Mall" isActive={activeView === 'mall-finance'} onClick={() => navigate('mall-finance')}><Landmark /><span>Finance Mall</span></SidebarMenuButton>
-                      <SidebarMenuSub>
-                        <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'finance' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=shop&nodeType=finance')}>Finance Provider Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                        <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'finance' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=finance&role=buyer')}>Borrower Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                      </SidebarMenuSub>
-                    </SidebarMenuItem>
-
-                    {/* MARKETPLACE */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton tooltip="Marketplace" isActive={activeView === 'mall-buy-sell'} onClick={() => navigate('mall-buy-sell')}><ShoppingCart /><span>Buy & Sell Mall</span></SidebarMenuButton>
-                      <SidebarMenuSub>
-                        <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'buy-sell' && searchParams.get('role') === 'buyer'} onClick={() => router.push('/account?view=mall-onboarding&mall=buy-sell&role=buyer')}>Asset Buyer Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                        <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'mall-onboarding' && searchParams.get('mall') === 'buy-sell' && searchParams.get('role') === 'provider'} onClick={() => router.push('/account?view=mall-onboarding&mall=buy-sell&role=provider')}>Asset Seller Questionnaire</SidebarMenuSubButton></SidebarMenuSubItem>
-                      </SidebarMenuSub>
-                    </SidebarMenuItem>
+                  <SidebarMenuItem><SidebarMenuButton tooltip="Business Profile" isActive={activeView === 'company'} onClick={() => navigate('company')}><Building /><span>Business Profile</span></SidebarMenuButton></SidebarMenuItem>
+                  <SidebarMenuItem><SidebarMenuButton tooltip="Commercial Questionnaires" isActive={activeView === 'questionnaires'} onClick={() => navigate('questionnaires')}><ClipboardList /><span>Questionnaires</span></SidebarMenuButton></SidebarMenuItem>
+                  {primaryBusinessDomain === 'supplier' && <>
+                    <SidebarMenuItem><SidebarMenuButton tooltip="Supplier Storefront" isActive={activeView === 'shop' && nodeType === 'supplier'} onClick={() => navigate('shop', 'supplier')}><ShoppingCart /><span>My Storefront</span></SidebarMenuButton></SidebarMenuItem>
+                  </>}
+                  {primaryBusinessDomain === 'transporter' && <>
+                    {canAccess('edit', 'postTransport' as any) && <SidebarMenuItem><SidebarMenuButton tooltip="Fleet and Routes" isActive={activeView === 'fleet-profile'} onClick={() => navigate('fleet-profile')}><Truck /><span>Fleet & Routes</span></SidebarMenuButton></SidebarMenuItem>}
+                    {canAccess('edit', 'shop') && <SidebarMenuItem><SidebarMenuButton tooltip="Transport Storefront" isActive={activeView === 'shop' && nodeType === 'transport'} onClick={() => navigate('shop', 'transport')}><Store /><span>My Transport Storefront</span></SidebarMenuButton></SidebarMenuItem>}
+                  </>}
+                  {primaryBusinessDomain === 'lender' && <SidebarMenuItem><SidebarMenuButton tooltip="Lending Products and Criteria" isActive={activeView === 'shop' && nodeType === 'finance'} onClick={() => navigate('shop', 'finance')}><Landmark /><span>Lending Products & Criteria</span></SidebarMenuButton></SidebarMenuItem>}
+                  {!primaryBusinessDomain && <SidebarMenuItem><SidebarMenuButton tooltip="Set Primary Business Domain" isActive={activeView === 'business-domain'} onClick={() => navigate('business-domain')}><Target /><span>Set Primary Business Domain</span></SidebarMenuButton></SidebarMenuItem>}
                 </SidebarMenu>
               </SidebarGroup>
+
+              <SidebarGroup>
+                <SidebarGroupLabel>Commercial Malls</SidebarGroupLabel>
+                <SidebarMenu>
+                  <SidebarMenuItem><SidebarMenuButton tooltip="Loads Mall" isActive={activeView === 'mall-loads'} onClick={() => navigate('mall-loads')}><PackageSearch /><span>Loads Mall</span></SidebarMenuButton></SidebarMenuItem>
+                  <SidebarMenuItem><SidebarMenuButton tooltip="Warehouse Mall" isActive={activeView === 'mall-warehouse'} onClick={() => navigate('mall-warehouse')}><Warehouse /><span>Warehouse Mall</span></SidebarMenuButton></SidebarMenuItem>
+                  <SidebarMenuItem><SidebarMenuButton tooltip="Transport Mall" isActive={activeView === 'mall-transporter'} onClick={() => navigate('mall-transporter')}><Truck /><span>Transport Mall</span></SidebarMenuButton></SidebarMenuItem>
+                  <SidebarMenuItem><SidebarMenuButton tooltip="Supplier Mall" isActive={activeView === 'mall-supplier'} onClick={() => navigate('mall-supplier')}><Building /><span>Supplier Mall</span></SidebarMenuButton></SidebarMenuItem>
+                  <SidebarMenuItem><SidebarMenuButton tooltip="Finance Mall" isActive={activeView === 'mall-finance'} onClick={() => navigate('mall-finance')}><Landmark /><span>Finance Mall</span></SidebarMenuButton></SidebarMenuItem>
+                  <SidebarMenuItem><SidebarMenuButton tooltip="Buy & Sell Mall" isActive={activeView === 'mall-buy-sell'} onClick={() => navigate('mall-buy-sell')}><ShoppingCart /><span>Buy & Sell Mall</span></SidebarMenuButton></SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroup>
+                </>
           )}
 
           <SidebarGroup>
@@ -274,6 +271,12 @@ function AccountPageContent() {
               <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton tooltip="Company Profile" isActive={activeView === 'company'} onClick={() => navigate('company')}><Building /><span>Company Profile</span></SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton tooltip="Staff, Roles & Permissions" isActive={activeView === 'staff'} onClick={() => navigate('staff')}><Users /><span>Staff, Roles & Permissions</span></SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton tooltip="Billing" isActive={activeView === 'billing'} onClick={() => navigate('billing')}><Wallet /><span>Billing</span></SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton tooltip="Trust & Identity" isActive={activeView === 'trust-identity'} onClick={() => navigate('trust-identity')}><Fingerprint /><span>Trust & Identity</span></SidebarMenuButton>
@@ -288,18 +291,24 @@ function AccountPageContent() {
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
-          <div className="flex items-center gap-3 p-2 rounded-md bg-sidebar-accent">
-            <Avatar className="h-10 w-10">
-                <AvatarFallback>{getInitials(user?.displayName)}</AvatarFallback>
-            </Avatar>
-            <div className="flex flex-col truncate text-left">
-                <span className="text-sm font-medium text-sidebar-foreground truncate">{user?.displayName || 'Member'}</span>
-                <span className="text-xs text-sidebar-foreground/70 truncate">{user?.email}</span>
-            </div>
-            <Button variant="ghost" size="icon" className="ml-auto" onClick={onLogout} title="Sign Out">
-                <LogOut className="h-5 w-5" />
-            </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="flex w-full items-center gap-3 rounded-md bg-sidebar-accent p-2 text-left hover:bg-sidebar-accent/80">
+                <Avatar className="h-10 w-10"><AvatarFallback>{getInitials(user?.displayName)}</AvatarFallback></Avatar>
+                <span className="flex min-w-0 flex-1 flex-col truncate">
+                  <span className="truncate text-sm font-medium text-sidebar-foreground">{user?.displayName || 'Member'}</span>
+                  <span className="truncate text-xs text-sidebar-foreground/70">{user?.email}</span>
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="end" className="w-64">
+              <DropdownMenuLabel>Switch Portal</DropdownMenuLabel>
+              {availableRoles.map(role => <DropdownMenuItem key={role} onClick={() => switchRole(role)}>{role[0].toUpperCase() + role.slice(1)} Portal{role === activeRole ? ' (Active)' : ''}</DropdownMenuItem>)}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push('/account/additional-role?role=transporter')}><Target className="mr-2 h-4 w-4" />Add Role</DropdownMenuItem>
+              <DropdownMenuItem onClick={onLogout}><LogOut className="mr-2 h-4 w-4" />Sign Out</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>

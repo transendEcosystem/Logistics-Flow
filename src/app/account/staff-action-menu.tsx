@@ -26,13 +26,17 @@ import { getClientSideAuthToken } from '@/firebase';
 import { usePermissions } from '@/hooks/use-permissions';
 
 async function performAdminAction(token: string, action: string, payload: any) {
-    const response = await fetch('/api/admin', {
+  const endpoint = action === 'deleteStaffMember' || action === 'updateStaffStatus'
+    ? `/api/${action}`
+    : '/api/admin';
+  const body = endpoint === '/api/admin' ? { action, payload } : payload;
+    const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ action, payload }),
+        body: JSON.stringify(body),
     });
 
     const result = await response.json();

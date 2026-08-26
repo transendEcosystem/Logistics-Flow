@@ -162,7 +162,7 @@ function StepWarehouseSecurity() {
     );
 }
 
-function StepRateSheet() {
+function StepRateSheet({ title = 'Fleet Rate Sheet' }: { title?: string }) {
     const { control, watch } = useFormContext<NodeFormValues>();
     const rateType = watch('rateType');
     const { fields, append, remove } = useFieldArray({ control, name: 'routeRates' });
@@ -170,7 +170,7 @@ function StepRateSheet() {
 
     return (
         <div className="space-y-8 text-left">
-            <h3 className="text-xl font-black font-headline flex items-center gap-2"><ListOrdered className="h-6 w-6 text-primary" /> Fleet Rate Sheet</h3>
+            <h3 className="text-xl font-black font-headline flex items-center gap-2"><ListOrdered className="h-6 w-6 text-primary" /> {title}</h3>
             <FormField control={control} name="rateType" render={({ field }) => (
                 <FormItem className="space-y-4">
                     <FormLabel className="font-bold">Select Rate Structure</FormLabel>
@@ -336,9 +336,51 @@ function StepMedia() {
     const { user } = useUser();
     const { toast } = useToast();
     const [uploading, setUploading] = useState<string | null>(null);
+    const [generating, setGenerating] = useState<string | null>(null);
     const [progress, setProgress] = useState(0);
 
     const imageUrls = watch('imageUrls') || [];
+    const shopName = watch('shopName') || 'Logistics Flow business';
+    const category = watch('category') || 'logistics services';
+    const aboutText = watch('aboutText') || '';
+
+    const saveGeneratedImage = async (imageDataUri: string, type: 'logo' | 'banner') => {
+        if (!user) throw new Error('Sign in is required to save generated images.');
+        const token = await getClientSideAuthToken();
+        if (!token) throw new Error('Authentication failed.');
+        const response = await fetch('/api/uploadImageAsset', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileDataUri: imageDataUri, folder: `shops/${user.uid}`, fileName: `ai-${type}-${Date.now()}.png` }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not save generated image.');
+        if (type === 'logo') setValue('logoUrl', result.url);
+        else setValue('imageUrls', [...imageUrls, result.url]);
+    };
+
+    const generateImage = async (type: 'logo' | 'banner') => {
+        setGenerating(type);
+        try {
+            const imagePurpose = type === 'logo'
+                ? `A polished, distinctive square logo mark for ${shopName}, a ${category} business. No letters, words, watermarks or text. Clean vector-inspired industrial identity, professional brand colours, centered on a simple background.`
+                : `A premium, realistic wide commercial banner for ${shopName}, a ${category} business. Show the actual logistics operation, equipment, facility or products relevant to this business. No letters, words, watermarks or text. ${aboutText.slice(0, 280)}`;
+            const token = await getClientSideAuthToken();
+            const response = await fetch('/api/generateImage', {
+                method: 'POST',
+                headers: { 'Authorization': token ? `Bearer ${token}` : '', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: imagePurpose }),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.imageDataUri) throw new Error(result.error || 'Image generation did not return an image.');
+            await saveGeneratedImage(result.imageDataUri, type);
+            toast({ title: `AI ${type === 'logo' ? 'logo' : 'banner'} added`, description: 'The generated image is ready to review and will be saved with this Shop.' });
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Image generation failed', description: error.message });
+        } finally {
+            setGenerating(null);
+        }
+    };
 
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'gallery') => {
         const file = e.target.files?.[0];
@@ -376,7 +418,7 @@ function StepMedia() {
         <div className="space-y-10 text-left">
              <div className="space-y-4">
                 <h3 className="text-xl font-black font-headline flex items-center gap-2 text-foreground text-left"><Camera className="h-6 w-6 text-primary" /> Media Assets</h3>
-                <p className="text-sm text-muted-foreground text-left">Upload your official logo and facility/fleet images to establish forensic trust.</p>
+                <p className="text-sm text-muted-foreground text-left">Upload your official logo and facility/fleet images, or generate tailored Shop media with AI.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-12 text-left">
@@ -391,6 +433,9 @@ function StepMedia() {
                             <Button variant="outline" size="sm" onClick={() => document.getElementById('logo-up')?.click()} disabled={!!uploading}>
                                 {uploading === 'logo' ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <UploadCloud className="h-4 w-4 mr-2" />}
                                 Upload Logo
+                            </Button>
+                            <Button variant="secondary" size="sm" onClick={() => generateImage('logo')} disabled={!!generating}>
+                                {generating === 'logo' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Generate with AI
                             </Button>
                             <p className="text-[10px] text-muted-foreground">PNG or JPG. Square recommended.</p>
                         </div>
@@ -412,11 +457,15 @@ function StepMedia() {
                             <PlusCircle className="h-5 w-5" />
                             <span className="text-[9px] font-bold uppercase">Add Photo</span>
                         </button>
+                        <button type="button" onClick={() => generateImage('banner')} disabled={!!generating} className="aspect-square rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 hover:border-primary transition-colors text-muted-foreground hover:text-primary disabled:opacity-50">
+                            {generating === 'banner' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+                            <span className="text-[9px] font-bold uppercase">AI Banner</span>
+                        </button>
                         <input type="file" id="gallery-up" className="hidden" onChange={e => handleUpload(e, 'gallery')} />
                      </div>
                 </div>
             </div>
-            {uploading && <Progress value={progress} className="h-1" />}
+            {(uploading || generating) && <Progress value={uploading ? progress : 60} className="h-1" />}
         </div>
     );
 }
@@ -446,7 +495,9 @@ export function ShopWizard({ shop, nodeType, onUpdate }: { shop: any, nodeType: 
 
     const isWarehouse = nodeType === 'warehouse';
     const isTransport = nodeType === 'transport';
-    const isSupplier = nodeType === 'supplier' || nodeType === 'default';
+    const isLoadShop = nodeType === 'loads';
+    const isMarketplaceShop = nodeType === 'buy-sell';
+    const usesCatalog = nodeType === 'supplier' || nodeType === 'default' || isMarketplaceShop;
 
     const wizardSteps = useMemo(() => {
         const base = [
@@ -456,18 +507,18 @@ export function ShopWizard({ shop, nodeType, onUpdate }: { shop: any, nodeType: 
             base.push({ id: 'fees', title: 'Storage Yield', icon: Banknote, fields: ['availablePallets', 'monthlyStorageFee', 'upliftFee', 'placementFee'] });
             base.push({ id: 'security', title: 'Security Protocol', icon: ShieldCheck, fields: ['securityFeatures', 'accessControl', 'rollerDoors', 'operatingHours'] });
         }
-        if (isTransport) {
-            base.push({ id: 'rates', title: 'Rate Sheet', icon: ListOrdered, fields: ['rateType', 'kmRate', 'routeRates'] });
+        if (isTransport || isLoadShop) {
+            base.push({ id: 'rates', title: isLoadShop ? 'Operating Lanes' : 'Fleet Rate Sheet', icon: ListOrdered, fields: ['rateType', 'kmRate', 'routeRates'] });
         }
-        if (isSupplier) {
-            base.push({ id: 'catalog', title: 'Product Catalog', icon: ListOrdered, fields: [] });
+        if (usesCatalog) {
+            base.push({ id: 'catalog', title: isMarketplaceShop ? 'Buy & Sell Listings' : 'Product Catalog', icon: ListOrdered, fields: [] });
         }
         base.push({ id: 'media', title: 'Media Assets', icon: Camera, fields: ['logoUrl', 'imageUrls'] });
         base.push({ id: 'branding', title: 'Brand Presence', icon: Sparkles, fields: ['homeHeading', 'aboutText'] });
         base.push({ id: 'legal', title: 'Legal & Privacy', icon: Lock, fields: ['termsText', 'privacyText'] });
         base.push({ id: 'submit', title: 'Audit Submission', icon: ShieldCheck, fields: [] });
         return base;
-    }, [isWarehouse, isTransport, isSupplier]);
+    }, [isWarehouse, isTransport, isLoadShop, isMarketplaceShop, usesCatalog]);
 
     const methods = useForm<NodeFormValues>({
         resolver: zodResolver(nodeFormSchema),
@@ -510,7 +561,7 @@ export function ShopWizard({ shop, nodeType, onUpdate }: { shop: any, nodeType: 
                 <div className="flex items-center gap-4 text-white text-left">
                     <div className="bg-primary/20 p-3 rounded-xl text-left"><PackageSearch className="h-6 w-6 text-primary" /></div>
                     <div className="text-left text-foreground">
-                        <CardTitle className="text-2xl font-black font-headline text-white text-left">Node Terminal: {wizardSteps[currentStep].title}</CardTitle>
+                        <CardTitle className="text-2xl font-black font-headline text-white text-left">Shop Setup: {wizardSteps[currentStep].title}</CardTitle>
                         <CardDescription className="text-slate-400">Identity: <span className="font-mono text-[10px] uppercase font-bold">{shop.id}</span></CardDescription>
                     </div>
                 </div>
@@ -534,7 +585,7 @@ export function ShopWizard({ shop, nodeType, onUpdate }: { shop: any, nodeType: 
                             {wizardSteps[currentStep].id === 'main' && <StepMain />}
                             {wizardSteps[currentStep].id === 'fees' && <StepWarehouseFees />}
                             {wizardSteps[currentStep].id === 'security' && <StepWarehouseSecurity />}
-                            {wizardSteps[currentStep].id === 'rates' && <StepRateSheet />}
+                            {wizardSteps[currentStep].id === 'rates' && <StepRateSheet title={isLoadShop ? 'Load Shop Operating Lanes' : 'Fleet Rate Sheet'} />}
                             {wizardSteps[currentStep].id === 'catalog' && <StepCatalog shop={shop} />}
                             {wizardSteps[currentStep].id === 'media' && <StepMedia />}
                             {wizardSteps[currentStep].id === 'branding' && (

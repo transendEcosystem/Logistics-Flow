@@ -122,7 +122,9 @@ export default function MallPage() {
     }
 
     const createModalConfig = (mallId: string, mallHref: string): ModalConfig => {
-        const baseSellHref = user ? `/account?view=shop&nodeType=${mallId}` : `/join?role=${mallId === 'finance' ? 'finance' : 'vendor'}`;
+        const shopNodeTypes: Record<string, string> = { transporter: 'transport', distribution: 'transport', loads: 'loads', supplier: 'supplier', warehouse: 'warehouse', finance: 'finance', 'buy-sell': 'buy-sell', 'sa-auction': 'buy-sell' };
+        const shopNodeType = shopNodeTypes[mallId] || 'default';
+        const openShopAction = () => router.push(user ? `/account?view=shop&nodeType=${shopNodeType}` : `/join?redirect=/account?view=shop&nodeType=${shopNodeType}`);
 
         let config: Partial<ModalConfig> = {};
 
@@ -134,42 +136,74 @@ export default function MallPage() {
         switch(mallId) {
             case 'warehouse':
                 config = {
-                    title: "Warehouse Mall Intent",
-                    description: "Are you sourcing storage capacity, or are you listing a warehouse branch?",
-                    primary: { label: "I need Storage", description: "Source capacity and calculate fees.", action: buyerAction },
-                    secondary: { label: "I am an Operator", description: "List your warehouse branch.", action: () => showIncentive(user ? '/account?view=mall-onboarding&mall=warehouse&role=provider' : '/join?role=warehouse', 'Warehouse') }
+                    title: "Warehouse Mall Discovery",
+                    description: "Choose whether you want to search storage and handling records through Warehouse Intelligence or find and evaluate verified Warehouse Shops.",
+                    primary: { label: "Explore Warehouse Intelligence", description: "Search storage, handling and capacity records matched to your operating requirement.", action: () => router.push('/intelligence') },
+                    secondary: { label: "Search Warehouse Shops", description: "Query verified warehouse providers before inspecting their public Shop and terms.", action: () => router.push('/mall/warehouse') }
                 };
                 break;
             case 'distribution':
                 config = {
-                    title: "Distribution Mall Intent",
-                    description: "Are you sourcing local urban delivery, or listing an inner-city fixed-body fleet?",
-                    primary: { label: "I need local Spokes", description: "Source final-mile capacity.", action: buyerAction },
-                    secondary: { label: "I am a Distributor", description: "List your local delivery fleet.", action: () => showIncentive(user ? '/account?view=mall-onboarding&mall=transporter&role=provider' : '/join?role=distributor', 'Distributor') }
+                    title: "Distribution Mall Discovery",
+                    description: "Choose whether you want to explore final-mile delivery intelligence or search and compare verified Distribution Shops.",
+                    primary: { label: "Explore Distribution Intelligence", description: "Search delivery capability and service records for local and urban distribution needs.", action: () => router.push('/intelligence') },
+                    secondary: { label: "Search Distribution Shops", description: "Find verified courier and distribution providers before inspecting their public Shop.", action: () => router.push('/shops?mall=distribution') }
                 };
                 break;
             case 'transporter':
                  config = {
-                    title: "Transport Mall Intent",
-                    description: "Are you booking long-haul transport, or listing an arterial fleet?",
-                    primary: { label: "I need Long-Haul", description: "Source arterial capacity.", action: buyerAction },
-                    secondary: { label: "I am a Transporter", description: "List your arterial fleet.", action: () => showIncentive(user ? '/account?view=mall-onboarding&mall=transporter&role=provider' : '/join?role=transporter', 'Transporter') }
+                    title: "Transport Mall Discovery",
+                    description: "Choose whether you want to search verified fleet and capacity records through Transport Intelligence or find and evaluate Transport Shops.",
+                    primary: { label: "Explore Transport Intelligence", description: "Search fleet, equipment, lane and capacity records for your transport requirement.", action: () => router.push('/intelligence/transporter') },
+                    secondary: { label: "Search Transport Shops", description: "Query verified haulier businesses before inspecting their public Shop and service offer.", action: () => router.push('/mall/transporter') }
                 };
                 break;
             case 'loads':
                 config = {
                     title: "Loads Mall Intent",
-                    description: "Are you searching for freight to carry, or posting a load to the network?",
-                    primary: { label: "I am looking for a load", description: "Find freight matches.", action: buyerAction },
-                    secondary: { label: "I have a load to post", description: "List your available freight.", action: () => router.push(user ? '/account?view=load-board' : '/join?redirect=/account?view=load-board') }
+                    description: "Choose whether you want to search live freight opportunities on the Loads Board or find and evaluate verified Load Shops before engaging a provider.",
+                    primary: { label: "Explore Loads Intelligence", description: "Search the live Loads Board, where verified load providers publish available freight opportunities for suitably matched transporters.", action: () => router.push('/mall/loads?mode=intelligence') },
+                    secondary: { label: "Search Load Shops", description: "Query verified freight providers, brokers and transport businesses.", action: () => router.push('/mall/loads?mode=shops') }
+                };
+                break;
+            case 'supplier':
+                config = {
+                    title: "Supplier Mall Discovery",
+                    description: "Choose whether you want to search product and service records through Supplier Intelligence or find and evaluate verified Supplier Shops.",
+                    primary: { label: "Explore Supplier Intelligence", description: "Search supplier, product and service records matched to your operational requirement.", action: () => router.push('/intelligence/supplier') },
+                    secondary: { label: "Search Supplier Shops", description: "Query verified suppliers before inspecting their public Shop, catalogue and terms.", action: () => router.push('/mall/supplier') }
+                };
+                break;
+            case 'finance':
+                config = {
+                    title: "Finance Mall Discovery",
+                    description: "Choose whether you want to search funding-product records through Finance Intelligence or find and evaluate verified Finance Shops.",
+                    primary: { label: "Explore Finance Intelligence", description: "Search lender products, funding criteria and finance records matched to your requirement.", action: () => router.push('/intelligence/finance') },
+                    secondary: { label: "Search Finance Shops", description: "Query verified finance providers before inspecting their public Shop and lending offer.", action: () => router.push('/shops?mall=finance') }
+                };
+                break;
+            case 'buy-sell':
+                config = {
+                    title: "Buy & Sell Mall Discovery",
+                    description: "Choose whether you want to search individual asset listings through Marketplace Intelligence or find and evaluate verified seller Shops.",
+                    primary: { label: "Explore Buy & Sell Intelligence", description: "Search verified vehicle and equipment records by specification, condition and location.", action: () => router.push('/mall/buy-sell') },
+                    secondary: { label: "Search Seller Shops", description: "Query verified asset sellers before inspecting their public Shop and trading terms.", action: () => router.push('/shops?mall=buy-sell') }
+                };
+                break;
+            case 'sa-auction':
+                config = {
+                    title: "SA Auction Mall Discovery",
+                    description: "Choose whether you want to search live auction listings or find and evaluate verified auction and salvage provider Shops.",
+                    primary: { label: "Explore Auction Intelligence", description: "Search current auction opportunities and asset records available to the network.", action: () => router.push('/mall/sa-auction') },
+                    secondary: { label: "Search Auction Shops", description: "Query verified auction and salvage providers before inspecting their public Shop.", action: () => router.push('/shops?mall=sa-auction') }
                 };
                 break;
             default:
                 config = {
-                    title: "What is your goal today?",
-                    description: "Let us know if you're here to source products/services or to list your own capabilities.",
-                    primary: { label: "I want to Source", description: "Find parts, services, or capacity.", action: buyerAction },
-                    secondary: { label: "I want to List", description: "Create your professional profile.", action: () => showIncentive(baseSellHref, 'Provider') }
+                    title: "Mall Discovery",
+                    description: "Choose whether you want to search commercial records through Intelligence or find and evaluate verified member Shops.",
+                    primary: { label: "Explore Intelligence", description: "Search commercial records matched to your requirement.", action: () => router.push(mallHref) },
+                    secondary: { label: "Search Shops", description: "Query verified member Shops before engaging a provider.", action: () => router.push('/shops') }
                 };
         }
 
@@ -182,6 +216,12 @@ export default function MallPage() {
         
         config.primary!.action = wrapAction(config.primary!.action, 'primary');
         config.secondary!.action = wrapAction(config.secondary!.action, 'secondary');
+        const shopLabelByMall: Record<string, string> = { 'buy-sell': 'I want to open a Buy & Sell Shop', 'sa-auction': 'I want to open an SA Auction Shop' };
+        config.shop = {
+            label: shopLabelByMall[mallId] || 'I want to open a shop',
+            description: 'Create a public commercial Shop for this Mall. Sign-in, a valid role and Transaction membership are required.',
+            action: wrapAction(openShopAction, 'open_shop'),
+        };
 
         return config as ModalConfig;
     }

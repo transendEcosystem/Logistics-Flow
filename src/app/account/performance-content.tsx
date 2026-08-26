@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getClientSideAuthToken, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
-import { formatDateSafe } from '@/lib/utils';
+import { formatCurrency, formatDateSafe } from '@/lib/utils';
 import { format as formatDateFns } from 'date-fns';
 
 type CommissionEntry = { referredCompanyName?: string; referredCompanyId?: string; commissionAmount?: number };

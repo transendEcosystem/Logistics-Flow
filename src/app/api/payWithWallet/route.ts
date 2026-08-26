@@ -9,7 +9,7 @@ import { getAdminApp } from '@/lib/firebase-admin';
  * Robust handling for Membership Tiers, Modular Nodes, and Ad Campaigns.
  */
 async function processPlanPurchase(db: FirebaseFirestore.Firestore, adminUid: string, payload: any, isAdmin: boolean) {
-    const { companyId, amount, description, planType, planId, cycle, title, targetAudience, creativeUrl, totalInstances } = payload;
+    const { companyId, amount, description, planType, planId, cycle, role, title, targetAudience, creativeUrl, totalInstances } = payload;
     
     if (!companyId || typeof amount !== 'number' || !planType) {
         throw new Error('Missing activation metadata.');
@@ -135,7 +135,12 @@ async function processPlanPurchase(db: FirebaseFirestore.Firestore, adminUid: st
             if (cycle === 'annual') nextBilling.setFullYear(nextBilling.getFullYear() + 1);
             else nextBilling.setMonth(nextBilling.getMonth() + 1);
 
-            if (planType === 'transaction') {
+            if (planType === 'role') {
+                if (!['supplier', 'transporter', 'finance'].includes(role)) throw new Error('Invalid role membership.');
+                const activeBusinessRoles = Array.from(new Set([...(companyData.activeBusinessRoles || []), role]));
+                transaction.set(companyRef.collection('roleMemberships').doc(role), { role, planId, status: 'active', billingCycle: cycle || 'monthly', nextBillingDate: nextBilling, activatedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+                transaction.update(companyRef, { activeBusinessRoles, roleMemberships: { ...(companyData.roleMemberships || {}), [role]: { planId, status: 'active', billingCycle: cycle || 'monthly', nextBillingDate: nextBilling } }, status: 'active' });
+            } else if (planType === 'transaction') {
                 transaction.update(companyRef, {
                     transactionMembershipId: planId,
                     transactionBillingCycle: cycle || 'monthly',
@@ -202,7 +207,9 @@ export async function POST(req: NextRequest) {
 
     const userDoc = await db.collection('users').doc(decodedToken.uid).get();
     
-    if (userDoc.data()?.companyId !== payload.companyId && !isAdmin) {
+    const companyDoc = await db.collection('companies').doc(payload.companyId).get();
+    const isCompanyOwner = companyDoc.data()?.ownerId === decodedToken.uid;
+    if ((userDoc.data()?.companyId !== payload.companyId || (payload.planType === 'role' && !isCompanyOwner)) && !isAdmin) {
         return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
     

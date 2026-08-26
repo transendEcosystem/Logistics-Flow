@@ -17,12 +17,16 @@ import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { formatCurrency } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { LoadResponseDialog } from './loads/load-response-dialog';
 
 export default function LoadBoardContent() {
     const { user, isUserLoading } = useUser();
     const firestore = useFirestore();
     const [view, setView] = useState<'overview' | 'post-wizard' | 'broker-wizard' | 'take-wizard' | 'view-instruction' | 'fulfillment'>('overview');
     const [selectedLoad, setSelectedLoad] = useState<any | null>(null);
+    const [routeQuery, setRouteQuery] = useState('');
+    const [equipmentQuery, setEquipmentQuery] = useState('');
 
     // 1. Fetch ALL active loads on the platform (The Marketplace)
     const marketplaceQuery = useMemoFirebase(() => {
@@ -103,9 +107,9 @@ export default function LoadBoardContent() {
                 <div className="text-left">
                     <h1 className="text-3xl font-black font-headline tracking-tight flex items-center gap-3">
                         <Truck className="h-8 w-8 text-primary" />
-                        Loads & Fulfillment
+                        Loads Operations
                     </h1>
-                    <p className="text-muted-foreground mt-1 text-left">Control center for freight execution and financial settlement.</p>
+                    <p className="text-muted-foreground mt-1 text-left">Private workspace for posting freight, managing carrier assignments, fulfilment and settlement.</p>
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={() => setView('broker-wizard')} className="gap-2 font-bold">
@@ -134,11 +138,16 @@ export default function LoadBoardContent() {
                 </TabsList>
 
                 <TabsContent value="marketplace" className="mt-8 space-y-6 text-left">
+                    <Card className="border-primary/20 bg-primary/5"><CardContent className="grid gap-4 p-5 md:grid-cols-[1fr_1fr_auto]"><Input value={routeQuery} onChange={event => setRouteQuery(event.target.value)} placeholder="Filter origin or destination" /><Input value={equipmentQuery} onChange={event => setEquipmentQuery(event.target.value)} placeholder="Filter equipment" /><p className="self-center text-sm text-muted-foreground">A response becomes a provider enquiry, not an automatic assignment.</p></CardContent></Card>
                     <Card className="border-none shadow-xl bg-white overflow-hidden text-left">
                         <CardContent className="pt-6">
                             {marketplaceLoads && marketplaceLoads.length > 0 ? (
                                 <DataTable 
-                                    data={marketplaceLoads.filter(l => l.brokerId !== user?.companyId)}
+                                    data={marketplaceLoads.filter(load => {
+                                        const route = `${load.origin || ''} ${load.destination || ''}`.toLowerCase();
+                                        const equipment = (load.requiredEquipment || []).join(' ').toLowerCase();
+                                        return load.brokerId !== user?.companyId && route.includes(routeQuery.toLowerCase()) && equipment.includes(equipmentQuery.toLowerCase());
+                                    })}
                                     columns={[
                                         { 
                                             header: 'Route & Technicals', 
@@ -164,12 +173,10 @@ export default function LoadBoardContent() {
                                         },
                                         { 
                                             id: 'actions',
-                                            header: <div className="text-right">Action</div>,
+                                            header: <div className="text-right">Commercial action</div>,
                                             cell: ({row}) => (
                                                 <div className="text-right">
-                                                    <Button size="sm" className="font-black uppercase text-[10px] tracking-widest h-9 px-6 gap-2" onClick={() => { setSelectedLoad(row.original); setView('take-wizard'); }}>
-                                                        Accept Load <ArrowRight className="h-3 w-3" />
-                                                    </Button>
+                                                    <LoadResponseDialog load={row.original} />
                                                 </div>
                                             )
                                         }

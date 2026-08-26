@@ -83,10 +83,10 @@ function calculateProjections(inputs: FormValues | null) {
         totalMembers = partnerMembers;
 
         // Revenue (Turnover)
-        const membershipRevenue = totalMembers * budget.avgMembershipFee;
-        const connectPlanRevenue = totalMembers * (targets.connectPlanAdoptionRate / 100) * 50; // Assuming R50 avg fee
-        const mallRevenue = totalMembers * budget.avgMallSpend * (budget.mallCommissionRate / 100);
-        const totalRevenue = membershipRevenue + connectPlanRevenue + mallRevenue;
+        const intelligenceRevenue = totalMembers * budget.avgMembershipFee;
+        const transactionRevenue = totalMembers * (targets.connectPlanAdoptionRate / 100) * 50;
+        const productRevenue = totalMembers * budget.avgMallSpend * (budget.mallCommissionRate / 100);
+        const totalRevenue = intelligenceRevenue + transactionRevenue + productRevenue;
 
         // Income Statement
         const grossProfit = totalRevenue; // Simplified COGS for now
@@ -104,9 +104,9 @@ function calculateProjections(inputs: FormValues | null) {
             // Members Sheet
             cumulativeTotalMembers: totalMembers,
             // Turnover Sheet
-            membershipRevenue,
-            connectPlanRevenue,
-            mallRevenue,
+            intelligenceRevenue,
+            transactionRevenue,
+            productRevenue,
             totalRevenue,
             // Income Statement
             grossProfit,
@@ -267,14 +267,14 @@ function FinancialProjectionsComponent() {
                                     </Card>
                                      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Target size={18}/>Targets</CardTitle></CardHeader>
                                         <CardContent className="space-y-4">
-                                            {renderInput('targets.connectPlanAdoptionRate', 'Connect Plan Adopt. (%)')}
+                                            {renderInput('targets.connectPlanAdoptionRate', 'Transaction Plan Adoption (%)')}
                                         </CardContent>
                                     </Card>
                                      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Banknote size={18}/>Budget</CardTitle></CardHeader>
                                         <CardContent className="space-y-4">
-                                            {renderInput('budget.avgMembershipFee', 'Avg. Membership Fee (R)')}
-                                            {renderInput('budget.avgMallSpend', 'Avg. Mall Spend/Member (R)')}
-                                            {renderInput('budget.mallCommissionRate', 'Mall Commission Rate (%)')}
+                                            {renderInput('budget.avgMembershipFee', 'Avg. Intelligence Revenue / Member (R)')}
+                                            {renderInput('budget.avgMallSpend', 'Avg. Product Spend / Member (R)')}
+                                            {renderInput('budget.mallCommissionRate', 'Retained Product Revenue Rate (%)')}
                                             {renderInput('budget.opexPerMonth', 'Monthly OPEX (R)')}
                                         </CardContent>
                                     </Card>
@@ -378,12 +378,12 @@ function FinancialProjectionsComponent() {
                 </TabsContent>
                 <TabsContent value="turnover" className="mt-4">
                      <Card>
-                        <CardHeader><CardTitle>Turnover (Revenue) Projection</CardTitle></CardHeader>
+                        <CardHeader><CardTitle>Revenue Projection: Intelligence, Transaction & Product</CardTitle><CardDescription>These streams map directly to Commercial Control actuals and the budget baseline.</CardDescription></CardHeader>
                         <CardContent><Table>
-                            <TableHeader><TableRow><TableHead>Month</TableHead><TableHead>Membership Rev.</TableHead><TableHead>Connect Plan Rev.</TableHead><TableHead>Mall Rev.</TableHead><TableHead>Total Revenue</TableHead></TableRow></TableHeader>
+                            <TableHeader><TableRow><TableHead>Month</TableHead><TableHead>Intelligence</TableHead><TableHead>Transaction</TableHead><TableHead>Product</TableHead><TableHead>Total Revenue</TableHead></TableRow></TableHeader>
                             <TableBody>
-                                {projections.map(p => (<TableRow key={p.month}><TableCell>{p.month}</TableCell><TableCell>{formatCurrency(p.membershipRevenue)}</TableCell><TableCell>{formatCurrency(p.connectPlanRevenue)}</TableCell><TableCell>{formatCurrency(p.mallRevenue)}</TableCell><TableCell className="font-bold">{formatCurrency(p.totalRevenue)}</TableCell></TableRow>))}
-                                {totals.membershipRevenue !== undefined && <TableRow className="bg-muted font-bold"><TableCell>Total</TableCell><TableCell>{formatCurrency(totals.membershipRevenue)}</TableCell><TableCell>{formatCurrency(totals.connectPlanRevenue)}</TableCell><TableCell>{formatCurrency(totals.mallRevenue)}</TableCell><TableCell>{formatCurrency(totals.totalRevenue)}</TableCell></TableRow>}
+                                {projections.map(p => (<TableRow key={p.month}><TableCell>{p.month}</TableCell><TableCell>{formatCurrency(p.intelligenceRevenue)}</TableCell><TableCell>{formatCurrency(p.transactionRevenue)}</TableCell><TableCell>{formatCurrency(p.productRevenue)}</TableCell><TableCell className="font-bold">{formatCurrency(p.totalRevenue)}</TableCell></TableRow>))}
+                                {totals.intelligenceRevenue !== undefined && <TableRow className="bg-muted font-bold"><TableCell>Total</TableCell><TableCell>{formatCurrency(totals.intelligenceRevenue)}</TableCell><TableCell>{formatCurrency(totals.transactionRevenue)}</TableCell><TableCell>{formatCurrency(totals.productRevenue)}</TableCell><TableCell>{formatCurrency(totals.totalRevenue)}</TableCell></TableRow>}
                             </TableBody>
                         </Table></CardContent>
                     </Card>

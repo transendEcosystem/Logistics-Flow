@@ -33,6 +33,15 @@ async function getRequestContext(req: NextRequest) {
     const userDocSnap = await db.collection('users').doc(decodedToken.uid).get();
     const companyId = userDocSnap.data()?.companyId;
     if (!companyId) throw new Error('Could not determine your company to find referrals.');
+    const companySnap = await db.collection('companies').doc(companyId).get();
+    const companyData = companySnap.data() || {};
+    const hasPaidIntelligence = Boolean(companyData.intelligenceMembershipId || (companyData.membershipId && companyData.membershipId !== 'free'));
+    const hasTransactionMembership = Boolean(companyData.transactionMembershipId);
+    if (!hasPaidIntelligence && !hasTransactionMembership) {
+        const error: any = new Error('A paid Intelligence or Transaction membership is required to access referral selling tools.');
+        error.status = 403;
+        throw error;
+    }
 
     return { db, companyId };
 }
@@ -83,7 +92,7 @@ export async function GET(req: NextRequest) {
         if (error.code?.startsWith('auth/')) {
             return NextResponse.json({ success: false, error: 'Authentication error.' }, { status: 401 });
         }
-        return NextResponse.json({ success: false, error: 'Internal Server Error.' }, { status: 500 });
+        return NextResponse.json({ success: false, error: error.status || 'Internal Server Error.' }, { status: error.status || 500 });
     }
 }
 

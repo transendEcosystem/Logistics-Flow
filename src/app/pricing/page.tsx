@@ -25,9 +25,14 @@ function MembershipPageContent() {
   const firestore = useFirestore();
     const searchParams = useSearchParams();
     const transactionPurpose = searchParams.get('purpose') === 'transaction';
+    const rolePurpose = searchParams.get('purpose') === 'role';
+    const role = searchParams.get('role') || '';
     const nodeType = searchParams.get('nodeType');
-    const transactionQuery = new URLSearchParams({ purpose: 'transaction' });
+    const [billingCycle, setBillingCycle] = React.useState<'monthly' | 'annual'>('monthly');
+    const transactionQuery = new URLSearchParams({ purpose: rolePurpose ? 'role' : 'transaction' });
+    if (rolePurpose) transactionQuery.set('role', role);
     if (nodeType) transactionQuery.set('nodeType', nodeType);
+    transactionQuery.set('cycle', billingCycle);
 
   const membershipsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -46,7 +51,7 @@ function MembershipPageContent() {
             if (p.isActive === false) return false;
             const isCore = coreIds.includes(p.id?.toLowerCase());
             const isAccessType = p.type === 'access';
-            return transactionPurpose ? isAccessType : (isCore || isAccessType);
+            return transactionPurpose || rolePurpose ? isAccessType : (isCore || isAccessType);
         })
         .sort((a,b) => (a.price || 0) - (b.price || 0));
   }, [dbPlans]);
@@ -60,9 +65,13 @@ function MembershipPageContent() {
       <div className="container mx-auto px-4 py-16 md:py-24 text-left">
         
         <div className="text-center max-w-3xl mx-auto mb-20 space-y-4">
-          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20 font-bold uppercase tracking-widest px-4 py-1">{transactionPurpose ? 'Transaction Membership' : 'Node Access Control'}</Badge>
+          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20 font-bold uppercase tracking-widest px-4 py-1">{rolePurpose ? `${role} Role Membership` : transactionPurpose ? 'Transaction Membership' : 'Node Access Control'}</Badge>
           <h1 className="text-4xl md:text-7xl font-black font-headline tracking-tight text-foreground uppercase leading-none text-center">{transactionPurpose ? <>Choose Your <br/><span className="text-primary">Transaction Plan</span>.</> : <>Activate Your <br/><span className="text-primary">Ecosystem Node</span>.</>}</h1>
                     <p className="mt-6 text-xl text-muted-foreground leading-relaxed font-medium text-center">{transactionPurpose ? 'A transaction membership unlocks your business profile, listings, and commercial node tools. Intelligence remains a separate membership.' : 'Choose the access tier that matches your monthly transaction volume. Secure your digital standing in the grid.'}</p>
+                    <div className="mt-8 inline-flex rounded-lg border bg-white p-1">
+                        <Button type="button" size="sm" variant={billingCycle === 'monthly' ? 'default' : 'ghost'} onClick={() => setBillingCycle('monthly')}>Monthly</Button>
+                        <Button type="button" size="sm" variant={billingCycle === 'annual' ? 'default' : 'ghost'} onClick={() => setBillingCycle('annual')}>Annual</Button>
+                    </div>
         </div>
 
         {isLoading ? (
@@ -92,9 +101,10 @@ function MembershipPageContent() {
                         <CardContent className="p-8 pt-0 flex-grow space-y-8 text-left">
                             <div className="py-6 border-y border-slate-100 text-left">
                                 <div className="flex items-baseline gap-1.5 text-left">
-                                    <span className="text-4xl font-black text-slate-900 tracking-tighter">{formatCurrency(plan.price).split('.')[0]}</span>
-                                    <span className="text-slate-400 font-black uppercase text-[10px] tracking-widest">/ month</span>
+                                    <span className="text-4xl font-black text-slate-900 tracking-tighter">{formatCurrency(billingCycle === 'annual' ? Number(plan.price || 0) * 12 * (1 - (Number(plan.annualDiscount || 0) / 100)) : plan.price).split('.')[0]}</span>
+                                    <span className="text-slate-400 font-black uppercase text-[10px] tracking-widest">{billingCycle === 'annual' ? '/ year' : '/ month'}</span>
                                 </div>
+                                {billingCycle === 'annual' && Number(plan.annualDiscount || 0) > 0 && <p className="mt-2 text-xs font-bold text-emerald-600">Save {Number(plan.annualDiscount)}% with annual membership</p>}
                             </div>
 
                             <div className="space-y-4 text-left">
@@ -143,7 +153,7 @@ function MembershipPageContent() {
                         
                         <CardFooter className="p-8 bg-slate-50 border-t text-left">
                             <Button asChild className={cn("w-full h-14 font-black uppercase tracking-widest shadow-md group text-white", !plan.isPopular && "bg-slate-800 hover:bg-slate-700")}>
-                                <Link href={`/checkout/${plan.id}${transactionPurpose ? `?${transactionQuery.toString()}` : ''}`}>
+                                    <Link href={`/checkout/${plan.id}?${transactionPurpose || rolePurpose ? transactionQuery.toString() : new URLSearchParams({ cycle: billingCycle }).toString()}`}>
                                     Activate Access <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                                 </Link>
                             </Button>

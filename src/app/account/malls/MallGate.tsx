@@ -1,11 +1,10 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Card, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { usePermissions, type Resource } from '@/hooks/use-permissions';
-import { PremiumFeaturePrompt } from '@/components/PremiumFeaturePrompt';
+import { type Resource } from '@/hooks/use-permissions';
 import { 
     PackageSearch, Warehouse, Truck, Network, Building2, Landmark, 
     ShoppingCart, Search, PlusCircle, ArrowRight, Info, Loader2, HandCoins
@@ -25,7 +24,8 @@ interface MallConfig {
     buyDesc: string;
     sellLabel: string;
     sellDesc: string;
-    sellHref?: string;
+    searchHref: string;
+    hubHref: string;
 }
 
 const mallConfigs: Record<string, MallConfig> = {
@@ -37,10 +37,12 @@ const mallConfigs: Record<string, MallConfig> = {
         resource: 'loads',
         permission: 'transact',
         upgradePlan: 'loads_intelligence',
-        buyLabel: 'Search for Loads',
-        buyDesc: 'Find available freight and match your capacity.',
-        sellLabel: 'Setup Brokerage Node',
-        sellDesc: 'Authorize your node to post and clear freight.',
+        buyLabel: 'Explore Loads Intelligence',
+        buyDesc: 'Unlock verified live freight records, query route and equipment matches, then respond to the provider.',
+        sellLabel: 'Manage Load Shop',
+        sellDesc: 'Manage your public freight offer, published loads, carrier responses and commercial execution.',
+        searchHref: '/mall/loads',
+        hubHref: '/account?view=shop&nodeType=loads',
     },
     warehouse: {
         id: 'warehouse',
@@ -51,9 +53,11 @@ const mallConfigs: Record<string, MallConfig> = {
         permission: 'transact',
         upgradePlan: 'warehouse_intelligence',
         buyLabel: 'Source Storage',
-        buyDesc: 'Find warehousing hubs and calculate storage costs.',
-        sellLabel: 'Setup Warehouse Node',
-        sellDesc: 'List your available pallet positions and handling fees.',
+        buyDesc: 'Find suitable storage and handling capacity for your goods and operating corridor.',
+        sellLabel: 'Manage Warehouse Shop',
+        sellDesc: 'Manage your public storage offer, enquiries, bookings and commercial execution.',
+        searchHref: '/mall/warehouse',
+        hubHref: '/account?view=shop&nodeType=warehouse',
     },
     transporter: {
         id: 'transporter',
@@ -64,9 +68,11 @@ const mallConfigs: Record<string, MallConfig> = {
         permission: 'view',
         upgradePlan: 'transporter_intelligence',
         buyLabel: 'Source Capacity',
-        buyDesc: 'Scan the forensic haulier registry.',
-        sellLabel: 'Setup Fleet Node',
-        sellDesc: 'Declare your fleet and service corridors.',
+        buyDesc: 'Find verified fleet capacity for the corridors, equipment and service requirements you need.',
+        sellLabel: 'Manage Transport Shop',
+        sellDesc: 'Manage your public fleet offer, load responses and commercial execution.',
+        searchHref: '/mall/transporter',
+        hubHref: '/account?view=shop&nodeType=transport',
     },
     supplier: {
         id: 'supplier',
@@ -77,9 +83,11 @@ const mallConfigs: Record<string, MallConfig> = {
         permission: 'view',
         upgradePlan: 'supplier_intelligence',
         buyLabel: 'Search Suppliers',
-        buyDesc: 'Find parts and services by category.',
-        sellLabel: 'Setup Supplier Node',
-        sellDesc: 'Publish your digital branch to the community.',
+        buyDesc: 'Find verified products and services by category, specification and supplier capability.',
+        sellLabel: 'Manage Supplier Shop',
+        sellDesc: 'Manage your public catalogue, customer enquiries, orders and fulfilment activity.',
+        searchHref: '/mall/supplier',
+        hubHref: '/account?view=shop&nodeType=supplier',
     },
     finance: {
         id: 'finance',
@@ -90,10 +98,11 @@ const mallConfigs: Record<string, MallConfig> = {
         permission: 'view',
         upgradePlan: 'finance_intelligence',
         buyLabel: 'Search for Funding',
-        buyDesc: 'Scan the capital registry for matched lenders.',
-        sellLabel: 'Join as a Finance Provider',
-        sellDesc: 'Define lending products, credit appetite and target market.',
-        sellHref: '/account?view=shop&nodeType=finance',
+        buyDesc: 'Explore funding options aligned to your operating need, evidence and repayment position.',
+        sellLabel: 'Manage Finance Shop',
+        sellDesc: 'Manage lending products, applicant opportunities and commercial execution.',
+        searchHref: '/mall/finance',
+        hubHref: '/account?view=shop&nodeType=finance',
     },
     'buy-sell': {
         id: 'buy-sell',
@@ -104,38 +113,21 @@ const mallConfigs: Record<string, MallConfig> = {
         permission: 'transact',
         upgradePlan: 'buy_sell_intelligence',
         buyLabel: 'Search Inventory',
-        buyDesc: 'Browse verified vehicle and equipment listings.',
-        sellLabel: 'Setup Marketplace Node',
-        sellDesc: 'List your assets for sale and manage handshakes.',
+        buyDesc: 'Browse verified vehicle and equipment listings for your operational requirements.',
+        sellLabel: 'Manage Marketplace Shop',
+        sellDesc: 'Manage your public listings, buyer offers and transaction activity.',
+        searchHref: '/mall/buy-sell',
+        hubHref: '/account?view=shop&nodeType=buy-sell',
     },
 };
 
 export function MallGate({ mallId }: { mallId: string }) {
-    const { can } = usePermissions();
     const router = useRouter();
     const config = mallConfigs[mallId.trim()];
-    const [intent, setIntent] = useState<'select' | 'buy' | 'sell' | null>('select');
 
     if (!config) return <div className="p-12 text-center italic text-muted-foreground">Mall configuration "{mallId}" not found.</div>;
 
-    // Check basic view permission for the mall resource
-    const hasAccess = can('view', config.resource);
-
-    if (!hasAccess) {
-        return (
-            <div className="max-w-4xl mx-auto py-12 animate-in fade-in zoom-in duration-500 text-left">
-                <PremiumFeaturePrompt 
-                    icon={config.icon}
-                    title={config.title}
-                    description={config.description}
-                    planId={config.upgradePlan}
-                />
-            </div>
-        );
-    }
-
-    if (intent === 'select') {
-        return (
+    return (
             <div className="max-w-5xl mx-auto space-y-12 animate-in fade-in duration-500 text-left">
                 <div className="text-left space-y-2">
                     <h1 className="text-3xl font-black font-headline flex items-center gap-3 text-left text-foreground">
@@ -146,7 +138,7 @@ export function MallGate({ mallId }: { mallId: string }) {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left text-foreground">
-                    <Card className="hover:border-primary border-2 transition-all cursor-pointer group shadow-xl bg-white text-left" onClick={() => router.push(`/account?view=mall-onboarding&mall=${config.id}&role=buyer`)}>
+                    <Card className="hover:border-primary border-2 transition-all cursor-pointer group shadow-xl bg-white text-left" onClick={() => router.push(config.searchHref)}>
                         <CardHeader className="p-8 pb-4 text-left">
                             <div className="bg-muted p-4 rounded-2xl w-fit group-hover:bg-primary transition-colors text-left">
                                 <Search className="h-8 w-8 text-foreground group-hover:text-white" />
@@ -159,7 +151,7 @@ export function MallGate({ mallId }: { mallId: string }) {
                         </CardFooter>
                     </Card>
 
-                    <Card className="hover:border-primary border-2 transition-all cursor-pointer group shadow-xl bg-white text-left" onClick={() => router.push(config.sellHref || `/account?view=mall-onboarding&mall=${config.id}&role=provider`)}>
+                    <Card className="hover:border-primary border-2 transition-all cursor-pointer group shadow-xl bg-white text-left" onClick={() => router.push(config.hubHref)}>
                         <CardHeader className="p-8 pb-4 text-left text-foreground">
                             <div className="bg-muted p-4 rounded-2xl w-fit group-hover:bg-primary transition-colors text-left text-foreground">
                                 {config.id === 'finance' ? <HandCoins className="h-8 w-8 text-foreground group-hover:text-white" /> : <PlusCircle className="h-8 w-8 text-foreground group-hover:text-white" />}
@@ -176,20 +168,12 @@ export function MallGate({ mallId }: { mallId: string }) {
                 <Alert className="bg-primary/5 border-primary/20 p-6 text-left shadow-sm">
                     <Info className="h-6 w-6 text-primary" />
                     <div className="ml-2 text-left">
-                        <AlertTitle className="font-bold text-lg text-foreground">Industrial Node Integration</AlertTitle>
+                        <AlertTitle className="font-bold text-lg text-foreground">How this helps your business</AlertTitle>
                         <AlertDescription className="text-sm text-muted-foreground leading-relaxed mt-1">
-                            Your Node is the engine that powers your presence in this mall. Setting up your node once ensures your capacity is correctly mapped for all relevant community searches.
+                            Start by understanding verified member offers in the mall. Use the relevant board to filter live opportunities, then manage your own shop back office so enquiries, responses and commercial activity can be executed in one place. Your questionnaire provides the matching data that makes these introductions more relevant.
                         </AlertDescription>
                     </div>
                 </Alert>
             </div>
-        );
-    }
-
-    return (
-        <div className="text-center py-20 flex flex-col items-center gap-4 text-left text-foreground">
-            <Loader2 className="animate-spin h-8 w-8 text-primary" />
-            <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Opening Hub...</p>
-        </div>
     );
 }

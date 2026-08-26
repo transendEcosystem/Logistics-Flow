@@ -85,6 +85,7 @@ export async function POST(req: NextRequest) {
           transaction.update(privateProductRef, { stock: FieldValue.increment(-item.quantity) });
           transaction.update(publicProductRef, { stock: FieldValue.increment(-item.quantity) });
       }
+          const isIncentivesProduct = productRecords.some(product => product?.isIncentivesProduct === true);
 
       transaction.update(buyerCompanyRef, { 
           walletBalance: FieldValue.increment(-totalAmount),
@@ -131,14 +132,13 @@ export async function POST(req: NextRequest) {
             status: 'allocated',
             chartOfAccountsCode: '4220',
             companyId: sellerCompanyId,
+            revenueType: isIncentivesProduct ? 'incentives_product_revenue' : 'transaction_platform_revenue',
         });
 
         if (referrerRef && referrerSnap) {
           const incentives = salesIncentivesDoc.data() || {};
-          const isIncentivesProduct = productRecords.some(product => product?.isIncentivesProduct === true);
-          const commissionRate = Number(isIncentivesProduct
-            ? incentives.incentivesProductCommissionPercent
-            : incentives.transactionCommissionPercent);
+          // Brokerage and origination fees are retained platform commission. Only the designated incentives-product revenue participates in a network share.
+          const commissionRate = Number(isIncentivesProduct ? incentives.incentivesProductCommissionPercent : 0);
 
           if (commissionRate > 0) {
             const commissionAmount = Math.round(platformCommission * (commissionRate / 100) * 100) / 100;

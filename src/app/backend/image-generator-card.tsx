@@ -23,7 +23,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Sparkles, ImageIcon, Download } from 'lucide-react';
 import Image from 'next/image';
-import { generateImage } from '@/ai/flows/image-generation-flow';
+import { getClientSideAuthToken } from '@/firebase';
 import Link from 'next/link';
 import React from 'react';
 import { Textarea } from '@/components/ui/textarea';
@@ -51,7 +51,14 @@ export default function ImageGeneratorCard() {
     setGeneratedImage(null);
 
     try {
-      const result = await generateImage({ prompt });
+      const token = await getClientSideAuthToken();
+      const response = await fetch('/api/generateImage', {
+        method: 'POST',
+        headers: { 'Authorization': token ? `Bearer ${token}` : '', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.imageDataUri) throw new Error(result.error || 'Image generation did not return an image.');
       setGeneratedImage(result.imageDataUri);
       toast({
         title: 'Image Generated!',

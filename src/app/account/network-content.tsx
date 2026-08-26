@@ -34,7 +34,7 @@ const leadSchema = z.object({
   lastName: z.string().optional(),
   email: z.string().email('Invalid email address').optional().or(z.literal('')),
   phone: z.string().optional(),
-  role: z.string().min(1, 'Role is required'),
+    role: z.string().optional(),
   status: z.enum(['new', 'contacted', 'qualified', 'unqualified', 'invited', 'registered']).default('new'),
   notes: z.string().optional(),
 });
@@ -449,7 +449,10 @@ function LeadDialog({ lead, companyId, onSave, children }: { lead?: any, company
 
   useEffect(() => {
     if (isOpen) {
-      form.reset(lead || { companyName: '', firstName: '', lastName: '', email: '', phone: '', role: '', status: 'new', notes: '' });
+            const leadStatus = ['new', 'contacted', 'qualified', 'unqualified', 'invited', 'registered'].includes(lead?.status)
+                ? lead.status
+                : (lead?.id ? 'registered' : 'new');
+            form.reset(lead ? { ...lead, role: lead.role || '', status: leadStatus } : { companyName: '', firstName: '', lastName: '', email: '', phone: '', role: '', status: 'new', notes: '' });
     }
   }, [isOpen, lead, form]);
 
@@ -521,6 +524,9 @@ export default function NetworkContent() {
     const [isLoading, setIsLoading] = useState(true);
 
     const companyId = user?.companyId;
+    const hasPaidIntelligence = Boolean(user?.companyData?.intelligenceMembershipId || (user?.companyData?.membershipId && user.companyData.membershipId !== 'free'));
+    const hasTransactionMembership = Boolean(user?.companyData?.transactionMembershipId);
+    const canRefer = hasPaidIntelligence || hasTransactionMembership;
 
     const fetchNetwork = useCallback(async () => {
         if (!companyId) return;
@@ -544,7 +550,7 @@ export default function NetworkContent() {
         }
     }, [companyId, toast]);
 
-    useEffect(() => { fetchNetwork(); }, [fetchNetwork]);
+    useEffect(() => { if (canRefer) fetchNetwork(); }, [fetchNetwork, canRefer]);
 
     const columns: ColumnDef<any>[] = useMemo(() => [
         {
@@ -578,6 +584,10 @@ export default function NetworkContent() {
         },
         ], [companyId, fetchNetwork, user?.displayName]);
     
+    if (!isUserLoading && !canRefer) {
+        return <Card className="max-w-2xl text-left"><CardHeader><CardTitle className="flex items-center gap-2 text-2xl"><Handshake />Referral Selling Requires Paid Membership</CardTitle><CardDescription>Paid Intelligence or Transaction members can invite companies, build a network and receive eligible monthly wallet commission credits. Free members cannot access referral selling tools.</CardDescription></CardHeader><CardContent><Button asChild><Link href="/pricing">Choose a Paid Membership</Link></Button></CardContent></Card>;
+    }
+
     return (
         <Card className="text-left">
             <CardHeader className="flex flex-row items-center justify-between">

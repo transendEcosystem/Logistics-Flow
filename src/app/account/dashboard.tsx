@@ -3,7 +3,7 @@
 import { useUser, getClientSideAuthToken } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Award, Gem, Loader2, Wallet, Star, Search, Lock, UserPlus, Gift, CheckCircle2, ShoppingBasket, PackageSearch, Store } from "lucide-react";
+import { Award, Gem, Loader2, Wallet, Star, Search, Lock, UserPlus, Gift, CheckCircle2, ShoppingBasket, PackageSearch, Store, Network } from "lucide-react";
 import Link from 'next/link';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import EnquiriesCard from './enquiries-card';
@@ -12,6 +12,9 @@ import { cn, formatCurrency, formatDateSafe } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { usePermissions } from '@/hooks/use-permissions';
+import { getPrimaryBusinessDomain } from '@/lib/business-domain';
+import { useSearchParams } from 'next/navigation';
 
 /**
  * ENGAGEMENT YIELD MODULE
@@ -110,11 +113,29 @@ function EngagementYieldModule({ companyId, isPaid }: { companyId: string, isPai
 
 export default function AccountDashboard() {
     const { user, isUserLoading } = useUser();
+    const { can: canAccess } = usePermissions();
+    const searchParams = useSearchParams();
     
     const companyData = user?.companyData;
     const companyId = companyData?.id;
 
-    const isPaidIntelligence = ['intelligence', 'standard', 'premium'].includes(companyData?.membershipId || '');
+    const intelligencePlanId = companyData?.intelligenceMembershipId || companyData?.membershipId || '';
+    const transactionPlanId = companyData?.transactionMembershipId || '';
+    const isPaidIntelligence = intelligencePlanId !== '' && intelligencePlanId !== 'free';
+    const hasTransactionMembership = Boolean(transactionPlanId);
+    const roleMemberships = companyData?.roleMemberships || {};
+    const registeredRole = getPrimaryBusinessDomain({
+        ...user,
+        companyData,
+        primaryBusinessDomain: companyData?.primaryBusinessDomain || user?.primaryBusinessDomain,
+        declaredRole: companyData?.declaredRole || user?.declaredRole,
+        declaredPosition: user?.declaredPosition,
+        shopType: companyData?.shopType,
+    });
+    const activeBusinessRoles = Array.from(new Set([
+        ...(companyData?.activeBusinessRoles || []),
+        registeredRole,
+    ].filter(Boolean)));
     
     const loyaltyTier = companyData?.loyaltyTier || 'bronze';
     const tierColors: {[key: string]: string} = {
@@ -124,6 +145,7 @@ export default function AccountDashboard() {
     };
 
     const isAssociate = user?.declaredPosition === 'associate' || user?.role === 'associate';
+    const viewingRole = searchParams.get('role') || registeredRole || 'supplier';
 
     if (isUserLoading) {
         return <div className="flex justify-center items-center py-40 w-full"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
@@ -136,7 +158,7 @@ export default function AccountDashboard() {
             <div className="flex justify-between items-end text-left text-foreground">
                 <div className="text-left">
                     <h1 className="text-3xl md:text-4xl font-black font-headline uppercase tracking-tight text-left">Commerce Command</h1>
-                    <p className="text-lg text-muted-foreground font-medium text-left">Welcome back, {user?.firstName || 'Member'}!</p>
+                    <p className="text-lg text-muted-foreground font-medium text-left">Welcome back, {user?.firstName || 'Member'}! You are viewing the {viewingRole} portal.</p>
                 </div>
                 <div className="flex gap-2">
                     <Button asChild variant="outline" size="sm" className="font-bold">
@@ -153,7 +175,7 @@ export default function AccountDashboard() {
                 <EngagementYieldModule companyId={companyId} isPaid={isPaidIntelligence} />
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 text-left text-foreground">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 text-left text-foreground">
                 <Card className="text-left border-none shadow-lg bg-white">
                     <CardHeader className="flex flex-row items-center justify-between pb-2 text-left">
                         <CardTitle className="text-xs font-black uppercase tracking-widest text-muted-foreground">Available Wallet</CardTitle>
@@ -162,7 +184,7 @@ export default function AccountDashboard() {
                     <CardContent className="text-left">
                         <div className="text-2xl font-black">{formatCurrency(companyData?.availableBalance)}</div>
                          <Button asChild variant="link" size="sm" className="p-0 h-auto font-bold text-primary">
-                            <Link href="/account?view=wallet">Manage Payouts &rarr;</Link>
+                            <Link href="/account?view=wallet">Manage Wallet</Link>
                         </Button>
                     </CardContent>
                 </Card>
@@ -182,17 +204,73 @@ export default function AccountDashboard() {
 
                 <Card className="text-left border-none shadow-lg bg-white text-foreground">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-xs font-black uppercase tracking-widest text-muted-foreground">Membership Node</CardTitle>
+                        <CardTitle className="text-xs font-black uppercase tracking-widest text-muted-foreground">Intelligence Membership</CardTitle>
                         <Gem className="h-4 w-4 text-primary" />
                     </CardHeader>
                     <CardContent className="text-left">
-                        <div className="text-2xl font-black capitalize text-primary">{companyData?.transactionMembershipId || 'No transaction plan'}</div>
+                        <div className={`text-2xl font-black capitalize ${isPaidIntelligence ? 'text-primary' : 'text-muted-foreground'}`}>{isPaidIntelligence ? intelligencePlanId : 'Free'}</div>
+                        <p className="mt-1 text-xs text-muted-foreground">{isPaidIntelligence ? 'Discovery, intelligence and paid referral selling are active.' : 'Upgrade to unlock intelligence and referral selling.'}</p>
                         <Button asChild variant="link" size="sm" className="p-0 h-auto font-bold text-primary">
-                            <Link href="/pricing?purpose=transaction">Upgrade Transaction Plan &rarr;</Link>
+                            <Link href={isPaidIntelligence ? '/pricing' : '/checkout/intelligence'}>{isPaidIntelligence ? 'Manage Intelligence Plan' : 'Activate Intelligence'}</Link>
+                        </Button>
+                    </CardContent>
+                </Card>
+
+                <Card className="text-left border-none shadow-lg bg-white text-foreground">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-xs font-black uppercase tracking-widest text-muted-foreground">Transaction Membership</CardTitle>
+                        <Network className="h-4 w-4 text-primary" />
+                    </CardHeader>
+                    <CardContent className="text-left">
+                        <div className={`text-2xl font-black capitalize ${hasTransactionMembership ? 'text-primary' : 'text-muted-foreground'}`}>{hasTransactionMembership ? transactionPlanId : 'Not Active'}</div>
+                        <p className="mt-1 text-xs text-muted-foreground">{hasTransactionMembership ? 'Provider profiles, listings and commercial node tools are active.' : 'Upgrade to publish a storefront and transact in the markets.'}</p>
+                        <Button asChild variant="link" size="sm" className="p-0 h-auto font-bold text-primary">
+                            <Link href="/pricing?purpose=transaction">{hasTransactionMembership ? 'Manage Transaction Plan' : 'Activate Transaction'}</Link>
                         </Button>
                     </CardContent>
                 </Card>
             </div>
+
+            <Card className="border-none shadow-lg bg-white text-foreground">
+                <CardHeader className="flex flex-row items-center justify-between pb-4">
+                    <div>
+                        <CardTitle className="text-sm font-black uppercase tracking-widest">Business Roles &amp; Memberships</CardTitle>
+                        <CardDescription className="mt-1">Roles purchased for this company and the portals available to your team.</CardDescription>
+                    </div>
+                    <Network className="h-5 w-5 text-primary" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    {activeBusinessRoles.length > 0 ? activeBusinessRoles.map((role: string) => {
+                        const membership = roleMemberships[role];
+                        const isActive = membership?.status === 'active' || Boolean(membership);
+                        return (
+                            <div key={role} className="flex flex-col gap-3 rounded-md border p-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-black capitalize">{role} Portal</p>
+                                        <Badge variant={isActive ? 'default' : 'secondary'} className="capitalize">{isActive ? 'Active' : 'Primary role'}</Badge>
+                                    </div>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        {membership?.planId ? `${membership.planId} plan` : 'Included primary business role'}
+                                        {membership?.billingCycle ? ` · ${membership.billingCycle} billing` : ''}
+                                    </p>
+                                </div>
+                                <Button asChild variant="outline" size="sm" className="font-bold">
+                                    <Link href={`/account?view=dashboard&role=${encodeURIComponent(role)}`}>Open Portal</Link>
+                                </Button>
+                            </div>
+                        );
+                    }) : (
+                        <div className="flex items-center justify-between rounded-md border border-dashed p-4">
+                            <p className="text-sm text-muted-foreground">No business role has been selected yet.</p>
+                            <Button asChild variant="outline" size="sm"><Link href="/account?view=business-domain">Set Role</Link></Button>
+                        </div>
+                    )}
+                    <Button asChild variant="link" className="px-0 font-bold text-primary">
+                        <Link href="/account/additional-role?role=transporter">Add Another Role</Link>
+                    </Button>
+                </CardContent>
+            </Card>
 
             {!isAssociate && (
                 <div className="space-y-8 text-left text-foreground">
@@ -202,8 +280,8 @@ export default function AccountDashboard() {
                         </h2>
                         <Separator className="flex-1" />
                     </div>
-                    <QuotesCard />
-                    <EnquiriesCard />
+                    {canAccess('view', 'quotes') && <QuotesCard />}
+                    {canAccess('view', 'enquiries') && <EnquiriesCard />}
                 </div>
             )}
         </div>

@@ -44,13 +44,16 @@ function CheckoutComponent() {
   const cycle = searchParams.get('cycle') || 'monthly';
     const purchasePurpose = searchParams.get('purpose');
     const requestedNodeType = searchParams.get('nodeType');
+    const requestedRole = searchParams.get('role');
   
   const isConnectPlan = ['loyalty', 'rewards', 'actions'].includes(planId);
+    const isRoleMembership = purchasePurpose === 'role' && Boolean(requestedRole);
 
   const membershipRef = useMemoFirebase(() => {
       if (!firestore || !planId) return null;
       return doc(firestore, 'memberships', planId);
   }, [firestore, planId]);
+    const rolePricingRef = useMemoFirebase(() => firestore && purchasePurpose === 'role' ? doc(firestore, 'configuration', 'roleMembershipPricing') : null, [firestore, purchasePurpose]);
 
   const connectConfigRef = useMemoFirebase(() => {
       if (!firestore || !isConnectPlan) return null;
@@ -70,6 +73,7 @@ function CheckoutComponent() {
 
   const { data: companyData, isLoading: isCompanyLoading } = useDoc(companyDocRef);
   const { data: membershipPlan, isLoading: isMembershipLoading } = useDoc<any>(membershipRef);
+    const { data: rolePricing, isLoading: isRolePricingLoading } = useDoc<any>(rolePricingRef);
   const { data: connectConfig, isLoading: isConnectLoading } = useDoc<any>(connectConfigRef);
   
   useEffect(() => {
@@ -79,6 +83,14 @@ function CheckoutComponent() {
   }, [user, isUserLoading, router, planId, cycle]);
   
   const planDisplay = useMemo(() => {
+    if (isRoleMembership) {
+        return {
+            name: `${requestedRole!.charAt(0).toUpperCase()}${requestedRole!.slice(1)} Role Membership`,
+            price: Number(rolePricing?.additionalRoleMonthlyPrice ?? 250),
+            description: `Additional ${requestedRole} portal for this company account.`,
+            type: 'role'
+        };
+    }
     if (isConnectPlan && connectConfig) {
         const priceKey = `${planId}PlanPrice`;
         return {
@@ -110,14 +122,14 @@ function CheckoutComponent() {
         }
         return {
             name: membershipPlan.name,
-            price: monthlyPrice,
+                price: purchasePurpose === 'role' ? Number(rolePricing?.additionalRoleMonthlyPrice ?? 250) : monthlyPrice,
             description: membershipPlan.description,
             type: type
         };
     }
 
     return null;
-  }, [planId, isConnectPlan, connectConfig, membershipPlan, cycle]);
+    }, [planId, isConnectPlan, connectConfig, membershipPlan, cycle, purchasePurpose, rolePricing, isRoleMembership, requestedRole]);
 
   const handlePurchase = async () => {
     if (!user || !planDisplay || !companyData || !firestore) {
@@ -140,11 +152,12 @@ function CheckoutComponent() {
             companyId: companyData.id,
             amount: planDisplay.price,
             description: `Plan Activation: ${planDisplay.name} (${cycle})`,
-            planType: purchasePurpose === 'transaction' || planDisplay.type === 'access'
+            planType: purchasePurpose === 'role' ? 'role' : purchasePurpose === 'transaction' || planDisplay.type === 'access'
                 ? 'transaction'
                 : (planDisplay.type === 'earning' || planDisplay.type === 'node' ? 'node' : (planDisplay.type === 'connect' ? 'connect' : 'membership')), 
             planId: planId,
             cycle: cycle,
+            role: requestedRole,
         };
 
         const response = await fetch('/api/payWithWallet', {
@@ -159,11 +172,12 @@ function CheckoutComponent() {
         }
 
         toast({ title: 'Activation Successful!', description: `Your ${planDisplay.name} is now active.` });
+        const isRolePurchase = purchasePurpose === 'role' && requestedRole;
         const isTransactionPurchase = purchasePurpose === 'transaction' || planDisplay.type === 'access';
         const shopDestination = requestedNodeType
             ? `/account?view=shop&nodeType=${encodeURIComponent(requestedNodeType)}`
             : '/account?view=shop&subview=wizard';
-        router.push(isTransactionPurchase ? shopDestination : '/account');
+        router.push(isRolePurchase ? `/account?view=mall-onboarding&mall=${encodeURIComponent(requestedRole)}&role=provider` : isTransactionPurchase ? shopDestination : '/account');
 
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Process Failed', description: error.message });
@@ -172,7 +186,7 @@ function CheckoutComponent() {
     }
   };
 
-  const isLoading = isUserLoading || isMembershipLoading || isConnectLoading || isCompanyLoading;
+    const isLoading = isUserLoading || isMembershipLoading || isConnectLoading || isCompanyLoading || isRolePricingLoading;
   const PlanIcon = iconMap[planId] || ShieldCheck;
 
   if (isLoading) {

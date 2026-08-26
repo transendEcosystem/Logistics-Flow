@@ -11,12 +11,24 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { getClientSideAuthToken, useUser } from '@/firebase';
+import { canUseMarketPosition, getPrimaryBusinessDomain, type MarketId } from '@/lib/business-domain';
 
 type Field = { key: string; label: string; kind: 'text' | 'number' | 'textarea' | 'multi'; options?: string[]; required?: boolean };
 type MallRoleProfile = { title: string; description: string; icon: any; fields: Field[] };
 
 const profiles: Record<string, Record<string, MallRoleProfile>> = {
   finance: {
+    provider: {
+      title: 'Finance Provider Profile', description: 'Describe the products, credit policy and applicant evidence your team needs to assess quality funding opportunities.', icon: Landmark,
+      fields: [
+        { key: 'financialProducts', label: 'Financial products offered', kind: 'multi', required: true, options: ['Vehicle or asset finance', 'Working capital', 'Invoice discounting', 'Bridging finance', 'Insurance', 'Fleet expansion'] },
+        { key: 'applicantTypes', label: 'Applicant types and industries served', kind: 'textarea', required: true },
+        { key: 'creditPolicy', label: 'Credit policy, affordability and underwriting criteria', kind: 'textarea', required: true },
+        { key: 'lendingRange', label: 'Typical funding range and term', kind: 'text', required: true },
+        { key: 'requiredEvidence', label: 'Required documents and operating evidence', kind: 'textarea', required: true },
+        { key: 'geographicCoverage', label: 'Geographic coverage and exclusions', kind: 'textarea' },
+      ],
+    },
     buyer: {
       title: 'Borrower Funding Profile', description: 'Tell us what you need and the operating evidence lenders use to match your application.', icon: Landmark,
       fields: [
@@ -148,12 +160,22 @@ export default function MallOnboardingContent() {
   const profile = profiles[mall]?.[role];
   const [values, setValues] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState(false);
+  const ProfileIcon = profile?.icon;
 
-  const savedProfile = useMemo(() => user?.companyData?.mallOnboarding?.[mall]?.[role] || {}, [user, mall, role]);
-  useEffect(() => setValues(savedProfile), [savedProfile]);
+  const savedProfile = useMemo(() => user?.companyData?.mallOnboarding?.[mall]?.[role], [user, mall, role]);
+  useEffect(() => {
+    setValues(savedProfile || {});
+  }, [savedProfile]);
+
+  const primaryDomain = getPrimaryBusinessDomain(user);
+  const roleMembership = user?.companyData?.roleMemberships?.[mall];
+  const hasActiveRoleMembership = roleMembership?.status === 'active';
+  const isAllowedPosition = canUseMarketPosition(primaryDomain, mall as MarketId, role) ||
+    (role === 'provider' && hasActiveRoleMembership);
 
   if (isUserLoading) return <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
   if (!profile) return <div className="py-20 text-center text-muted-foreground">This mall onboarding path is not available.</div>;
+  if (!isAllowedPosition) return <div className="max-w-2xl py-20 text-center mx-auto"><ClipboardList className="h-10 w-10 text-muted-foreground mx-auto mb-4" /><h1 className="text-xl font-black">This position is not part of your business profile</h1><p className="text-muted-foreground mt-2">Activate the {mall} role membership before completing this provider profile.</p></div>;
 
   const update = (key: string, value: any) => setValues(current => ({ ...current, [key]: value }));
   const save = async () => {
@@ -179,7 +201,7 @@ export default function MallOnboardingContent() {
 
   const shopUrl = `/account?view=shop&nodeType=${mall}`;
   return <div className="max-w-4xl space-y-6 text-left">
-    <div className="flex items-start gap-4"><div className="bg-primary/10 p-3 rounded-lg"><profile.icon className="h-7 w-7 text-primary" /></div><div><h1 className="text-3xl font-black font-headline">{profile.title}</h1><p className="text-muted-foreground mt-1">{profile.description}</p></div></div>
+    <div className="flex items-start gap-4"><div className="bg-primary/10 p-3 rounded-lg">{ProfileIcon && <ProfileIcon className="h-7 w-7 text-primary" />}</div><div><h1 className="text-3xl font-black font-headline">{profile.title}</h1><p className="text-muted-foreground mt-1">{profile.description}</p></div></div>
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-primary" /> Matching questionnaire</CardTitle><CardDescription>Your answers stay in your account and can be updated as your operating position changes.</CardDescription></CardHeader><CardContent className="space-y-6">
       {profile.fields.map(field => <div key={field.key} className="space-y-2"><Label>{field.label}{field.required && <span className="text-destructive"> *</span>}</Label>{field.kind === 'textarea' ? <Textarea value={values[field.key] || ''} onChange={event => update(field.key, event.target.value)} className="min-h-24" /> : field.kind === 'multi' ? <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">{field.options?.map(option => <label key={option} className="flex items-center gap-2 rounded-md border p-3 text-sm"><Checkbox checked={(values[field.key] || []).includes(option)} onCheckedChange={checked => update(field.key, checked ? [...(values[field.key] || []), option] : (values[field.key] || []).filter((item: string) => item !== option))} />{option}</label>)}</div> : <Input type={field.kind} value={values[field.key] || ''} onChange={event => update(field.key, event.target.value)} />}</div>)}
       <div className="flex flex-col sm:flex-row gap-3 pt-4"><Button onClick={save} disabled={saving} className="font-bold"><CheckCircle2 className="mr-2 h-4 w-4" />{saving ? 'Saving...' : 'Save Questionnaire'}</Button>{role === 'provider' && mall !== 'finance' && <Button variant="outline" onClick={() => router.push(shopUrl)}><Store className="mr-2 h-4 w-4" />Continue to Shop Setup</Button>}</div>

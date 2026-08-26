@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
     }
     
     try {
+        const { nodeType = 'default' } = await req.json().catch(() => ({}));
         const adminAuth = getAuth(app);
         const decodedToken = await adminAuth.verifyIdToken(token);
         const uid = decodedToken.uid;
@@ -37,7 +38,25 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, error: 'A transaction membership is required before creating a business profile.' }, { status: 403 });
         }
 
-        const isTransporter = companyData?.shopType === 'transporter' || userData?.declaredPosition === 'transporter';
+        const normalizedNodeType = String(nodeType).toLowerCase();
+        const requiredRoleByNodeType: Record<string, string> = {
+            supplier: 'supplier', warehouse: 'supplier', 'buy-sell': 'supplier',
+            transport: 'transporter', loads: 'transporter',
+            finance: 'finance',
+        };
+        const requiredRole = requiredRoleByNodeType[normalizedNodeType];
+        const activeRoles = new Set([
+            companyData?.primaryBusinessDomain, companyData?.declaredRole, companyData?.shopType,
+            userData?.primaryBusinessDomain, userData?.declaredRole, userData?.declaredPosition,
+            ...(companyData?.activeBusinessRoles || []),
+        ].filter(Boolean).map((role: string) => role.toLowerCase()));
+        const hasActiveMembershipRole = requiredRole && companyData?.roleMemberships?.[requiredRole]?.status === 'active';
+        const roleAliases: Record<string, string[]> = { supplier: ['supplier', 'vendor'], transporter: ['transporter'], finance: ['finance', 'lender'] };
+        if (requiredRole && !hasActiveMembershipRole && !roleAliases[requiredRole].some(role => activeRoles.has(role))) {
+            return NextResponse.json({ success: false, error: `An active ${requiredRole} business role is required before opening this Shop.` }, { status: 403 });
+        }
+
+        const isTransporter = requiredRole === 'transporter';
 
         // Fetch loyalty settings
         const [transactionPlanDoc, loyaltyConfigDoc] = await Promise.all([
@@ -61,8 +80,9 @@ export async function POST(req: NextRequest) {
           ownerId: uid,
           companyId: companyId,
           status: 'draft',
-          shopType: isTransporter ? 'transporter' : 'vendor',
-          shopName: `${decodedToken.name || 'My'}'s New ${isTransporter ? 'Service Profile' : 'Shop'}`,
+          nodeType: normalizedNodeType,
+          shopType: isTransporter ? 'transporter' : requiredRole === 'finance' ? 'finance' : 'vendor',
+          shopName: `${decodedToken.name || 'My'}'s New ${isTransporter ? 'Transport Shop' : requiredRole === 'finance' ? 'Finance Shop' : 'Shop'}`,
           category: '',
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),

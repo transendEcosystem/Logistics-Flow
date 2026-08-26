@@ -45,6 +45,20 @@ This API must be enabled for your key to work. It's possible you have a key, but
 
 ---
 
+### Step 4a: Allow the API Key to Use Generative Language
+
+Enabling the API at project level is not sufficient when the API key has API restrictions. The application uses `GenerateContent` for text and Gemini image generation.
+
+1. Open the Google Cloud API key credentials page for the project:
+    **[https://console.cloud.google.com/apis/credentials?project=ecosystem-hub](https://console.cloud.google.com/apis/credentials?project=ecosystem-hub)**
+2. Select the API key used as `GEMINI_API_KEY`.
+3. Under **API restrictions**, either select **Don't restrict key** or add **Generative Language API** to the allowed APIs.
+4. Save the key configuration and wait a few minutes for the change to propagate.
+
+If image generation returns `API_KEY_SERVICE_BLOCKED` or says requests to `generativelanguage.googleapis.com` are blocked, this restriction is the cause. The application cannot correct an API key restriction from code.
+
+---
+
 ### Step 5: Restart Your Application
 
 After saving the `.env` file, you must **restart your application** for the changes to take effect. If you are running `npm run dev`, stop the server (Ctrl+C) and run it again.

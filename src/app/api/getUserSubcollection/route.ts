@@ -75,10 +75,41 @@ export async function POST(req: NextRequest) {
                 }
                 else if (pathSegments[0] === 'companies') {
                     const userDoc = await db.collection('users').doc(uid).get();
-                    const userCompanyId = userDoc.data()?.companyId;
+                    const userData = userDoc.data() || {};
+                    const userCompanyId = userData.companyId;
+                    const companyId = pathSegments[1];
+                    const companySnap = await db.collection('companies').doc(companyId).get();
+                    const isCompanyOwner = companySnap.data()?.ownerId === uid;
 
-                    if (userCompanyId && pathSegments[1] === userCompanyId) {
+                    if (isCompanyOwner || (userCompanyId && companyId === userCompanyId && pathSegments.length <= 2)) {
                         isAuthorized = true;
+                    }
+
+                    if (!isCompanyOwner && userCompanyId === companyId) {
+                        let staffSnapshot = await db.collection(`companies/${companyId}/staff`)
+                            .where('userUid', '==', uid)
+                            .where('status', '==', 'confirmed')
+                            .limit(1)
+                            .get();
+                        if (staffSnapshot.empty && userData.email) {
+                            staffSnapshot = await db.collection(`companies/${companyId}/staff`)
+                                .where('email', '==', String(userData.email).toLowerCase())
+                                .where('status', '==', 'confirmed')
+                                .limit(1)
+                                .get();
+                        }
+                        const staffData = staffSnapshot.docs[0]?.data() || {};
+                        const permissions = Array.isArray(staffData.permissions) ? staffData.permissions : [];
+                        const resource = pathSegments[2];
+                        const requiredPermission = resource === 'quotes' ? 'view:quotes'
+                            : resource === 'enquiries' ? 'view:enquiries'
+                            : resource === 'walletPayments' || resource === 'payoutRequests' ? 'view:wallet'
+                            : resource === 'transactions' ? 'view:transactions'
+                            : null;
+
+                        if (requiredPermission && permissions.includes(requiredPermission)) {
+                            isAuthorized = true;
+                        }
                     }
                 }
             }

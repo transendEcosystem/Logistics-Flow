@@ -34,15 +34,26 @@ const imageGenerateFlow = ai.defineFlow(
     outputSchema: ImageGenerateOutputSchema,
   },
   async (input: ImageGenerateInput) => {
-    const { media } = await ai.generate({
-      model: 'googleai/imagen-4.0-fast-generate-001',
-      prompt: input.prompt,
-    });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
 
-    if (!media?.url) {
-      throw new Error('Image generation failed to return an image.');
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: input.prompt }] }],
+        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result?.error?.message || 'Gemini image generation failed.');
     }
-    
-    return { imageDataUri: media.url };
+
+    const imagePart = result?.candidates?.flatMap((candidate: any) => candidate?.content?.parts || [])
+      .find((part: any) => part?.inlineData?.data && String(part.inlineData.mimeType || '').startsWith('image/'));
+    if (!imagePart) throw new Error('Gemini did not return an image.');
+
+    return { imageDataUri: `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}` };
   }
 );

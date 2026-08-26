@@ -17,6 +17,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn, formatDateSafe, formatCurrency } from '@/lib/utils';
 import Link from 'next/link';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { LoadEnquiriesPanel } from './loads/load-enquiries-panel';
+import { getPrimaryBusinessDomain } from '@/lib/business-domain';
 
 /**
  * DEMAND PULSE MODULE
@@ -75,13 +77,13 @@ function DemandPulseModule({ category }: { category: string }) {
 }
 
 const nodeConfig: Record<string, { title: string; description: string; icon: any }> = {
-    loads: { title: "Brokerage Hub", description: "Manage clearing authorizations, margins, and active load postings.", icon: PackageSearch },
-    warehouse: { title: "Warehouse Hub", description: "Manage storage capacity, pallet availability, and handling fees.", icon: Warehouse },
-    transport: { title: "Fleet Node", description: "Configure vehicle assets, service lanes, and technical profile.", icon: Truck },
-    'buy-sell': { title: "Marketplace Node", description: "Manage vehicle inventory, sales agreements, and communications.", icon: ShoppingCart },
-    supplier: { title: "Supplier Shop", description: "Manage your digital storefront and product catalogue.", icon: Store },
-    finance: { title: "Finance Provider Profile", description: "Publish funding products, lending criteria, and specialist finance capabilities.", icon: Landmark },
-    default: { title: "Industrial Node", description: "Manage your professional presence across the ecosystem.", icon: Landmark }
+    loads: { title: "Load Shop Back Office", description: "Manage your public freight offer, load postings, responses and commercial execution.", icon: PackageSearch },
+    warehouse: { title: "Warehouse Shop Back Office", description: "Manage storage capacity, enquiries, bookings and handling fees.", icon: Warehouse },
+    transport: { title: "Transport Shop Back Office", description: "Manage your public fleet offer, service lanes, load responses and commercial execution.", icon: Truck },
+    'buy-sell': { title: "Buy & Sell Shop Back Office", description: "Manage vehicle inventory, buyer offers, sales agreements and communications.", icon: ShoppingCart },
+    supplier: { title: "Supplier Shop Back Office", description: "Manage your digital storefront, catalogue, customer enquiries and fulfilment activity.", icon: Store },
+    finance: { title: "Finance Shop Back Office", description: "Manage funding products, applicant opportunities, lending criteria and commercial execution.", icon: Landmark },
+    default: { title: "Shop Back Office", description: "Manage your public commercial presence and the activity it generates across the ecosystem.", icon: Landmark }
 };
 
 const statusColors: Record<string, string> = {
@@ -134,7 +136,7 @@ export default function ShopContent() {
     try {
       const token = await getClientSideAuthToken();
       if (!token) throw new Error('Authentication token not found.');
-      const response = await fetch('/api/createShop', { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+    const response = await fetch('/api/createShop', { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ nodeType }) });
       const result = await response.json();
       if (response.ok && result.success) {
         toast({ title: 'Node Handshake Initialized' });
@@ -153,6 +155,11 @@ export default function ShopContent() {
 
   const isLoading = isUserLoading || isUserDataLoading || isCompanyLoading || arePermissionsLoading;
     const hasTransactionMembership = Boolean(companyData?.transactionMembershipId);
+        const requiredRoleByNodeType: Record<string, string> = { supplier: 'supplier', warehouse: 'supplier', 'buy-sell': 'supplier', transport: 'transporter', loads: 'transporter', finance: 'finance' };
+        const requiredRole = requiredRoleByNodeType[nodeType];
+        const primaryRole = getPrimaryBusinessDomain({ companyData, ...userData });
+        const activeRoles = new Set([primaryRole, ...(companyData?.activeBusinessRoles || [])].filter(Boolean));
+        const hasRole = !requiredRole || activeRoles.has(requiredRole === 'finance' ? 'lender' : requiredRole) || companyData?.roleMemberships?.[requiredRole]?.status === 'active';
 
   if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
 
@@ -167,6 +174,11 @@ export default function ShopContent() {
         );
     }
 
+    if (!hasRole) {
+        const roleToActivate = requiredRole === 'finance' ? 'finance' : requiredRole;
+        return <div className="text-center py-24 border-4 border-dashed rounded-3xl bg-muted/10"><div className="bg-white p-6 rounded-full w-fit mx-auto mb-6 shadow-sm"><Lock className="h-12 w-12 text-muted-foreground opacity-50" /></div><h3 className="text-2xl font-black uppercase tracking-tight">{requiredRole?.[0].toUpperCase()}{requiredRole?.slice(1)} Role Required</h3><p className="mt-2 text-muted-foreground max-w-md mx-auto font-medium">Activate the matching business role before opening this Shop. This keeps each public Shop aligned with the company role that operates it.</p><Button asChild size="lg" className="mt-10 h-14 px-10 font-black uppercase tracking-tight"><Link href={`/account/additional-role?role=${roleToActivate}`}>Activate {roleToActivate} Role</Link></Button></div>;
+    }
+
     if (nodeType === 'finance') {
         return <LendingParametersContent onboarding />;
     }
@@ -176,7 +188,7 @@ export default function ShopContent() {
         return (
             <div className="space-y-6">
                 <Button variant="ghost" onClick={() => setIsEditing(false)} className="gap-2 text-muted-foreground text-left text-foreground">
-                    <ArrowLeft className="h-4 w-4" /> Back to Node Hub
+                    <ArrowLeft className="h-4 w-4" /> Back to Shop Back Office
                 </Button>
                 {userShop && <ShopWizard shop={userShop} nodeType={nodeType} onUpdate={() => { forceRefreshUser(); forceRefreshCompany(); if(forceRefreshShop) forceRefreshShop(); }} />}
             </div>
@@ -188,7 +200,7 @@ export default function ShopContent() {
             <div className="text-left space-y-1 mb-8">
                 <h1 className="text-3xl font-black font-headline tracking-tight flex items-center gap-3 text-left">
                     <config.icon className="h-8 w-8 text-primary" />
-                    {config.title} Terminal
+                    {config.title}
                 </h1>
                 <p className="text-muted-foreground text-left">{config.description}</p>
             </div>
@@ -196,7 +208,7 @@ export default function ShopContent() {
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full text-left text-foreground">
                 <TabsList className="bg-muted/50 p-1 h-auto mb-8 flex-wrap justify-start text-left text-foreground">
                     <TabsTrigger value="terminal" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
-                        <config.icon className="h-3.5 w-3.5" /> Node Management
+                        <config.icon className="h-3.5 w-3.5" /> Shop Management
                     </TabsTrigger>
                     <TabsTrigger value="pulse" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
                         <BarChart3 className="h-3.5 w-3.5" /> Demand Pulse
@@ -204,6 +216,7 @@ export default function ShopContent() {
                     <TabsTrigger value="promote" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
                         <Zap className="h-3.5 w-3.5" /> Visibility Boost
                     </TabsTrigger>
+                    {nodeType === 'loads' && <TabsTrigger value="load-enquiries" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]"><FileText className="h-3.5 w-3.5" /> Load Enquiries</TabsTrigger>}
                 </TabsList>
 
                 <TabsContent value="terminal" className="space-y-8 text-left text-foreground">
@@ -240,7 +253,7 @@ export default function ShopContent() {
                                 <div className="pt-4 flex flex-col gap-3 text-left text-foreground">
                                     <Button className="h-14 text-lg font-black uppercase tracking-tight shadow-lg gap-2 text-white" onClick={() => setIsEditing(true)}>
                                         <Edit className="h-5 w-5" />
-                                        Enter Edit Terminal
+                                        Edit Public Shop
                                     </Button>
                                     <Button variant="outline" className="h-14 text-lg font-black uppercase tracking-tight gap-2" asChild disabled={userShop?.status !== 'approved'}>
                                         <Link href={`/shops/${userShop?.id}`}>
@@ -255,8 +268,8 @@ export default function ShopContent() {
                         <Card className="bg-primary/5 border-2 border-dashed border-primary/20 text-left text-foreground">
                             <CardHeader className="text-left">
                                 <div className="bg-primary/10 p-3 rounded-xl w-fit mb-4 text-left"><Zap className="h-6 w-6 text-primary" /></div>
-                                <CardTitle className="text-xl font-bold text-left">Terminal Directives</CardTitle>
-                                <CardDescription className="text-left text-foreground">Recommendations for maximizing your node's performance.</CardDescription>
+                                <CardTitle className="text-xl font-bold text-left">Shop Back Office Guidance</CardTitle>
+                                <CardDescription className="text-left text-foreground">Recommendations for improving your public offer and the commercial activity it generates.</CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4 text-left">
                                 <ul className="space-y-3 text-sm text-left">
@@ -290,6 +303,7 @@ export default function ShopContent() {
                 <TabsContent value="promote" className="animate-in fade-in slide-in-from-bottom-2 duration-500 text-left text-foreground">
                     <PromoteNodeContent />
                 </TabsContent>
+                {nodeType === 'loads' && <TabsContent value="load-enquiries" className="animate-in fade-in slide-in-from-bottom-2 duration-500 text-left text-foreground"><LoadEnquiriesPanel /></TabsContent>}
             </Tabs>
         </div>
     );

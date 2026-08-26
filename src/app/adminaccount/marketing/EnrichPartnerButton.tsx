@@ -213,6 +213,8 @@ Report only what is published on pages you open. Use null for anything you canno
 
 For servicesDescription, quote prose sentences from the About or Services page. Do not include menu items, page titles or truncated fragments. If the site has no real description, use null. Write every URL in full, starting with https:// and including the page path \u2014 a bare domain like "facebook.com" is not acceptable.
 
+Return one complete JSON object in one response. Do not use citations, markdown links, code fences, "Use code with caution", or separate JSON fragments around URLs. Put every URL as ordinary text inside its JSON string value.
+
 Reply with only this JSON and nothing else:
 {"record_id":"${partner.id}","companyName":null,"website":null,"email":null,"phone":null,"address":null,"industrial_category":null,"servicesDescription":null,"managementTeam":[{"name":null,"role":null,"source":null}],"sourceUrls":[],"confidence":null}`;
         }
@@ -254,6 +256,8 @@ RULES THROUGHOUT:
 
 OUTPUT HYGIENE:
 - Return raw JSON only. No markdown, no code fences, no commentary before or after. Do not append citation markers.
+- Return exactly one complete JSON object. Never split URL values into a separate code block or citation card.
+- Do not use markdown links, footnotes, citation markers, or the words "Use code with caution". Store URLs as ordinary JSON strings only.
 - Every URL must be the exact full page address you opened, starting with https:// and including the path.
 - A bare domain such as "facebook.com" or "linkedin.com" is NOT acceptable and will be discarded. A social profile must be the complete profile URL, for example https://www.facebook.com/CompanyPageName/ or https://www.linkedin.com/company/company-name/. If you cannot produce the full profile URL, set that profile to null.
 - Do not repeat the same URL twice in "sourceUrls".
@@ -343,27 +347,26 @@ SELF-AUDIT: for every non-null value, name the URL you read it on. If you cannot
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="space-y-4 py-4 text-left">
-                        <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-4 py-4 text-left min-w-0">
+                        <div className="space-y-2 min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Research mode</p>
                             <Button
                                 type="button"
                                 variant={mode === 'search' ? 'default' : 'outline'}
-                                size="sm"
-                                className="h-auto w-full min-w-0 whitespace-normal py-2 text-[11px] font-bold leading-tight"
+                                className="h-auto w-full min-w-0 justify-start whitespace-normal px-4 py-3 text-left"
                                 onClick={() => { setMode('search'); setIsCopied(false); }}
                             >
-                                Chrome AI Mode
-                                <span className="block font-normal opacity-70">short</span>
+                                <Search className="mr-3 h-4 w-4 shrink-0" />
+                                <span className="min-w-0"><span className="block text-sm font-bold">Chrome AI Mode</span><span className="block text-xs font-normal opacity-75">Short, search-friendly prompt</span></span>
                             </Button>
                             <Button
                                 type="button"
                                 variant={mode === 'agent' ? 'default' : 'outline'}
-                                size="sm"
-                                className="h-auto w-full min-w-0 whitespace-normal py-2 text-[11px] font-bold leading-tight"
+                                className="h-auto w-full min-w-0 justify-start whitespace-normal px-4 py-3 text-left"
                                 onClick={() => { setMode('agent'); setIsCopied(false); }}
                             >
-                                Gemini / ChatGPT
-                                <span className="block font-normal opacity-70">full</span>
+                                <Zap className="mr-3 h-4 w-4 shrink-0" />
+                                <span className="min-w-0"><span className="block text-sm font-bold">Gemini or ChatGPT</span><span className="block text-xs font-normal opacity-75">Full seven-stage research prompt</span></span>
                             </Button>
                         </div>
 

@@ -3,6 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import { getAdminApp } from '@/lib/firebase-admin';
 
+function resolvePrimaryBusinessDomain(role: string | null): 'supplier' | 'transporter' | 'lender' | null {
+  const normalized = String(role || '').toLowerCase();
+  if (normalized === 'supplier' || normalized === 'vendor') return 'supplier';
+  if (normalized === 'transporter') return 'transporter';
+  if (normalized === 'lender' || normalized === 'finance') return 'lender';
+  return null;
+}
+
 /**
  * STRATEGIC REGISTRATION API
  * Performs forensic registry lookups to ensure invited partners and leads 
@@ -18,10 +26,12 @@ export async function POST(req: NextRequest) {
     
     let referrerId: string | null = null;
     let declaredPosition: string | null = null;
+    let invitationCompanyId: string | null = null;
     try {
       const body = await req.json();
       referrerId = body?.referrerId || null;
       declaredPosition = body?.role || null;
+      invitationCompanyId = body?.invitationCompanyId || null;
     } catch (e) {}
 
     const { app, error: initError } = getAdminApp();
@@ -65,6 +75,46 @@ export async function POST(req: NextRequest) {
       const db = getFirestore(app);
       const userDocRef = db.collection('users').doc(firebaseUser.uid);
       const userDocSnap = await userDocRef.get();
+
+      const invitedStaffQuery = invitationCompanyId
+        ? await db.collection(`companies/${invitationCompanyId}/staff`).where('email', '==', firebaseUser.email.toLowerCase()).limit(1).get()
+        : { empty: true, docs: [] } as any;
+      const invitedStaffDoc = invitedStaffQuery.empty ? null : invitedStaffQuery.docs[0];
+      const invitedStaffData = invitedStaffDoc?.data();
+      const invitedCompanyRef = invitedStaffDoc ? db.collection('companies').doc(invitationCompanyId as string) : null;
+
+      if (invitedStaffDoc && invitedCompanyRef) {
+        const invitedCompanySnap = await invitedCompanyRef.get();
+        if (!invitedCompanySnap.exists) {
+          return NextResponse.json({ success: false, error: 'The invitation company no longer exists.' }, { status: 400 });
+        }
+
+        const invitedCompanyData = invitedCompanySnap.data() || {};
+        const batch = db.batch();
+        batch.set(userDocRef, {
+          id: firebaseUser.uid,
+          firstName: invitedStaffData.firstName || firebaseUser.displayName.split(' ')[0] || 'Staff',
+          lastName: invitedStaffData.lastName || firebaseUser.displayName.split(' ').slice(1).join(' ') || 'Member',
+          email: firebaseUser.email,
+          phone: firebaseUser.phoneNumber || '',
+          companyId: invitationCompanyId,
+          role: 'staff',
+          declaredPosition: invitedStaffData.role || declaredPosition || 'staff',
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        batch.update(invitedStaffDoc.ref, {
+          userUid: firebaseUser.uid,
+          status: 'confirmed',
+          invitationStatus: 'accepted',
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        batch.set(invitedCompanyRef, {
+          authorisedRepresentativeUid: invitedCompanyData.authorisedRepresentativeUid || invitedCompanyData.ownerId || null,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        await batch.commit();
+        return NextResponse.json({ success: true, message: 'Staff account linked to the existing company.' });
+      }
 
       // 1. Check if profile already exists
       if (userDocSnap.exists && userDocSnap.data()?.companyId) {
@@ -151,7 +201,8 @@ export async function POST(req: NextRequest) {
       const displayName = firebaseUser.displayName.trim();
       const companyName = existingRecord?.companyName || (displayName ? `${displayName}'s Company` : 'My Company');
       const isAssociate = declaredPosition === 'associate';
-      const shopType = declaredPosition === 'transporter' ? 'transporter' : 'vendor';
+      const primaryBusinessDomain = resolvePrimaryBusinessDomain(declaredPosition);
+      const shopType = primaryBusinessDomain === 'transporter' ? 'transporter' : 'vendor';
 
       const newCompanyData: any = {
           id: companyIdToUse,
@@ -166,6 +217,7 @@ export async function POST(req: NextRequest) {
           status: 'active',
           shopType: shopType, 
           declaredRole: declaredPosition,
+          primaryBusinessDomain,
           leadId: existingRecord?.id || null,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),

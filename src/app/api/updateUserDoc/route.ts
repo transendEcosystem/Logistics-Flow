@@ -75,14 +75,42 @@ export async function POST(req: NextRequest) {
     if (isAdmin) {
         isAuthorized = true;
     } else {
+        const isTransportCapacityUpdate = pathSegments[0] === 'companies' && pathSegments[2] !== 'staff' && (
+            Object.prototype.hasOwnProperty.call(data, 'fleet') ||
+            Boolean(data.mallOnboarding?.transporter?.provider)
+        );
         if (pathSegments[0] === 'users' && pathSegments[1] === uid) {
             isAuthorized = true;
         } else {
             const userDocForAuth = await db.collection('users').doc(uid).get();
             const userCompanyIdForAuth = userDocForAuth.data()?.companyId;
 
-            if (userCompanyIdForAuth && pathSegments[0] === 'companies' && pathSegments[1] === userCompanyIdForAuth) {
+            if (!isTransportCapacityUpdate && userCompanyIdForAuth && pathSegments[0] === 'companies' && pathSegments[1] === userCompanyIdForAuth) {
                 isAuthorized = true;
+            }
+
+            if (isTransportCapacityUpdate) {
+                const companySnap = await db.collection('companies').doc(pathSegments[1]).get();
+                const companyData = companySnap.data() || {};
+                if (companyData.ownerId === uid) {
+                    isAuthorized = true;
+                } else {
+                    const staffSnapshot = await db.collection(`companies/${pathSegments[1]}/staff`)
+                        .where('userUid', '==', uid)
+                        .where('status', '==', 'confirmed')
+                        .limit(1)
+                        .get();
+                    const permissions = staffSnapshot.docs[0]?.data()?.permissions || [];
+                    isAuthorized = permissions.includes('edit:postTransport') ||
+                        permissions.includes('authorize:postTransport') ||
+                        permissions.includes('manage:postTransport');
+                }
+            }
+
+            // Staff authority is delegated only by the company owner or platform admin.
+            if (pathSegments[0] === 'companies' && pathSegments[2] === 'staff') {
+                const companySnap = await db.collection('companies').doc(pathSegments[1]).get();
+                isAuthorized = companySnap.data()?.ownerId === uid;
             }
         }
     }
