@@ -91,14 +91,20 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
   useEffect(() => {
     if (open) {
       if (partner) {
+          const primaryContactRole = partner.primaryContactRole || 'marketingManager';
+          const structuredContact = partner[primaryContactRole];
           const sanitizedPartner = {
               ...partner,
-              marketingManager: partner.marketingManager || { name: '', email: '', mobile: '' },
+              marketingManager: partner.marketingManager || (primaryContactRole === 'marketingManager' ? {
+                name: partner.contactPerson || `${partner.firstName || ''} ${partner.lastName || ''}`.trim(),
+                email: partner.email || '',
+                mobile: partner.mobile || partner.phone || '',
+              } : { name: '', email: '', mobile: '' }),
               operationsManager: partner.operationsManager || { name: '', email: '', mobile: '' },
               technicalManager: partner.technicalManager || { name: '', email: '', mobile: '' },
               ceo: partner.ceo || { name: '', email: '', mobile: '' },
               status: partner.status || 'new',
-              primaryContactRole: partner.primaryContactRole || 'marketingManager'
+              primaryContactRole,
           };
           form.reset(sanitizedPartner);
       } else {
@@ -112,7 +118,7 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
     try {
       const token = await getClientSideAuthToken();
       if (!token) throw new Error("Auth failed.");
-      const coll = partner?.source === 'Lead' ? 'leads' : 'partners';
+      const coll = partner?.sourceCollection || (partner?.source === 'Lead' ? 'leads' : targetType === 'supplier' ? 'suppliers' : 'partners');
       await performAdminAction(token, 'savePartner', { collection: coll, partner: { id: partner?.id, ...values, type: targetType } });
       toast({ title: 'Record Saved' });
       onSave();
@@ -496,7 +502,7 @@ export default function SupplierManagement() {
           <div className="flex justify-end gap-1 text-foreground">
             <EnrichPartnerButton partner={row.original} onUpdate={() => fetchData()} />
             <ContentHarvestButton partner={row.original} onUpdate={() => fetchData()} />
-            <CommercialDeepDiveButton partner={row.original} onUpdate={() => fetchData()} />
+            <CommercialDeepDiveButton partner={row.original} onUpdate={() => fetchData()} onEngage={handleEngage} />
             <Button variant="ghost" size="icon" onClick={() => handleEngage(row.original)}><Send className="h-4 w-4 text-primary" /></Button>
             <AddCommunicationLogDialog 
                 partnerId={row.original.id} 
@@ -542,12 +548,12 @@ export default function SupplierManagement() {
       </AlertDialog>
 
       <div className="space-y-6 text-left text-foreground">
-          <CardHeader className="px-0 pt-0 flex flex-col md:flex-row items-center justify-between gap-4 text-left">
+          <CardHeader className="px-0 pt-0 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-left">
               <div className="text-left text-foreground">
                 <CardTitle className="flex items-center gap-2 text-2xl font-black font-headline text-left text-foreground"><Building className="h-6 w-6" /> Supplier Registry</CardTitle>
                 <CardDescription className="text-left text-muted-foreground">Unified database view ({filteredRecords.length} records).</CardDescription>
               </div>
-              <div className="flex gap-2 text-left">
+              <div className="flex flex-wrap gap-2 text-left w-full md:w-auto">
                   <Button variant="outline" size="sm" onClick={() => fetchData()} className="text-foreground"><RotateCcw className="h-4 w-4 mr-2" /> Sync Registry</Button>
                   <Popover>
                       <PopoverTrigger asChild>
