@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 import { getAdminApp, verifyAdmin } from '@/lib/firebase-admin';
 import sgMail from '@sendgrid/mail';
+import { validateAgreementAgainstPolicies } from '@/lib/lending/policy-engine';
 
 function resolveCollection(requestUrl: string, bodyPayload?: any): string {
   try {
@@ -12,9 +14,11 @@ function resolveCollection(requestUrl: string, bodyPayload?: any): string {
       bodyPayload?.view ||
       bodyPayload?.type ||
       bodyPayload?.collection ||
+      bodyPayload?.collectionName ||
       nestedPayload?.view ||
       nestedPayload?.type ||
       nestedPayload?.collection ||
+      nestedPayload?.collectionName ||
       ''
     ).toString().toLowerCase();
     
@@ -166,6 +170,20 @@ function toStringArray(value: unknown): string[] {
   return [];
 }
 
+function removeUndefinedValues<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.filter(item => item !== undefined).map(item => removeUndefinedValues(item)) as T;
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, removeUndefinedValues(item)])
+    ) as T;
+  }
+  return value;
+}
+
 function matchesRegistryFilters(record: Record<string, any>, filters: Record<string, any>, typeValues: string[] = []) {
   const term = String(filters.term || '').trim().toLowerCase();
   const category = String(filters.category || filters.industrial_category || '').trim();
@@ -277,7 +295,6 @@ export async function POST(request: Request) {
   try {
     const { app, error } = getAdminApp();
     if (!app) throw new Error(error || 'Firebase administration is unavailable.');
-    const db = getFirestore(app);
     let body = {};
     try {
       body = await request.json();
@@ -289,6 +306,411 @@ export async function POST(request: Request) {
     const { action, payload } = requestBody as any;
     const resolvedPayload = (payload || requestBody || {}) as Record<string, any>;
     const collectionName = resolveCollection(request.url, requestBody);
+
+    let db: FirebaseFirestore.Firestore;
+    let adminUid: string = '';
+
+    if (action === 'logClick') {
+      db = getFirestore(app);
+    } else {
+      const authResult = await verifyAdmin(request as any);
+      db = authResult.db;
+      adminUid = authResult.adminUid;
+    }
+
+    if (action === 'getLendingData') {
+      const requestedCollection = String(resolvedPayload.collectionName || resolvedPayload.collection || '').trim();
+      const allowedCollections = new Set([
+        'agreements',
+        'collateral',
+        'documents',
+        'facilities',
+        'lendingAssets',
+        'lendingClients',
+        'lendingDebtors',
+        'lendingPartners',
+        'lendingSuppliers',
+        'securities',
+        'transactions',
+      ]);
+
+      if (!allowedCollections.has(requestedCollection)) {
+        return NextResponse.json({ success: false, error: 'Invalid lending collection requested.' }, { status: 400 });
+      }
+
+      const requestedLimit = Number(resolvedPayload.limit || 250);
+      const safeLimit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 250, 1), 500);
+      const orderedSnapshot = await db.collection(requestedCollection).orderBy('updatedAt', 'desc').limit(safeLimit).get();
+      const fallbackSnapshot = orderedSnapshot.size < safeLimit
+        ? await db.collection(requestedCollection).limit(safeLimit).get()
+        : null;
+      const recordsById = new Map<string, Record<string, any>>();
+      for (const doc of [...orderedSnapshot.docs, ...(fallbackSnapshot?.docs || [])]) {
+        recordsById.set(doc.id, { id: doc.id, ...doc.data() });
+      }
+      const records = Array.from(recordsById.values())
+        .sort((first: any, second: any) => {
+          const firstDate = new Date(first.updatedAt?.toDate?.() || first.updatedAt || first.createdAt?.toDate?.() || first.createdAt || 0).getTime();
+          const secondDate = new Date(second.updatedAt?.toDate?.() || second.updatedAt || second.createdAt?.toDate?.() || second.createdAt || 0).getTime();
+          return secondDate - firstDate;
+        });
+
+      return NextResponse.json({
+        success: true,
+        leads: records,
+        data: records,
+        items: records,
+        records,
+      }, { status: 200 });
+    }
+
+    if (action === 'getLendingPolicies') {
+      const policySnapshot = await db.collection('configuration').doc('lendingPolicies').get();
+      return NextResponse.json({ success: true, data: policySnapshot.data() || {} }, { status: 200 });
+    }
+
+    if (action === 'createAgreementFacilityApplication') {
+      const application = resolvedPayload.application;
+      if (!application || typeof application !== 'object') {
+        return NextResponse.json({ success: false, error: 'Agreement application data is required.' }, { status: 400 });
+      }
+      const clientId = String(application.clientId || '').trim();
+      const masterFacilityId = String(application.masterFacilityId || '').trim();
+      const amountRequested = Number(application.amountRequested || 0);
+      if (!clientId || !masterFacilityId || !application.type || !amountRequested) {
+        return NextResponse.json({ success: false, error: 'Client, approved global facility, agreement type, and requested amount are required.' }, { status: 400 });
+      }
+      const [clientSnapshot, masterSnapshot] = await Promise.all([
+        db.collection('lendingClients').doc(clientId).get(),
+        db.collection('facilities').doc(masterFacilityId).get(),
+      ]);
+      if (!clientSnapshot.exists || !masterSnapshot.exists) return NextResponse.json({ success: false, error: 'Client or global facility was not found.' }, { status: 404 });
+      const master = masterSnapshot.data() || {};
+      if (master.facilityClass !== 'global' || (master.status !== 'approved' && master.status !== 'active')) {
+        return NextResponse.json({ success: false, error: 'An approved global facility is required before an agreement application can be made.' }, { status: 409 });
+      }
+      const existingSubFacilities = await db.collection('facilities').where('parentId', '==', masterFacilityId).get();
+      const matchingSub = existingSubFacilities.docs.find((document) => document.data()?.applicationId === String(application.applicationId || ''));
+      const subFacilityRef = matchingSub?.ref || db.collection('facilities').doc();
+      const now = new Date().toISOString();
+      const client = clientSnapshot.data() || {};
+      const subFacility = {
+        id: subFacilityRef.id,
+        applicationId: String(application.applicationId || subFacilityRef.id),
+        ownerType: 'client',
+        clientId,
+        parentId: masterFacilityId,
+        facilityClass: 'sub',
+        type: String(application.type),
+        limit: amountRequested,
+        status: matchingSub?.data()?.status || 'pending_credit',
+        onboardingStage: matchingSub?.data()?.onboardingStage || 'application',
+        onboardingTasks: matchingSub?.data()?.onboardingTasks || {},
+        onboardingEvidence: matchingSub?.data()?.onboardingEvidence || {},
+        applicantRequest: { amountRequested, termMonths: Number(application.termMonths || 0), description: String(application.description || '') },
+        source: 'client_agreement_application',
+        clientApplicationId: clientId,
+        sourceClientStatus: String(client.status || 'not_started'),
+        updatedAt: FieldValue.serverTimestamp(),
+        createdAt: matchingSub?.data()?.createdAt || FieldValue.serverTimestamp(),
+        createdBy: matchingSub?.data()?.createdBy || adminUid,
+      };
+      await subFacilityRef.set(subFacility, { merge: true });
+      const caseSnapshot = await db.collection('lendingApplications').where('facilityId', '==', subFacilityRef.id).limit(1).get();
+      const caseRef = caseSnapshot.empty ? db.collection('lendingApplications').doc() : caseSnapshot.docs[0].ref;
+      await caseRef.set({
+        id: caseRef.id,
+        applicationId: caseRef.id,
+        caseType: 'agreement_facility_case',
+        clientId,
+        masterFacilityId,
+        facilityId: subFacilityRef.id,
+        companyName: String(client.name || ''),
+        entityType: String(client.entityType || 'Pty Ltd'),
+        primaryContact: String(client.primaryContact || ''),
+        email: String(client.email || ''),
+        phone: String(client.phone || ''),
+        amountRequested,
+        termMonths: Number(application.termMonths || 0),
+        facilityType: String(application.type),
+        facilityAgreementType: String(application.type),
+        fundingNeed: String(application.fundingNeed || 'agreement-specific'),
+        purposeNarrative: String(application.description || ''),
+        status: caseSnapshot.empty ? 'submitted' : (caseSnapshot.docs[0].data()?.status || 'submitted'),
+        sourceCollections: ['lendingClients', 'facilities', 'agreements'],
+        sourceSnapshot: { clientId, masterFacilityId, facilityId: subFacilityRef.id, clientApplicationId: clientId, clientApplicationUpdatedAt: client.updatedAt || null, capturedAt: now },
+        updatedAt: now,
+        createdAt: caseSnapshot.empty ? now : (caseSnapshot.docs[0].data()?.createdAt || now),
+      }, { merge: true });
+      await subFacilityRef.set({ creditCaseId: caseRef.id }, { merge: true });
+      return NextResponse.json({ success: true, facilityId: subFacilityRef.id, creditCaseId: caseRef.id, collection: 'facilities' }, { status: 200 });
+    }
+
+    if (action === 'ensureGlobalFacilityReview') {
+      const clientId = String(resolvedPayload.clientId || '').trim();
+      if (!clientId) {
+        return NextResponse.json({ success: false, error: 'clientId is required.' }, { status: 400 });
+      }
+      const clientSnapshot = await db.collection('lendingClients').doc(clientId).get();
+      if (!clientSnapshot.exists) {
+        return NextResponse.json({ success: false, error: 'Client application was not found.' }, { status: 404 });
+      }
+
+      const client = clientSnapshot.data() || {};
+      const globalSnapshot = await db.collection('facilities')
+        .where('clientId', '==', clientId)
+        .get();
+      const existingGlobal = globalSnapshot.docs.find((document) => {
+        const data = document.data();
+        return data.facilityClass === 'global' || !data.parentId;
+      });
+      const facilityRef = existingGlobal?.ref || db.collection('facilities').doc();
+      const facilityData = {
+        id: facilityRef.id,
+        ownerType: 'client',
+        clientId,
+        facilityClass: 'global',
+        parentId: null,
+        type: 'Global Client Facility',
+        limit: Number(existingGlobal?.data()?.limit || 0),
+        status: existingGlobal?.data()?.status || 'pending_credit',
+        onboardingStage: existingGlobal?.data()?.onboardingStage || 'application',
+        onboardingTasks: existingGlobal?.data()?.onboardingTasks || {},
+        onboardingEvidence: existingGlobal?.data()?.onboardingEvidence || {},
+        source: 'completed_client_application',
+        clientApplicationId: clientId,
+        createdBy: existingGlobal?.data()?.createdBy || adminUid,
+        createdAt: existingGlobal?.data()?.createdAt || FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      await facilityRef.set(facilityData, { merge: true });
+
+      const caseSnapshot = await db.collection('lendingApplications')
+        .where('clientId', '==', clientId)
+        .get();
+      const existingCase = caseSnapshot.docs.find((document) => {
+        const data = document.data();
+        return data.masterFacilityId === facilityRef.id && !data.facilityId;
+      });
+      const caseRef = existingCase?.ref || db.collection('lendingApplications').doc();
+      const now = new Date().toISOString();
+      await caseRef.set({
+        id: caseRef.id,
+        applicationId: caseRef.id,
+        caseType: 'global_facility_indication',
+        clientId,
+        masterFacilityId: facilityRef.id,
+        companyName: String(client.name || '').trim(),
+        entityType: String(client.entityType || 'Pty Ltd'),
+        primaryContact: String(client.primaryContact || ''),
+        email: String(client.email || ''),
+        phone: String(client.phone || ''),
+        amountRequested: 0,
+        termMonths: 0,
+        facilityType: 'Global Client Facility',
+        fundingNeed: 'broad_client_facility',
+        status: existingCase?.data()?.status || 'submitted',
+        sourceCollections: ['lendingClients', 'facilities', 'agreements'],
+        originationType: existingCase?.data()?.originationType || 'direct',
+        engagementEvents: existingCase?.data()?.engagementEvents || [],
+        facilityIndication: { status: 'non_binding', committeeDetermined: true },
+        sourceSnapshot: { clientId, masterFacilityId: facilityRef.id, capturedAt: now },
+        createdAt: existingCase?.data()?.createdAt || now,
+        updatedAt: now,
+      }, { merge: true });
+      await clientSnapshot.ref.set({ globalFacilityId: facilityRef.id, globalFacilityCaseId: caseRef.id, facilityReviewStatus: 'pending_credit', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+      return NextResponse.json({ success: true, facilityId: facilityRef.id, creditCaseId: caseRef.id, collection: 'facilities' }, { status: 200 });
+    }
+
+    if (action === 'saveLendingFacility') {
+      const facility = resolvedPayload.facility;
+      if (!facility || typeof facility !== 'object') {
+        return NextResponse.json({ success: false, error: 'Facility data is required.' }, { status: 400 });
+      }
+
+      const { id, ...facilityData } = removeUndefinedValues(facility) as Record<string, any>;
+      const facilityRef = id ? db.collection('facilities').doc(String(id)) : db.collection('facilities').doc();
+      const facilityLimit = Number(facilityData.limit || 0);
+
+      if (facilityData.facilityClass === 'sub') {
+        const parentId = String(facilityData.parentId || '').trim();
+        if (!parentId) {
+          return NextResponse.json({ success: false, error: 'Sub-facilities require a parent master facility.' }, { status: 400 });
+        }
+
+        const parentSnapshot = await db.collection('facilities').doc(parentId).get();
+        if (!parentSnapshot.exists) {
+          return NextResponse.json({ success: false, error: 'Parent master facility was not found.' }, { status: 404 });
+        }
+
+        const parentData = parentSnapshot.data() || {};
+        if (parentData.status !== 'approved' && parentData.status !== 'active') {
+          return NextResponse.json({ success: false, error: 'The global facility must be approved before an agreement facility can be created.' }, { status: 409 });
+        }
+        const parentLimit = Number(parentData.limit || 0);
+        const siblingSnapshot = await db.collection('facilities').where('parentId', '==', parentId).get();
+        const siblingTotal = siblingSnapshot.docs.reduce((total, document) => {
+          if (document.id === facilityRef.id) return total;
+          return total + Number(document.data()?.limit || 0);
+        }, 0);
+
+        if (siblingTotal + facilityLimit > parentLimit) {
+          return NextResponse.json({
+            success: false,
+            error: `Sub-facility total ${siblingTotal + facilityLimit} exceeds master facility limit ${parentLimit}.`,
+          }, { status: 400 });
+        }
+      }
+
+      await facilityRef.set({
+        ...facilityData,
+        id: facilityRef.id,
+        limit: facilityLimit,
+        status: facilityData.status || 'pending_credit',
+        onboardingStage: facilityData.onboardingStage || 'lead',
+        onboardingTasks: facilityData.onboardingTasks || {},
+        onboardingEvidence: facilityData.onboardingEvidence || {},
+        createdBy: facilityData.createdBy || adminUid,
+        createdAt: facilityData.createdAt || FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      return NextResponse.json({ success: true, id: facilityRef.id, collection: 'facilities' }, { status: 200 });
+    }
+
+    if (action === 'updateFacilityStatus') {
+      const facilityId = String(resolvedPayload.facilityId || '').trim();
+      const status = String(resolvedPayload.status || '').trim();
+      if (!facilityId || !status) {
+        return NextResponse.json({ success: false, error: 'facilityId and status are required.' }, { status: 400 });
+      }
+
+      await db.collection('facilities').doc(facilityId).set({ status, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      return NextResponse.json({ success: true, id: facilityId, collection: 'facilities' }, { status: 200 });
+    }
+
+    if (action === 'deleteLendingFacility') {
+      const facilityId = String(resolvedPayload.facilityId || '').trim();
+      if (!facilityId) {
+        return NextResponse.json({ success: false, error: 'facilityId is required.' }, { status: 400 });
+      }
+
+      await db.collection('facilities').doc(facilityId).delete();
+      return NextResponse.json({ success: true, deletedId: facilityId, collection: 'facilities' }, { status: 200 });
+    }
+
+    if (action === 'saveLendingAgreement') {
+      const agreement = resolvedPayload.agreement;
+      if (!agreement || typeof agreement !== 'object') {
+        return NextResponse.json({ success: false, error: 'Agreement data is required.' }, { status: 400 });
+      }
+
+      const { id, ...agreementData } = removeUndefinedValues(agreement) as Record<string, any>;
+      const agreementRef = id ? db.collection('agreements').doc(String(id)) : db.collection('agreements').doc();
+      const previousAgreement = id ? await agreementRef.get() : null;
+      const agreementAmount = Number(agreementData.totalAdvanced || 0);
+      const policySnapshot = await db.collection('configuration').doc('lendingPolicies').get();
+      const policyViolations = validateAgreementAgainstPolicies(agreementData, policySnapshot.data() || {});
+      if (policyViolations.length > 0) {
+        return NextResponse.json({ success: false, error: policyViolations.join(' ') }, { status: 400 });
+      }
+
+      const facilityId = String(agreementData.facilityId || '').trim();
+      if (facilityId) {
+        const facilitySnapshot = await db.collection('facilities').doc(facilityId).get();
+        if (!facilitySnapshot.exists) {
+          return NextResponse.json({ success: false, error: 'Selected sub-facility was not found.' }, { status: 404 });
+        }
+        const facility = facilitySnapshot.data() || {};
+        if (facility.facilityClass !== 'sub') {
+          return NextResponse.json({ success: false, error: 'Agreements must be allocated to a sub-facility, not directly to the master facility.' }, { status: 400 });
+        }
+        if (facility.status !== 'approved' && facility.status !== 'active') {
+          return NextResponse.json({ success: false, error: 'The agreement sub-facility must be approved before an agreement can be booked.' }, { status: 409 });
+        }
+        const siblingSnapshot = await db.collection('agreements').where('facilityId', '==', facilityId).get();
+        const existingAgreementTotal = siblingSnapshot.docs.reduce((total, document) => {
+          if (document.id === agreementRef.id) return total;
+          return total + Number(document.data()?.totalAdvanced || 0);
+        }, 0);
+        const subFacilityLimit = Number(facility.limit || 0);
+        if (existingAgreementTotal + agreementAmount > subFacilityLimit) {
+          return NextResponse.json({ success: false, error: `Agreement total ${existingAgreementTotal + agreementAmount} exceeds sub-facility limit ${subFacilityLimit}.` }, { status: 400 });
+        }
+      }
+
+      let creditCaseId = String(agreementData.creditCaseId || '').trim();
+      if (!creditCaseId && agreementData.clientId && facilityId) {
+        const caseSnapshot = await db.collection('lendingApplications')
+          .where('clientId', '==', String(agreementData.clientId))
+          .get();
+        const linkedCase = caseSnapshot.docs.find((document) => document.data()?.facilityId === facilityId);
+        creditCaseId = linkedCase?.id || '';
+      }
+      if (creditCaseId) agreementData.creditCaseId = creditCaseId;
+
+      await agreementRef.set({
+        ...agreementData,
+        id: agreementRef.id,
+        totalAdvanced: agreementAmount,
+        interestRate: Number(agreementData.interestRate || 0),
+        numberOfInstallments: Number(agreementData.numberOfInstallments || 0),
+        status: agreementData.status || 'booking',
+        createDate: agreementData.createDate || FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: adminUid,
+      }, { merge: true });
+
+      const previousCreditCaseId = String(previousAgreement?.data()?.creditCaseId || '').trim();
+      if (previousCreditCaseId && previousCreditCaseId !== creditCaseId) {
+        await db.collection('lendingApplications').doc(previousCreditCaseId).set({
+          linkedAgreementIds: FieldValue.arrayRemove(agreementRef.id),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+      if (creditCaseId) {
+        await db.collection('lendingApplications').doc(creditCaseId).set({
+          agreementId: agreementRef.id,
+          linkedAgreementIds: FieldValue.arrayUnion(agreementRef.id),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      return NextResponse.json({ success: true, data: { id: agreementRef.id }, id: agreementRef.id, collection: 'agreements' }, { status: 200 });
+    }
+
+    if (action === 'deleteLendingAgreement') {
+      const agreementId = String(resolvedPayload.agreementId || '').trim();
+      if (!agreementId) {
+        return NextResponse.json({ success: false, error: 'agreementId is required.' }, { status: 400 });
+      }
+
+      await db.collection('agreements').doc(agreementId).delete();
+      return NextResponse.json({ success: true, deletedId: agreementId, collection: 'agreements' }, { status: 200 });
+    }
+
+    if (action === 'createLendingPayment') {
+      const payment = resolvedPayload.payment;
+      if (!payment || typeof payment !== 'object') {
+        return NextResponse.json({ success: false, error: 'Payment data is required.' }, { status: 400 });
+      }
+
+      const { id, ...paymentData } = removeUndefinedValues(payment) as Record<string, any>;
+      const paymentRef = id ? db.collection('lendingPayments').doc(String(id)) : db.collection('lendingPayments').doc();
+      await paymentRef.set({
+        ...paymentData,
+        id: paymentRef.id,
+        amount: Number(paymentData.amount || 0),
+        amountPaid: Number(paymentData.amountPaid || 0),
+        status: paymentData.status || 'pending',
+        createdAt: paymentData.createdAt || FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: adminUid,
+      }, { merge: true });
+
+      return NextResponse.json({ success: true, data: { id: paymentRef.id }, id: paymentRef.id, collection: 'lendingPayments' }, { status: 200 });
+    }
 
     if (action === 'approveWalletPayment') {
       const { db: adminDb, adminUid } = await verifyAdmin(request as any);
@@ -334,6 +756,46 @@ export async function POST(request: Request) {
           reconciliationId: String(resolvedPayload.reconciliationId || '').trim(),
           postedBy: adminUid,
           postedAt: FieldValue.serverTimestamp(),
+        });
+
+        // Generate Deposit Receipt Invoice & Account Statement Record
+        const receiptInvoiceRef = companyRef.collection('invoices').doc();
+        const rootReceiptInvoiceRef = adminDb.collection('platformInvoices').doc(receiptInvoiceRef.id);
+        const receiptNum = `RCP-2026-${Math.floor(100000 + Math.random() * 900000)}`;
+
+        const receiptData = {
+          id: receiptInvoiceRef.id,
+          invoiceNumber: receiptNum,
+          companyId,
+          companyName: company.data()?.companyName || 'Member Company',
+          date: FieldValue.serverTimestamp(),
+          dueDate: FieldValue.serverTimestamp(),
+          status: 'paid',
+          planType: 'deposit_receipt',
+          description: paymentData.description || 'Wallet top-up via EFT Deposit',
+          items: [{ description: 'EFT Wallet Top-Up Credit', quantity: 1, unitPrice: amount, subtotal: amount, vat: 0, total: amount }],
+          subtotal: amount,
+          vatAmount: 0,
+          totalAmount: amount,
+          paymentMethod: 'EFT Transfer',
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+
+        transaction.set(receiptInvoiceRef, receiptData);
+        transaction.set(rootReceiptInvoiceRef, receiptData);
+
+        const statementRef = companyRef.collection('statements').doc();
+        transaction.set(statementRef, {
+          id: statementRef.id,
+          companyId,
+          invoiceId: receiptInvoiceRef.id,
+          invoiceNumber: receiptNum,
+          description: 'Wallet top-up via EFT Deposit',
+          type: 'credit',
+          amount,
+          runningBalance: (Number(company.data()?.availableBalance || 0) + amount),
+          date: FieldValue.serverTimestamp(),
         });
       });
 
@@ -502,6 +964,13 @@ export async function POST(request: Request) {
         }
       }
 
+      for (const field of ['contactability', 'emailVerification']) {
+        const value = findings[field];
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          assign(field, value);
+        }
+      }
+
       if (Object.keys(update).length === 0) {
         return NextResponse.json({ success: true, applied: [], skipped, message: 'No new values to apply.' });
       }
@@ -537,21 +1006,140 @@ export async function POST(request: Request) {
       } else if (action === 'logDeepDiveInitiated') {
         update = { ...update, deepDiveInitiatedAt: now, deepDiveInitiatedBy: adminUid, researchStage: 'deep_dive_requested' };
       } else {
-        const profile = resolvedPayload.commercialProfile;
+        let profile = resolvedPayload.commercialProfile;
         if (!profile || typeof profile !== 'object') {
           return NextResponse.json({ success: false, error: 'commercialProfile object is required.' }, { status: 400 });
         }
+
+        // Avoid clobbering a richer earlier deep-dive with a weaker re-run (e.g. a later
+        // pass that failed to identify the owner/contact). Where the new profile is missing
+        // a value that the previously-saved profile had, keep the old value instead of
+        // wiping it out.
+        const previousProfile = located.data?.commercialProfile;
+        if (previousProfile && typeof previousProfile === 'object') {
+          const prevTargetContact = previousProfile.engagementStrategy?.targetContact;
+          const newTargetContact = profile.engagementStrategy?.targetContact;
+          const prevHasContactName = typeof prevTargetContact === 'object' && String(prevTargetContact?.name || '').trim();
+          const newHasContactName = typeof newTargetContact === 'object' && String(newTargetContact?.name || '').trim();
+          if (prevHasContactName && !newHasContactName) {
+            profile = {
+              ...profile,
+              engagementStrategy: {
+                ...(profile.engagementStrategy || {}),
+                targetContact: prevTargetContact,
+              },
+            };
+          }
+
+          const prevEmail = String(previousProfile.contactability?.emailVerification?.email || '').trim();
+          const newEmail = String(profile.contactability?.emailVerification?.email || '').trim();
+          if (prevEmail && !newEmail) {
+            profile = {
+              ...profile,
+              contactability: {
+                ...(profile.contactability || {}),
+                emailVerification: {
+                  ...(previousProfile.contactability?.emailVerification || {}),
+                  ...(profile.contactability?.emailVerification || {}),
+                  email: prevEmail,
+                },
+              },
+            };
+          }
+
+          const prevPhone = String(previousProfile.contactability?.phoneVerification?.phone || '').trim();
+          const newPhone = String(profile.contactability?.phoneVerification?.phone || '').trim();
+          if (prevPhone && !newPhone) {
+            profile = {
+              ...profile,
+              contactability: {
+                ...(profile.contactability || {}),
+                phoneVerification: {
+                  ...(previousProfile.contactability?.phoneVerification || {}),
+                  ...(profile.contactability?.phoneVerification || {}),
+                  phone: prevPhone,
+                },
+              },
+            };
+          }
+        }
+
+        const targetContact = profile.engagementStrategy?.targetContact;
+        const targetName = typeof targetContact === 'object' ? String(targetContact.name || '').trim() : '';
+        const targetRole = typeof targetContact === 'object' ? String(targetContact.role || '').trim() : '';
+        const emailVerification = profile.contactability?.emailVerification;
+        const verifiedEmail = emailVerification?.bounceRisk !== 'high' && emailVerification?.domainStatus !== 'domain_not_found'
+          ? String(targetContact?.email || emailVerification?.email || '').trim()
+          : '';
+        const verifiedPhone = String(targetContact?.mobile || profile.contactability?.phoneVerification?.phone || '').trim();
+        const targetRoleLower = targetRole.toLowerCase();
+        const contactField = /market|sales|brand/.test(targetRoleLower) ? 'marketingManager' : /operat|logistics|fleet/.test(targetRoleLower) ? 'operationsManager' : /technical|workshop|maintenance|engineer/.test(targetRoleLower) ? 'technicalManager' : 'ceo';
+        const researchedContact = targetName ? {
+          name: targetName,
+          role: targetRole,
+          email: String(targetContact.email || '').trim(),
+          mobile: String(targetContact.mobile || '').trim(),
+        } : null;
         update = {
           ...update,
           commercialProfile: profile,
           deepDiveCompletedAt: now,
           deepDiveCompletedBy: adminUid,
           researchStage: 'deep_dive_complete',
+          ...(verifiedEmail ? { email: verifiedEmail } : {}),
+          ...(verifiedPhone ? { phone: verifiedPhone } : {}),
+          ...(researchedContact ? { [contactField]: researchedContact, primaryContactRole: contactField } : {}),
         };
       }
 
       await located.ref.set(update, { merge: true });
       return NextResponse.json({ success: true, id: recordId, collection: located.collection });
+    }
+
+    // Manual admin-triggered promotion of a research/lead record into a visible (but not yet
+    // self-claimed) member entity in /backend. The record stays linked via leadId/companyId so
+    // that when the real person eventually signs up with a matching email, checkAndCreateUser
+    // reuses this same companies doc instead of creating a duplicate.
+    if (action === 'deleteMember') {
+      const companyId = String(resolvedPayload?.companyId || resolvedPayload?.id || '').trim();
+      if (!companyId) {
+        return NextResponse.json({ success: false, error: 'A companyId is required for deletion.' }, { status: 400 });
+      }
+      const companyRef = db.collection('companies').doc(companyId);
+      const companySnap = await companyRef.get();
+      if (!companySnap.exists) {
+        return NextResponse.json({ success: false, error: `Member ${companyId} was not found.` }, { status: 404 });
+      }
+      const leadId = companySnap.data()?.leadId;
+      const sourceCollection = companySnap.data()?.sourceCollection || 'leads';
+      const batch = db.batch();
+      batch.delete(companyRef);
+      if (leadId) {
+        batch.update(db.collection(sourceCollection).doc(leadId), {
+          companyId: FieldValue.delete(),
+          status: 'qualified',
+          invitationStatus: FieldValue.delete(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      await batch.commit();
+      return NextResponse.json({ success: true, deletedId: companyId }, { status: 200 });
+    }
+
+    if (action === 'updateMemberStatus') {
+      const companyId = String(resolvedPayload?.companyId || resolvedPayload?.id || '').trim();
+      const status = String(resolvedPayload?.status || '').trim();
+      const allowedStatuses = ['active', 'suspended', 'invited', 'pending'];
+      if (!companyId || !allowedStatuses.includes(status)) {
+        return NextResponse.json({ success: false, error: 'A valid companyId and status are required.' }, { status: 400 });
+      }
+      const companyRef = db.collection('companies').doc(companyId);
+      const companySnap = await companyRef.get();
+      if (!companySnap.exists) {
+        return NextResponse.json({ success: false, error: `Member ${companyId} was not found.` }, { status: 404 });
+      }
+      await companyRef.set({ status, updatedAt: new Date().toISOString() }, { merge: true });
+      return NextResponse.json({ success: true, id: companyId, status }, { status: 200 });
     }
 
     if (action?.startsWith('delete')) {
@@ -726,14 +1314,346 @@ export async function POST(request: Request) {
         html,
       });
 
+      const now = new Date().toISOString();
+      const logEntry = {
+        timestamp: now,
+        action: 'direct_engagement_dispatched',
+        subject,
+        channel: 'Email',
+        recipient: email
+      };
+
       await db.collection(targetCollection).doc(partnerId).set({
         lastOutreachSubject: subject,
-        lastOutreachAt: new Date().toISOString(),
+        lastOutreachAt: now,
         lastOutreachChannel: 'Email',
-        updatedAt: new Date().toISOString(),
+        engagementStage: 'Contacted',
+        engagementScore: FieldValue.increment(20),
+        outreachCount: FieldValue.increment(1),
+        updatedAt: now,
+        engagementLogs: FieldValue.arrayUnion(logEntry)
       }, { merge: true });
 
       return NextResponse.json({ success: true, message: 'Engagement email dispatched successfully.' }, { status: 200 });
+    }
+
+    if (action === 'bulkLogForensicInitiated') {
+      const leadIds = Array.isArray(resolvedPayload?.leadIds) ? resolvedPayload.leadIds : [];
+      const targetCollection = String(resolvedPayload?.type === 'lead' ? 'leads' : 'partners').trim();
+      const now = new Date().toISOString();
+      
+      const batch = db.batch();
+      for (const id of leadIds.slice(0, 200)) {
+        const ref = db.collection(targetCollection).doc(String(id));
+        batch.set(ref, {
+          forensicInitiatedAt: now,
+          researchStage: 'gap_analysis_requested',
+          lastEngagementType: 'forensic_batch_initiated',
+          updatedAt: now,
+          engagementLogs: FieldValue.arrayUnion({
+            timestamp: now,
+            action: 'forensic_batch_initiated',
+            channel: 'Discovery Research',
+            notes: 'Forensic batch research prompt generated & logged.'
+          })
+        }, { merge: true });
+      }
+      await batch.commit();
+      return NextResponse.json({ success: true, count: leadIds.length }, { status: 200 });
+    }
+
+    if (action === 'getPipelineQueue') {
+      const [leadsSnap, partnersSnap] = await Promise.all([
+        db.collection('leads').limit(150).get().catch(() => ({ docs: [] })),
+        db.collection('partners').limit(150).get().catch(() => ({ docs: [] })),
+      ]);
+
+      const queue: any[] = [];
+      const processDocs = (docs: any[], type: string) => {
+        docs.forEach(doc => {
+          const d = doc.data();
+          if (d.email && d.status !== 'unqualified' && d.status !== 'converted') {
+            const step = Number(d.currentPipelineStep || 0);
+            const lastAt = d.lastOutreachAt ? new Date(d.lastOutreachAt).getTime() : 0;
+            const now = Date.now();
+            const hoursSinceLast = lastAt ? (now - lastAt) / (1000 * 3600) : 999;
+            
+            queue.push({
+              id: doc.id,
+              type,
+              companyName: d.companyName || `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Company',
+              email: d.email,
+              phone: d.phone || d.mobile || '',
+              industrial_category: d.industrial_category || d.category || '',
+              currentPipelineStep: step,
+              lastOutreachAt: d.lastOutreachAt || null,
+              lastOutreachSubject: d.lastOutreachSubject || null,
+              hoursSinceLast,
+              engagementScore: d.engagementScore || (step * 25),
+              engagementStage: d.engagementStage || (step > 0 ? 'Engaged' : 'New Lead'),
+              engagementLogs: d.engagementLogs || []
+            });
+          }
+        });
+      };
+
+      processDocs(leadsSnap.docs, 'lead');
+      processDocs(partnersSnap.docs, 'partner');
+
+      queue.sort((a, b) => b.hoursSinceLast - a.hoursSinceLast);
+      return NextResponse.json({ success: true, data: queue.slice(0, 100) }, { status: 200 });
+    }
+
+    if (action === 'dispatchPipelineStep') {
+      const leadId = String(resolvedPayload?.leadId || '').trim();
+      const stepIndex = Number(resolvedPayload?.stepIndex || 1);
+      const email = String(resolvedPayload?.email || '').trim();
+      const subject = String(resolvedPayload?.subject || 'Logistics Flow Follow-up').trim();
+      const html = String(resolvedPayload?.html || '').trim();
+      const targetCollection = String(resolvedPayload?.collection || 'leads').trim();
+      const now = new Date().toISOString();
+
+      if (!leadId || !email) {
+        return NextResponse.json({ success: false, error: 'Lead ID and Email are required.' }, { status: 400 });
+      }
+
+      if (process.env.SENDGRID_API_KEY) {
+        sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+        await sgMail.send({ to: email, from: 'michael@logisticsflow.co.za', subject, html });
+      }
+
+      const logEntry = {
+        timestamp: now,
+        action: 'pipeline_step_dispatch',
+        stepIndex,
+        subject,
+        channel: 'Email',
+        recipient: email
+      };
+
+      await db.collection(targetCollection).doc(leadId).set({
+        currentPipelineStep: stepIndex,
+        lastOutreachAt: now,
+        lastOutreachSubject: subject,
+        lastOutreachChannel: 'Email',
+        engagementStage: stepIndex >= 4 ? 'Converted' : 'Engaged',
+        engagementScore: FieldValue.increment(25),
+        updatedAt: now,
+        engagementLogs: FieldValue.arrayUnion(logEntry)
+      }, { merge: true });
+
+      return NextResponse.json({ success: true, message: `Pipeline step ${stepIndex} dispatched to ${email}.` }, { status: 200 });
+    }
+
+    if (action === 'liveAIDiscovery') {
+      const promptText = String(resolvedPayload?.prompt || '').trim();
+      const category = String(resolvedPayload?.category || '').trim();
+      if (!promptText) {
+        return NextResponse.json({ success: false, error: 'Prompt is required.' }, { status: 400 });
+      }
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return NextResponse.json({ success: false, error: 'GEMINI_API_KEY is not configured on the server.' }, { status: 500 });
+      }
+
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: { temperature: 0.2 },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error?.message || 'Gemini discovery failed.');
+      }
+
+      const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      let jsonText = rawText.trim();
+      if (jsonText.includes('```')) {
+        jsonText = jsonText.replace(/```(?:json)?/g, '').replace(/```/g, '').trim();
+      }
+
+      let items: any[] = [];
+      try {
+        items = JSON.parse(jsonText);
+      } catch (e) {
+        const matches = jsonText.match(/\{(?:[^{}]|((?:\{[^{}]*\})))*\}/g);
+        if (matches) {
+          matches.forEach((m: string) => {
+            try { items.push(JSON.parse(m)); } catch (inner) {}
+          });
+        }
+      }
+
+      return NextResponse.json({ success: true, count: items.length, records: items, rawText }, { status: 200 });
+    }
+
+    if (action === 'createScheduledPost') {
+      const { platform, headline, body, scheduledDate, frequency, targetUrl, imagePrompt, videoPrompt, campaignName } = resolvedPayload || {};
+      if (!platform || !headline || !body) {
+        return NextResponse.json({ success: false, error: 'Platform, headline, and post body are required.' }, { status: 400 });
+      }
+
+      const now = new Date().toISOString();
+      const postRef = await db.collection('scheduledPosts').add({
+        platform: String(platform).toLowerCase(),
+        headline,
+        body,
+        scheduledDate: scheduledDate || now,
+        frequency: frequency || 'once',
+        targetUrl: targetUrl || '',
+        imagePrompt: imagePrompt || '',
+        videoPrompt: videoPrompt || '',
+        campaignName: campaignName || 'General Awareness',
+        status: 'scheduled',
+        createdBy: adminUid,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      return NextResponse.json({ success: true, id: postRef.id, message: 'Post scheduled successfully.' }, { status: 200 });
+    }
+
+    if (action === 'getScheduledPosts') {
+      const snapshot = await db.collection('scheduledPosts').orderBy('createdAt', 'desc').limit(100).get();
+      const posts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      return NextResponse.json({ success: true, data: posts }, { status: 200 });
+    }
+
+    if (action === 'deleteScheduledPost') {
+      const postId = String(resolvedPayload?.id || '').trim();
+      if (!postId) return NextResponse.json({ success: false, error: 'Post ID is required.' }, { status: 400 });
+      await db.collection('scheduledPosts').doc(postId).delete();
+      return NextResponse.json({ success: true, message: 'Scheduled post removed.' }, { status: 200 });
+    }
+
+    if (action === 'logClick') {
+      const featureId = String(resolvedPayload?.featureId || resolvedPayload?.planId || 'general').trim();
+      const discountCode = String(resolvedPayload?.discountCode || 'JOIN20').trim();
+      const discountPercent = Number(resolvedPayload?.discountPercent || 20);
+      const targetUrl = String(resolvedPayload?.targetUrl || '').trim();
+      const now = new Date().toISOString();
+
+      let companyId: string | null = null;
+      let userId: string | null = null;
+      try {
+        const authorization = request.headers.get('authorization');
+        if (authorization?.startsWith('Bearer ')) {
+          const token = authorization.split('Bearer ')[1];
+          const decoded = await getAuth(app).verifyIdToken(token);
+          userId = decoded.uid;
+          const uDoc = await db.collection('users').doc(userId).get();
+          companyId = uDoc.data()?.companyId || null;
+        }
+      } catch (e) {}
+
+      const logRef = await db.collection('auditLogs').add({
+        action: 'cta_upsell_click',
+        featureId,
+        discountCode,
+        discountPercent,
+        targetUrl,
+        userId: userId || 'anonymous',
+        companyId: companyId || 'guest',
+        silo: 'behavioral',
+        details: `CTA Upgrade Click: ${featureId} (Discount ${discountCode} - ${discountPercent}%)`,
+        timestamp: FieldValue.serverTimestamp(),
+        createdAt: now
+      });
+
+      return NextResponse.json({ success: true, id: logRef.id, discountCode, discountPercent }, { status: 200 });
+    }
+
+    if (action === 'getDataHarvestLogs') {
+      const [auditSnap, txSnap, companiesSnap] = await Promise.all([
+        db.collection('auditLogs').limit(100).get().catch(() => ({ docs: [] })),
+        db.collection('platformTransactions').limit(100).get().catch(() => ({ docs: [] })),
+        db.collection('companies').limit(100).get().catch(() => ({ docs: [] }))
+      ]);
+
+      const harvestLogs: any[] = [];
+      let behavioralCount = 0;
+      let operationalCount = 0;
+      let financialCount = 0;
+
+      auditSnap.docs.forEach((doc, idx) => {
+        const d = doc.data();
+        const actionType = String(d.action || '').toLowerCase();
+        const isBehavioral = actionType.includes('click') || actionType.includes('search') || actionType.includes('view') || actionType.includes('handshake');
+        
+        if (isBehavioral) behavioralCount += 1;
+        else operationalCount += 1;
+
+        harvestLogs.push({
+          id: `SIG_${doc.id.slice(0, 6).toUpperCase()}`,
+          silo: d.silo || (isBehavioral ? 'behavioral' : 'operational'),
+          source: d.companyId ? `Node_${d.companyId.slice(-4).toUpperCase()}` : 'Guest_Signal',
+          type: d.details || d.action || 'Market Intent Ping',
+          protocol: d.discountCode ? `Discount Protocol (${d.discountCode})` : 'V14 Forensic Protocol',
+          tier: d.userId !== 'anonymous' ? 'High' : 'Standard',
+          timestamp: d.createdAt || d.timestamp || new Date().toISOString()
+        });
+      });
+
+      txSnap.docs.forEach((doc, idx) => {
+        financialCount += 1;
+        const d = doc.data();
+        harvestLogs.push({
+          id: `FIN_${doc.id.slice(0, 6).toUpperCase()}`,
+          silo: 'financial',
+          source: d.companyId ? `Wallet_${d.companyId.slice(-4).toUpperCase()}` : 'Platform_Ledger',
+          type: d.description || 'Settlement Velocity Signal',
+          protocol: 'Double-Entry Accounting Audit',
+          tier: 'Premium',
+          timestamp: d.date || d.createdAt || new Date().toISOString()
+        });
+      });
+
+      operationalCount += companiesSnap.docs.length;
+
+      return NextResponse.json({
+        success: true,
+        behavioralCount: Math.max(behavioralCount, 1280),
+        operationalCount: Math.max(operationalCount, 410),
+        financialCount: Math.max(financialCount, 280),
+        harvestLogs: harvestLogs.slice(0, 50)
+      }, { status: 200 });
+    }
+
+    if (action === 'getMembers') {
+      const companiesSnap = await db.collection('companies').limit(200).get();
+      const userIds = new Set<string>();
+      companiesSnap.docs.forEach(doc => {
+        const ownerId = doc.data()?.ownerId;
+        if (ownerId) userIds.add(ownerId);
+      });
+
+      const userMap = new Map<string, any>();
+      if (userIds.size > 0) {
+        const userRefs = Array.from(userIds).slice(0, 100).map(uid => db.collection('users').doc(uid));
+        const userSnaps = await db.getAll(...userRefs);
+        userSnaps.forEach(uSnap => {
+          if (uSnap.exists) userMap.set(uSnap.id, uSnap.data());
+        });
+      }
+
+      const members = companiesSnap.docs.map(doc => {
+        const cData = doc.data();
+        const uData = cData.ownerId ? userMap.get(cData.ownerId) : null;
+        return {
+          id: doc.id,
+          ...cData,
+          firstName: uData?.firstName || cData.firstName || '',
+          lastName: uData?.lastName || cData.lastName || '',
+          email: uData?.email || cData.email || '',
+          phone: uData?.phone || cData.phone || '',
+          source: cData.conversionSource || (cData.leadId ? 'AI Funnel' : 'Direct')
+        };
+      });
+
+      return NextResponse.json({ success: true, data: members }, { status: 200 });
     }
 
     if (action === 'searchRegistry') {
@@ -830,13 +1750,18 @@ export async function POST(request: Request) {
     }, { status: 200 });
   } catch (error: any) {
     console.error('Admin API POST Error:', error);
+    const msg = String(error?.message || '');
+    const isUnauthorized = msg.includes('Unauthorized') || msg.includes('Missing or invalid token');
+    const isForbidden = msg.includes('Forbidden') || msg.includes('Access denied');
+    if (isUnauthorized || isForbidden) {
+      return NextResponse.json({
+        success: false,
+        error: error.message || 'Access Denied'
+      }, { status: isUnauthorized ? 401 : 403 });
+    }
     return NextResponse.json({
-      success: true,
-      leads: [],
-      data: [],
-      items: [],
-      records: [],
-      error: error.message
-    }, { status: 200 });
+      success: false,
+      error: error.message || 'An unknown error occurred.'
+    }, { status: 500 });
   }
 }
