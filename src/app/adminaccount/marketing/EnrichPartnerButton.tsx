@@ -128,6 +128,14 @@ function normalizeFindings(raw: any) {
         if (urls.length) findings.sourceUrls = urls;
     }
 
+    if (raw.contactability && typeof raw.contactability === 'object') {
+        findings.contactability = raw.contactability;
+    }
+
+    if (raw.emailVerification && typeof raw.emailVerification === 'object') {
+        findings.emailVerification = raw.emailVerification;
+    }
+
     return findings;
 }
 
@@ -194,6 +202,7 @@ export function EnrichPartnerButton({ partner, onUpdate }: { partner: any, onUpd
         const hints = [
             partner.website ? `Known website: ${partner.website}` : '',
             partner.address ? `Known address: ${partner.address}` : '',
+            partner.email ? `Known email: ${partner.email}` : '',
             partner.phone ? `Known phone: ${partner.phone}` : '',
         ].filter(Boolean).join('\n');
 
@@ -203,20 +212,23 @@ ${hints}
 
 Work in this order:
 1. Confirm its official website.
-2. Read the Contact page for address, phone and email.
-3. Read the Home and About pages for what services it offers.
-4. Search for the owner, CEO or MD by name, and any other senior staff.
-5. Check its Facebook, LinkedIn and Instagram pages for anything still missing.
-6. Cross-check against Yellosa, Brabys, Infoisinfo, Hotfrog or Cylex.
+2. Verify whether the website domain resolves. If it does not resolve or the domain does not exist, record this explicitly.
+3. Read the Contact page for address, phone and email.
+4. Verify any email domain before returning the email. If the domain does not exist or has no public MX/mail-host evidence, return email as null and record the issue in emailVerification.
+5. Read the Home and About pages for what services it offers.
+6. Search for the owner, CEO or MD by name, and any other senior staff.
+7. Check its Facebook, LinkedIn and Instagram pages for anything still missing.
+8. Cross-check against Yellosa, Brabys, Infoisinfo, Hotfrog or Cylex.
+9. If no owner, CEO, MD or director name was found in steps 6-8, search South African company registry (CIPC) data via aggregator sites such as B2BHint, OpenCorporates, or a direct "[company name] CIPC directors" search, and record any director names found there with their source URL.
 
-Report only what is published on pages you open. Use null for anything you cannot find. Never guess an email or phone number. Do not use a different company with a similar name.
+Report only what is published on pages you open. Use null for anything you cannot find. Never guess an email or phone number. Do not use a different company with a similar name. An imported CRM email is only a hint; do not treat it as usable unless the domain appears registered and contactable.
 
 For servicesDescription, quote prose sentences from the About or Services page. Do not include menu items, page titles or truncated fragments. If the site has no real description, use null. Write every URL in full, starting with https:// and including the page path \u2014 a bare domain like "facebook.com" is not acceptable.
 
 Return one complete JSON object in one response. Do not use citations, markdown links, code fences, "Use code with caution", or separate JSON fragments around URLs. Put every URL as ordinary text inside its JSON string value.
 
 Reply with only this JSON and nothing else:
-{"record_id":"${partner.id}","companyName":null,"website":null,"email":null,"phone":null,"address":null,"industrial_category":null,"servicesDescription":null,"managementTeam":[{"name":null,"role":null,"source":null}],"sourceUrls":[],"confidence":null}`;
+{"record_id":"${partner.id}","companyName":null,"website":null,"email":null,"phone":null,"address":null,"industrial_category":null,"servicesDescription":null,"managementTeam":[{"name":null,"role":null,"source":null}],"contactability":{"websiteStatus":"active | broken | domain_not_found | not_found | unverifiable","recommendedChannel":"email | phone | whatsapp | social | manual_verification","notes":[]},"emailVerification":{"email":null,"domain":null,"domainStatus":"registered | domain_not_found | unverifiable","mxStatus":"mx_found | no_mx_found | not_checked","bounceRisk":"low | medium | high","evidence":"What was checked"},"sourceUrls":[],"confidence":null}`;
         }
 
         return `You are a verification-first research assistant. Accuracy matters more than completeness. Work through the stages below IN ORDER and do not skip ahead.
@@ -226,6 +238,9 @@ ${hints}
 
 STAGE 1 — IDENTIFY THE WEBSITE
 Find the company's official website and confirm it belongs to THIS company, in South Africa. A similarly named or abbreviated company is not a match. If a website is listed above, verify it resolves and is the right entity. If there is genuinely no website, record website as null and continue to Stage 5.
+
+STAGE 1B — VERIFY CONTACTABILITY
+Check whether the website domain resolves. Check whether any email domain you intend to return appears registered and has public MX/mail-host evidence. If the domain does not exist, has no MX evidence, or only appears in stale directories, set email to null and record the failure in emailVerification. Do not recommend email as the channel when the domain is invalid or unverifiable.
 
 STAGE 2 — MAP THE SITE
 List the pages available on that website (check the nav, footer, and /sitemap.xml if present). Note which of these exist: Contact, About, Home, Team/Management, Services.
@@ -239,6 +254,8 @@ Open the Home and About pages. Capture the company's own wording about what it d
 STAGE 5 — FIND THE PEOPLE
 Search the web broadly for the owner, CEO or MD of this company by name, then for other senior staff (marketing, operations, technical). Useful sources: LinkedIn, news coverage, industry press, company registry mentions, tender awards. Record the person's name and published business role. Only record a person the source explicitly ties to THIS company.
 
+If Stage 5 finds no owner, CEO, MD or director name from LinkedIn, news or press, do not stop — this is common for small or low-profile companies with no media presence. As a required fallback, search South Africa's CIPC company registry data via aggregator sites such as b2bhint.com, opencorporates.com, or a direct search for "[company name] CIPC directors". Registry aggregators list directors on file even when a company has no other public presence. Record any director names found this way, note the source URL, and flag that the source is a company registry filing (which does not confirm a day-to-day title such as CEO/MD, only that the person is a registered director).
+
 STAGE 6 — SOCIAL MEDIA
 Find its Facebook, LinkedIn and Instagram pages. The Facebook "About" tab is often the most current source of address and WhatsApp number for SA industrial firms. Use these to fill gaps still open after Stages 3 to 5.
 
@@ -250,6 +267,7 @@ RULES THROUGHOUT:
 - Report only what you have seen on a page you opened. Otherwise null.
 - null is a correct and expected answer. Three verified fields beat twelve plausible ones.
 - Never construct an email address or phone number from a pattern.
+- An imported email address is only a lead hint. Do not return it as the record email unless a current official source publishes it and the domain appears contactable.
 - Only fill a person's email or mobile if that exact detail is published as a business contact. Do not hunt private personal contact details.
 - Do not expand an acronym unless a source states the expansion for this entity.
 - If you cannot identify this company at all, return {"notFound": true, "record_id": "${partner.id}"} and nothing else.
@@ -286,6 +304,19 @@ SELF-AUDIT: for every non-null value, name the URL you read it on. If you cannot
   "ceo": { "name": null, "role": null, "email": null, "mobile": null },
   "otherStaff": [{ "name": null, "role": null, "source": null }],
   "socialProfiles": { "facebook": null, "linkedin": null, "instagram": null },
+    "contactability": {
+        "websiteStatus": "active | broken | domain_not_found | not_found | unverifiable",
+        "recommendedChannel": "email | phone | whatsapp | social | manual_verification",
+        "notes": ["contactability observations, including invalid imported domains or stale directory-only data"]
+    },
+    "emailVerification": {
+        "email": null,
+        "domain": null,
+        "domainStatus": "registered | domain_not_found | unverifiable",
+        "mxStatus": "mx_found | no_mx_found | not_checked",
+        "bounceRisk": "low | medium | high",
+        "evidence": "What was checked and what source/tool indicated it"
+    },
   "primaryContactRole": null,
   "minedServiceWording": null,
   "sourceUrls": ["every URL you actually opened"],
