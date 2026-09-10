@@ -186,6 +186,18 @@ TASKS
 
 Rules: no memory claims, no private contact hunting, no fabricated revenue/headcount, every non-null fact needs evidence. Missing website/social is a gap, not notFound. Return {"notFound":true,"record_id":"${partner.id}"} only if no credible match exists.
 
+OUTPUT SAFETY RULES:
+- Return valid JSON only. No markdown, no code fences, no commentary, no citations outside JSON.
+- Return one complete JSON object that starts with { and ends with }. Do not stop mid-field.
+- Keep the response compact enough to fit in one answer. If necessary, shorten prose rather than truncating JSON.
+- Always return compact minified single-line JSON to avoid output truncation.
+- Use double quotes for all JSON keys and string values. Escape internal quotes and line breaks.
+- Keep arrays short: maximum 4 items each unless a field says otherwise.
+- Keep source URLs short and specific: maximum 6 full URLs in sourcesUsed.
+- businessModel, operatingFootprint, customerProfile, valueHypothesis, openingMessage, emailBody, whatsAppMessage, meetingRequest and callToAction must each be under 450 characters.
+- evidence, reason and risk/pain/gap items must each be under 250 characters.
+- emailBody must be a concise complete email body, not a long campaign document.
+
 RETURN RAW JSON ONLY:
 
 {
