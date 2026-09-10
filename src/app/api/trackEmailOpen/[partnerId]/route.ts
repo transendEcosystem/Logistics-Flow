@@ -79,13 +79,27 @@ export async function GET(req: NextRequest, { params }: { params: { partnerId: s
             
             const update = { [fieldToUpdate]: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() };
 
-            const partnerRef = db.collection('partners').doc(viewerId);
-            const leadRef = db.collection('leads').doc(viewerId);
-
-            const [pSnap, lSnap] = await Promise.all([partnerRef.get(), leadRef.get()]);
+            const trackedCollections = [
+                'partners',
+                'leads',
+                'suppliers',
+                'transporters',
+                'strategic_partners',
+                'isa_agents',
+                'digital_associates',
+                'investors',
+                'finance_co',
+                'developers',
+                'drivers',
+            ];
+            const refs = trackedCollections.map(collectionName => db.collection(collectionName).doc(viewerId));
+            const snapshots = await Promise.all(refs.map(ref => ref.get()));
             
-            if (pSnap.exists) batch.set(partnerRef, update, { merge: true });
-            if (lSnap.exists) batch.set(leadRef, update, { merge: true });
+            snapshots.forEach((snapshot, index) => {
+                if (snapshot.exists) {
+                    batch.set(refs[index], update, { merge: true });
+                }
+            });
 
             const auditRef = db.collection('auditLogs').doc();
             batch.set(auditRef, {

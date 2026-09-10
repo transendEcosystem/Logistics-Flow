@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     }
     await getAuth(app).verifyIdToken(authorization.slice(7));
     const { partnerId, status, collection: requestedCollection = 'partners' } = await req.json();
-    const allowedCollections = ['partners', 'leads', 'strategic_partners'];
+    const allowedCollections = ['partners', 'leads', 'suppliers', 'strategic_partners'];
     const collectionName = allowedCollections.includes(requestedCollection) ? requestedCollection : null;
 
     if (!partnerId || !['accepted', 'declined'].includes(status) || !collectionName) {

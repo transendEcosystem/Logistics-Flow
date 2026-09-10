@@ -1337,6 +1337,62 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'Engagement email dispatched successfully.' }, { status: 200 });
     }
 
+    if (action === 'logCommunication') {
+      const partnerId = String(resolvedPayload?.partnerId || resolvedPayload?.recordId || resolvedPayload?.id || '').trim();
+      const communication = resolvedPayload?.communication && typeof resolvedPayload.communication === 'object'
+        ? resolvedPayload.communication
+        : resolvedPayload;
+      const channel = String(communication?.type || communication?.communicationType || communication?.channel || 'Manual').trim();
+      const subject = String(communication?.subject || 'Manual engagement').trim();
+      const notes = String(communication?.notes || '').trim();
+
+      if (!partnerId || !channel || !subject) {
+        return NextResponse.json({ success: false, error: 'Partner ID, communication type, and subject are required.' }, { status: 400 });
+      }
+
+      const located = await findResearchRecord(db, partnerId, resolvedPayload?.collection);
+      if (!located) {
+        return NextResponse.json({ success: false, error: `Record ${partnerId} was not found.` }, { status: 404 });
+      }
+
+      const now = new Date().toISOString();
+      const logEntry = {
+        timestamp: now,
+        action: 'manual_engagement_logged',
+        subject,
+        channel,
+        notes,
+        recipient: String(communication?.recipient || '').trim() || null,
+        loggedBy: adminUid,
+      };
+      const communicationRef = located.ref.collection('communications').doc();
+      const communicationRecord = {
+        ...communication,
+        id: communicationRef.id,
+        type: channel,
+        subject,
+        notes,
+        createdAt: FieldValue.serverTimestamp(),
+        createdBy: adminUid,
+      };
+
+      await Promise.all([
+        communicationRef.set(communicationRecord),
+        located.ref.set({
+          lastOutreachSubject: subject,
+          lastOutreachAt: now,
+          lastOutreachChannel: channel,
+          engagementStage: 'Contacted',
+          engagementScore: FieldValue.increment(10),
+          outreachCount: FieldValue.increment(1),
+          updatedAt: now,
+          engagementLogs: FieldValue.arrayUnion(logEntry),
+        }, { merge: true }),
+      ]);
+
+      return NextResponse.json({ success: true, id: communicationRef.id, collection: located.collection }, { status: 200 });
+    }
+
     if (action === 'bulkLogForensicInitiated') {
       const leadIds = Array.isArray(resolvedPayload?.leadIds) ? resolvedPayload.leadIds : [];
       const targetCollection = String(resolvedPayload?.type === 'lead' ? 'leads' : 'partners').trim();

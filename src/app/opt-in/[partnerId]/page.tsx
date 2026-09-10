@@ -37,6 +37,11 @@ export default function OptInPage() {
         return doc(firestore, 'leads', partnerId);
     }, [firestore, partnerId]);
 
+    const supplierRef = useMemoFirebase(() => {
+        if (!firestore || !partnerId) return null;
+        return doc(firestore, 'suppliers', partnerId);
+    }, [firestore, partnerId]);
+
     const strategicPartnerRef = useMemoFirebase(() => {
         if (!firestore || !partnerId) return null;
         return doc(firestore, 'strategic_partners', partnerId);
@@ -44,11 +49,12 @@ export default function OptInPage() {
 
     const { data: partner, isLoading: isPartnerLoading } = useDoc(partnerRef);
     const { data: lead, isLoading: isLeadLoading } = useDoc(leadRef);
+    const { data: supplier, isLoading: isSupplierLoading } = useDoc(supplierRef);
     const { data: strategicPartner, isLoading: isStrategicPartnerLoading } = useDoc(strategicPartnerRef);
 
-    const activeRecord = useMemo(() => partner || lead || strategicPartner, [partner, lead, strategicPartner]);
-    const activeCollection = partner ? 'partners' : lead ? 'leads' : strategicPartner ? 'strategic_partners' : 'partners';
-    const isLoading = isPartnerLoading && isLeadLoading && isStrategicPartnerLoading;
+    const activeRecord = useMemo(() => partner || lead || supplier || strategicPartner, [partner, lead, supplier, strategicPartner]);
+    const activeCollection = partner ? 'partners' : lead ? 'leads' : supplier ? 'suppliers' : strategicPartner ? 'strategic_partners' : 'partners';
+    const isLoading = isPartnerLoading && isLeadLoading && isSupplierLoading && isStrategicPartnerLoading;
     const invitePath = `/opt-in/${partnerId}`;
 
     useEffect(() => {

@@ -54,6 +54,7 @@ async function performAdminAction(token: string, action: string, payload: any) {
 }
 
 const ALL_ENGAGEMENT_TABS = [
+    { id: 'deep-dive-strategy', label: 'Deep-Dive Strategy', icon: Target, requiresProfile: true },
     { id: 'transporter-value-prop', label: 'Transporter 24k Engine', icon: Sparkles },
     { id: 'supplier-value-prop', label: 'Supplier 5,400 Engine', icon: Sparkles },
     { id: 'digital-handshake', label: 'Digital Handshake', icon: ShieldCheck, hideFor: ['associate'] },
@@ -99,8 +100,15 @@ function resolveContact(partner: any) {
 
     const primaryRole = partner.primaryContactRole;
     const primaryContact = primaryRole ? partner[primaryRole] : null;
+    const researchedTarget = partner.commercialProfile?.engagementStrategy?.targetContact;
+    const researchedContact = researchedTarget && typeof researchedTarget === 'object' ? researchedTarget : null;
+    const verifiedEmail = partner.commercialProfile?.contactability?.emailVerification?.bounceRisk === 'high'
+        ? ''
+        : clean(partner.commercialProfile?.contactability?.emailVerification?.email);
+    const verifiedPhone = clean(partner.commercialProfile?.contactability?.phoneVerification?.phone);
 
     const name = clean(primaryContact?.name) || 
+                 clean(researchedContact?.name) ||
                  clean(partner.firstName) || 
                  clean(partner.marketingManager?.name) || 
                  clean(partner.ceo?.name) || 
@@ -111,11 +119,46 @@ function resolveContact(partner: any) {
                  clean(partner.companyName) || 
                  'Partner';
     
-    const email = clean(primaryContact?.email) || searchObj(partner.marketingManager, emailKeys) || searchObj(partner.ceo, emailKeys) || searchObj(partner, emailKeys) || (clean(partner.email) || '');
-    const mobile = clean(primaryContact?.mobile) || searchObj(partner.marketingManager, phoneKeys) || searchObj(partner.ceo, phoneKeys) || searchObj(partner, phoneKeys) || (clean(partner.mobile || partner.phone) || '');
+    const email = clean(primaryContact?.email) || clean(researchedContact?.email) || verifiedEmail || searchObj(partner.marketingManager, emailKeys) || searchObj(partner.ceo, emailKeys) || searchObj(partner, emailKeys) || (clean(partner.email) || '');
+    const mobile = clean(primaryContact?.mobile) || clean(researchedContact?.mobile) || verifiedPhone || searchObj(partner.marketingManager, phoneKeys) || searchObj(partner.ceo, phoneKeys) || searchObj(partner, phoneKeys) || (clean(partner.mobile || partner.phone) || '');
     const whatsapp = (clean(partner.whatsapp) || mobile).toString();
 
     return { name: name.toString(), email: email.toString(), mobile: mobile.toString(), whatsapp: whatsapp.toString() };
+}
+
+function deepDiveContent(partner: any, channel: 'outlook' | 'whatsapp' | 'social-dm') {
+    const pack = partner?.commercialProfile?.engagementPack || {};
+    const strategy = partner?.commercialProfile?.engagementStrategy || {};
+    const contact = typeof strategy.targetContact === 'object' ? strategy.targetContact : {};
+    const firstName = String(contact.name || partner?.marketingManager?.name || partner?.ceo?.name || 'there').trim().split(/\s+/)[0];
+    const company = partner?.companyName || 'your business';
+    if (channel === 'whatsapp') {
+        return pack.whatsAppMessage || `Hi ${firstName}, Logistics Flow has completed a digital-presence review for ${company}. Could we arrange a short call to discuss a practical supplier-profile and enquiry opportunity?`;
+    }
+    if (channel === 'social-dm') {
+        return pack.whatsAppMessage || `Hi ${firstName}, Logistics Flow has completed a digital-presence review for ${company}. Could we arrange a short call to discuss a practical supplier-profile and enquiry opportunity?`;
+    }
+    return pack.emailBody || `Dear ${firstName},\n\nLogistics Flow has completed a digital-presence review for ${company}. We would value a short discussion on a practical supplier-profile and qualified-enquiry opportunity.\n\nKind regards,\nLogistics Flow`;
+}
+
+function escapeHtml(value: string) {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function deepDiveEmailHtml(partner: any) {
+    const text = deepDiveContent(partner, 'outlook');
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://logisticsflow.co.za');
+    const partnerId = partner?.id || 'PROSPECT';
+    const optInPath = `/opt-in/${partnerId}`;
+    const optInLink = `${baseUrl}/api/trackEmailOpen/${partnerId}?source=app&dest=${encodeURIComponent(optInPath)}`;
+    const displayOptInLink = `${baseUrl}${optInPath}`;
+    const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partnerId}`;
+    const paragraphs = text
+        .split(/\n{2,}/)
+        .map(paragraph => `<p style="margin: 0 0 12pt 0;">${escapeHtml(paragraph).replace(/\n/g, '<br />')}</p>`)
+        .join('');
+
+    return `<div style="font-family: Calibri, sans-serif; font-size: 12pt; color: #000000; line-height: 1.45;">${paragraphs}<p style="margin: 16pt 0; padding: 12pt; border: 2px dashed #228B22; border-radius: 8pt; background-color: #f9fff9; text-align: center;"><strong>Review your free supplier profile here:</strong><br /><a href="${optInLink}" target="_blank" style="color: #228B22; font-weight: bold; text-decoration: underline;">${displayOptInLink}</a></p><img src="${pixelUrl}" width="1" height="1" style="display:none" alt="" /></div>`;
 }
 
 export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, audience, onEngageSuccess }: EngageDialogProps) {
@@ -171,6 +214,9 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
   }, [currentPartner]);
 
   const getSubject = (tabId: string) => {
+      if (tabId === 'deep-dive-strategy') {
+          return currentPartner?.commercialProfile?.engagementPack?.emailSubject || `Logistics Flow: supplier opportunity for ${currentPartner?.companyName || 'your business'}`;
+      }
       const company = currentPartner?.companyName || 'your business';
       const tab = ALL_ENGAGEMENT_TABS.find(t => t.id === tabId);
       const label = tab ? tab.label : tabId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
@@ -183,12 +229,15 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
     const contentElement = document.getElementById(contentId);
     if (!contentElement) return;
 
+    const subjectToLog = getSubject(activeTab);
+    const rawText = activeTab === 'deep-dive-strategy'
+        ? deepDiveContent(currentPartner, channel)
+        : contentElement.innerText || contentElement.textContent || '';
+
     setIsProcessing(true);
     try {
         const token = (await getClientSideAuthToken()) || '';
         if (!token) throw new Error("Authentication failed.");
-        
-        const subjectToLog = getSubject(activeTab);
 
         await performAdminAction(token, 'logCommunication', {
             partnerId: currentPartner.id,
@@ -197,8 +246,6 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
             notes: `Manual engagement launched via ${channel}.`,
             collection: targetCollection
         });
-
-        const rawText = contentElement.innerText || contentElement.textContent || '';
 
         if (channel === 'whatsapp') {
             const cleanNumber = contact.whatsapp.replace(/\s/g, '').replace(/^\+/, '').replace(/^0/, '27');
@@ -209,7 +256,9 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
             if (profileUrl) window.open(profileUrl.startsWith('http') ? profileUrl : `https://${profileUrl}`, '_blank');
             toast({ title: "DM Script Copied!", description: "Follow the user, then paste script into platform DM." });
         } else {
-            const wrappedHtml = `<div style="font-family: Calibri, sans-serif; font-size: 12pt;">${contentElement.innerHTML}</div>`;
+            const wrappedHtml = activeTab === 'deep-dive-strategy'
+                    ? deepDiveEmailHtml(currentPartner)
+                : `<div style="font-family: Calibri, sans-serif; font-size: 12pt;">${contentElement.innerHTML}</div>`;
             await copyHtmlToClipboard(wrappedHtml);
             window.location.href = `mailto:${contact.email}?subject=${encodeURIComponent(subjectToLog)}`;
         }
@@ -235,11 +284,15 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
 
         const subject = getSubject(activeTab);
 
+        const deepDiveHtml = activeTab === 'deep-dive-strategy'
+                ? deepDiveEmailHtml(currentPartner)
+            : contentElement.innerHTML;
+
         await performAdminAction(token, 'dispatchEngagement', {
             partnerId: currentPartner.id,
             email: contact.email,
             subject,
-            html: contentElement.innerHTML,
+            html: deepDiveHtml,
             collection: targetCollection
         });
 
@@ -295,7 +348,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                             <Smartphone className="mr-2 h-4 w-4" /> WhatsApp
                         </Button>
                         <Button variant="outline" className="font-bold border-blue-200 text-blue-600 hover:bg-green-50" onClick={() => handleLogAndLaunch('outlook')} disabled={isProcessing || !hasEmail}>
-                            <Mail className="mr-2 h-4 w-4" /> Outlook
+                            <Mail className="mr-2 h-4 w-4" /> {hasEmail ? 'Outlook' : 'No verified email'}
                         </Button>
                     </div>
                 </div>
@@ -305,7 +358,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                 <div className="w-64 border-r bg-muted/10 p-4 space-y-4 overflow-y-auto text-left">
                     <div className="space-y-1 text-left">
                         <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-2 mb-2 block">Standard Narrative</Label>
-                        {ALL_ENGAGEMENT_TABS.slice(0, 10).filter(t => !t.hideFor || !t.hideFor.includes(normalizedAudience)).map((tab) => (
+                        {ALL_ENGAGEMENT_TABS.slice(0, 11).filter(t => (!t.hideFor || !t.hideFor.includes(normalizedAudience)) && (!t.requiresProfile || Boolean(currentPartner.commercialProfile?.engagementPack))).map((tab) => (
                             <Button
                                 key={tab.id}
                                 variant={activeTab === tab.id ? "secondary" : "ghost"}
@@ -341,6 +394,22 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                 <div className="flex-1 overflow-y-auto bg-slate-50 p-8 text-left">
                     <div id={`engage-content-wrapper-${activeTab}`} className="bg-white p-10 rounded-lg shadow-sm border min-h-full text-left">
                         <Suspense fallback={<div className="flex justify-center items-center py-20"><Loader2 className="animate-spin h-10 w-10 text-primary mx-auto" /></div>}>
+                            {activeTab === 'deep-dive-strategy' && (
+                                <div style={{ fontFamily: 'Calibri, sans-serif', fontSize: '12pt', color: '#000000', lineHeight: '1.4', whiteSpace: 'pre-wrap' }}>
+                                    <p style={{ fontWeight: 'bold', textTransform: 'uppercase', borderBottom: '2px solid #000000', paddingBottom: '4pt', marginBottom: '15pt' }}>
+                                        SUPPLIER INTELLIGENCE: {currentPartner?.companyName?.toUpperCase() || 'INDUSTRIAL NODE'} X LOGISTICS FLOW
+                                    </p>
+                                    <p><strong>Research contact:</strong> {contact.name}</p>
+                                    <p><strong>Research finding:</strong> {currentPartner.commercialProfile?.onlinePresence?.presenceSummary || 'Supplier intelligence is on record.'}</p>
+                                    <br />
+                                    {deepDiveContent(currentPartner, 'outlook')}
+                                    <p style={{ marginTop: '16pt' }}>
+                                        <a href={`${window.location.origin}/opt-in/${currentPartner.id}`} style={{ color: '#228B22', fontWeight: 'bold', textDecoration: 'underline' }}>
+                                            {window.location.origin}/opt-in/{currentPartner.id}
+                                        </a>
+                                    </p>
+                                </div>
+                            )}
                             {activeTab === 'strategic-intro' && (
                                 <div style={{ fontFamily: 'Calibri, sans-serif', fontSize: '12pt', color: '#000000', lineHeight: '1.4' }}>
                                     <p style={{ fontWeight: 'bold', textTransform: 'uppercase', borderBottom: '2px solid #000000', paddingBottom: '4pt', marginBottom: '15pt' }}>
