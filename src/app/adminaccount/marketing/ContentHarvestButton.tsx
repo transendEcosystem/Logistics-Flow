@@ -99,38 +99,39 @@ export function ContentHarvestButton({ partner, onUpdate }: { partner: any; onUp
   };
 
   const getStructurePrompt = () => {
+    // Nav, cookie banners and contact strips repeat on every page. Dropping lines
+    // already seen keeps the paste small enough for chat tools that cap input
+    // length, and removes noise that skews the classification.
+    const seen = new Set<string>();
     const text = (corpus?.pages || [])
-      .map((page: any) => `--- PAGE: ${page.url}\n${page.text}`)
+      .map((page: any) => {
+        const body = String(page.text || '')
+          .split('\n')
+          .map((line: string) => line.trim())
+          .filter((line: string) => {
+            if (line.length < 3) return false;
+            const key = line.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .join('\n')
+          .slice(0, 2_000);
+        return body ? `--- ${page.url}\n${body}` : '';
+      })
+      .filter(Boolean)
       .join('\n\n')
-      .slice(0, 40_000);
+      .slice(0, 9_000);
 
-    return `Classify the following website content for "${companyName}", a South African business.
+    return `Classify this South African business, "${companyName}", using only the website text at the end of this message.
 
-Use ONLY the text below. Do not search the web. Do not add anything the text does not support. Use null or an empty array where the text is silent.
+Rules: use only what the text supports, never guess or search the web, and use null or an empty array wherever the text is silent.
 
-Return raw JSON only, no markdown or commentary:
+Reply with one compact JSON object and nothing else. No markdown, no code fences, no commentary. Keep every array to 8 items or fewer.
 
-{
-  "serviceTags": ["short canonical service labels, lowercase, e.g. road freight, cold chain, container haulage"],
-  "capabilities": ["specific things they can do, in their own terms"],
-  "industriesServed": ["sectors they name"],
-  "geographicCoverage": ["provinces, corridors, countries or cities they name"],
-  "equipmentAssets": ["vehicles, trailers, warehouses, plant they mention"],
-  "certifications": ["accreditations, ISO, memberships, licences"],
-  "valueProps": ["claims they make about why to choose them"],
-  "shopProfile": {
-    "headline": "under 12 words, drawn from their own positioning",
-    "shortDescription": "40 to 60 words for a listing card",
-    "longDescription": "150 to 250 words for a shop page, written from their content",
-    "keywords": ["search terms a buyer would use to find them"]
-  },
-  "campaignAngles": [
-    { "angle": "an engagement hook", "evidence": "the wording in their content that supports it", "targetRole": "who to aim it at" }
-  ],
-  "contentQuality": "rich | thin | placeholder"
-}
+{"serviceTags":["lowercase canonical service labels"],"capabilities":["specific things they can do"],"industriesServed":["sectors they name"],"geographicCoverage":["provinces, corridors, countries or cities they name"],"equipmentAssets":["vehicles, trailers, warehouses, plant they mention"],"certifications":["accreditations, memberships, licences"],"valueProps":["claims about why to choose them"],"shopProfile":{"headline":"under 12 words","shortDescription":"40 to 60 words","longDescription":"150 to 250 words","keywords":["buyer search terms"]},"campaignAngles":[{"angle":"an engagement hook","evidence":"supporting wording from their content","targetRole":"who to aim it at"}],"contentQuality":"rich or thin or placeholder"}
 
-WEBSITE CONTENT:
+WEBSITE TEXT:
 ${text}`;
   };
 
@@ -300,13 +301,22 @@ ${text}`;
                       variant="outline"
                       className="w-full font-bold"
                       onClick={async () => {
-                        await navigator.clipboard.writeText(getStructurePrompt());
-                        toast({ title: 'Classification prompt copied', description: 'It contains the harvested text, so the AI cannot invent.' });
+                        const prompt = getStructurePrompt();
+                        await navigator.clipboard.writeText(prompt);
+                        toast({
+                          title: 'Classification prompt copied',
+                          description: `${prompt.length.toLocaleString()} characters. Paste it into Gemini or ChatGPT.`,
+                        });
                       }}
                     >
                       <Sparkles className="mr-2 h-4 w-4" />
                       Copy Classification Prompt
                     </Button>
+                    <p className="text-[11px] text-muted-foreground">
+                      Paste this into a full chat assistant such as Gemini or ChatGPT. Google&rsquo;s
+                      <span className="font-semibold"> AI Mode</span> in Search rejects long inputs and will answer
+                      &ldquo;no response available for this search&rdquo;.
+                    </p>
                   </div>
 
                   <div className="space-y-2">
