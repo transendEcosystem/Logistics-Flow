@@ -1,8 +1,9 @@
 'use client';
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { handlePossibleStaleChunk, isChunkLoadError } from '@/lib/chunk-reload';
 
 interface Props {
   children: ReactNode;
@@ -12,28 +13,49 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  isRecovering: boolean;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
+    isRecovering: false,
   };
 
   public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+    return { hasError: true, error, isRecovering: isChunkLoadError(error) };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // A stale chunk after a deploy is recoverable, so reload rather than
+    // stranding the user on an error panel.
+    if (handlePossibleStaleChunk(error)) return;
+
+    this.setState({ isRecovering: false });
     console.error('Uncaught error caught by ErrorBoundary:', error, errorInfo);
   }
 
   private handleReset = () => {
-    this.setState({ hasError: false, error: null });
+    // Clearing state cannot recover a missing file, so force a fresh page load.
+    if (isChunkLoadError(this.state.error)) {
+      window.location.reload();
+      return;
+    }
+    this.setState({ hasError: false, error: null, isRecovering: false });
   };
 
   public render() {
     if (this.state.hasError) {
+      if (this.state.isRecovering) {
+        return (
+          <div className="min-h-[300px] flex flex-col items-center justify-center p-6 text-center space-y-3">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Updating to the latest version&hellip;</p>
+          </div>
+        );
+      }
+
       if (this.props.fallback) {
         return this.props.fallback;
       }

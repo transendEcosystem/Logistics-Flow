@@ -1,9 +1,11 @@
 
 'use client'; // Error components must be Client Components
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Loader2 } from 'lucide-react';
+import { handlePossibleStaleChunk, isChunkLoadError } from '@/lib/chunk-reload';
 
 export default function Error({
   error,
@@ -12,10 +14,23 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const [isRecovering, setIsRecovering] = useState(() => isChunkLoadError(error));
+
   useEffect(() => {
-    // Log the error to an error reporting service
+    if (handlePossibleStaleChunk(error)) return;
+
+    setIsRecovering(false);
     console.error(error);
   }, [error]);
+
+  if (isRecovering) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4 gap-3">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Updating to the latest version&hellip;</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-center min-h-[calc(100vh-10rem)] p-4">
@@ -37,10 +52,7 @@ export default function Error({
             This could be due to a temporary connection issue or a problem with the server. You can try to load the page again.
           </p>
           <Button
-            onClick={
-              // Attempt to recover by trying to re-render the segment
-              () => reset()
-            }
+            onClick={() => (isChunkLoadError(error) ? window.location.reload() : reset())}
           >
             Try Again
           </Button>

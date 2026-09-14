@@ -6,9 +6,12 @@ import { CartProvider } from '@/context/CartContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import Analytics from '@/components/Analytics';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { installChunkErrorRecovery } from '@/lib/chunk-reload';
 import { Suspense, useEffect } from 'react';
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  useEffect(() => installChunkErrorRecovery(), []);
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const originalError = console.error;

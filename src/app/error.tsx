@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, RefreshCcw } from 'lucide-react';
+import { AlertTriangle, RefreshCcw, Loader2 } from 'lucide-react';
+import { handlePossibleStaleChunk, isChunkLoadError } from '@/lib/chunk-reload';
 
 /**
  * Standard Next.js Error Boundary for the app directory.
@@ -16,10 +17,25 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const [isRecovering, setIsRecovering] = useState(() => isChunkLoadError(error));
+
   useEffect(() => {
-    // Log the error centrally
+    // After a deploy an open tab requests chunk files that no longer exist.
+    // Reloading picks up the current build instead of showing a dead end.
+    if (handlePossibleStaleChunk(error)) return;
+
+    setIsRecovering(false);
     console.error('Next.js Segment Error:', error);
   }, [error]);
+
+  if (isRecovering) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] p-4 gap-3">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Updating to the latest version&hellip;</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-center min-h-[calc(100vh-10rem)] p-4 text-base">
@@ -39,7 +55,7 @@ export default function Error({
               {error.message || 'Unknown runtime error'}
             </p>
           </div>
-          <Button onClick={() => reset()} className="w-full">
+          <Button onClick={() => (isChunkLoadError(error) ? window.location.reload() : reset())} className="w-full">
             <RefreshCcw className="mr-2 h-4 w-4" /> Try Again
           </Button>
         </CardContent>
