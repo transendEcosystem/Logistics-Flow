@@ -18,7 +18,7 @@ export interface HarvestResult {
 
 const MAX_PAGES = 12;
 const MAX_BYTES = 2_000_000;
-const FETCH_TIMEOUT_MS = 12_000;
+const FETCH_TIMEOUT_MS = 25_000;
 const USER_AGENT = 'LogisticsFlowResearchBot/1.0 (+https://logisticsflow.co.za)';
 // Some hosts serve a near-empty shell or a challenge page to unknown bots. When the
 // polite bot identity yields nothing readable we retry once as a normal browser.
@@ -117,11 +117,24 @@ interface FetchOutcome {
   finalUrl: string;
 }
 
+export interface FetchTrace {
+  url: string;
+  status: number | string;
+  contentType?: string;
+  bytes?: number;
+  location?: string;
+  note?: string;
+}
+
 // Redirects are followed by hand because some hosts answer the apex with a
 // protocol-downgrading 301 (https -> http -> https) that the runtime fetch may
 // refuse, leaving us holding the tiny "Moved Permanently" stub body instead of
 // the real page. Tracking the final URL also tells us where the site truly lives.
-async function fetchPage(url: string, userAgent: string = USER_AGENT): Promise<FetchOutcome | null> {
+async function fetchPage(
+  url: string,
+  userAgent: string = USER_AGENT,
+  trace?: FetchTrace[],
+): Promise<FetchOutcome | null> {
   let current = url;
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -140,6 +153,7 @@ async function fetchPage(url: string, userAgent: string = USER_AGENT): Promise<F
 
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location');
+        trace?.push({ url: current, status: response.status, location: location || '(none)' });
         if (!location) return null;
         const next = new URL(location, current);
         if (next.protocol !== 'http:' && next.protocol !== 'https:') return null;
@@ -148,22 +162,40 @@ async function fetchPage(url: string, userAgent: string = USER_AGENT): Promise<F
         continue;
       }
 
-      if (!response.ok) return null;
       const contentType = response.headers.get('content-type') || '';
+
+      if (!response.ok) {
+        trace?.push({ url: current, status: response.status, contentType, note: 'not ok' });
+        return null;
+      }
       if (contentType && !/text\/html|application\/xhtml|application\/xml|text\/xml|text\/plain/i.test(contentType)) {
+        trace?.push({ url: current, status: response.status, contentType, note: 'rejected content-type' });
         return null;
       }
 
       const buffer = await response.arrayBuffer();
-      if (buffer.byteLength > MAX_BYTES) return null;
-      return { html: new TextDecoder('utf-8').decode(buffer), finalUrl: response.url || current };
-    } catch {
+      if (buffer.byteLength > MAX_BYTES) {
+        trace?.push({ url: current, status: response.status, contentType, bytes: buffer.byteLength, note: 'too large' });
+        return null;
+      }
+      const html = new TextDecoder('utf-8').decode(buffer);
+      trace?.push({
+        url: current,
+        status: response.status,
+        contentType,
+        bytes: buffer.byteLength,
+        note: `${wordCountOf(bestTextFor(html))} words`,
+      });
+      return { html, finalUrl: response.url || current };
+    } catch (error: any) {
+      trace?.push({ url: current, status: 'fetch error', note: error?.message || String(error) });
       return null;
     } finally {
       clearTimeout(timer);
     }
   }
 
+  trace?.push({ url: current, status: 'too many redirects' });
   return null;
 }
 
@@ -345,6 +377,21 @@ function priorityScore(url: string): number {
   return index === -1 ? PRIORITY_PATTERNS.length : index;
 }
 
+// Surfaced in the failure toast so a harvest that behaves differently on the
+// server than on a desktop browser can be diagnosed without guesswork.
+function formatTrace(trace: FetchTrace[]): string {
+  if (!trace.length) return '';
+  const lines = trace.slice(0, 8).map(entry => {
+    const parts = [`${entry.status}`];
+    if (entry.location) parts.push(`-> ${entry.location}`);
+    if (entry.contentType) parts.push(entry.contentType.split(';')[0]);
+    if (typeof entry.bytes === 'number') parts.push(`${entry.bytes}b`);
+    if (entry.note) parts.push(entry.note);
+    return `${entry.url} [${parts.join(', ')}]`;
+  });
+  return `Server trace: ${lines.join(' | ')}`;
+}
+
 export async function harvestSite(website: string): Promise<HarvestResult> {
   const origin = normalizeSiteUrl(website);
   if (!origin) throw new Error('The stored website address is not a valid URL.');
@@ -363,10 +410,11 @@ export async function harvestSite(website: string): Promise<HarvestResult> {
   let activeAgent = USER_AGENT;
   let homeHtml: string | null = null;
   let landingUrl = '';
+  const trace: FetchTrace[] = [];
 
   outer: for (const agent of [USER_AGENT, BROWSER_USER_AGENT]) {
     for (const candidate of originVariants) {
-      const outcome = await fetchPage(candidate, agent);
+      const outcome = await fetchPage(candidate, agent, trace);
       if (outcome && wordCountOf(bestTextFor(outcome.html)) >= MIN_PAGE_WORDS) {
         activeOrigin = candidate;
         activeAgent = agent;
@@ -385,7 +433,11 @@ export async function harvestSite(website: string): Promise<HarvestResult> {
     }
   }
 
-  if (!homeHtml) throw new Error('The website could not be reached. It may be offline, blocking automated access, or the address may be wrong.');
+  if (!homeHtml) {
+    throw new Error(
+      `The website could not be reached. It may be offline, blocking automated access, or the address may be wrong. ${formatTrace(trace)}`,
+    );
+  }
   if (!activeOrigin) activeOrigin = origin;
 
   // The apex often redirects into a subdirectory (for example /new/), so the
@@ -433,9 +485,9 @@ export async function harvestSite(website: string): Promise<HarvestResult> {
 
   if (pages.length === 0) {
     const reason = reachedPages > 0
-      ? `Reached ${reachedPages} page${reachedPages === 1 ? '' : 's'} on ${crawlOrigin}, but they returned no readable text. This usually means the site builds its content with JavaScript in the browser, or the host is serving a placeholder to automated visitors. Use the "Paste website text" option to supply the copy manually.`
+      ? `Reached ${reachedPages} page${reachedPages === 1 ? '' : 's'} on ${crawlOrigin}, but they returned no readable text. Use the "Paste website text" option to supply the copy manually.`
       : `No page on ${crawlOrigin} returned readable content. The site may be blocking automated access.`;
-    throw new Error(reason);
+    throw new Error(`${reason} ${formatTrace(trace)}`);
   }
 
   return {

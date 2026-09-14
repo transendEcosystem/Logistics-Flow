@@ -4,7 +4,7 @@ import { getAdminApp, verifyAdmin } from '@/lib/firebase-admin';
 import { harvestSite, buildSearchCorpus, normalizeSiteUrl } from '@/lib/site-harvester';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const RESEARCH_COLLECTIONS = [
   'leads',

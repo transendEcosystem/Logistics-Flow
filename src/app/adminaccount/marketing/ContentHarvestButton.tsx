@@ -32,6 +32,7 @@ export function ContentHarvestButton({ partner, onUpdate }: { partner: any; onUp
   const [websiteToHarvest, setWebsiteToHarvest] = useState(partner.website || '');
   const [manualText, setManualText] = useState('');
   const [showManual, setShowManual] = useState(false);
+  const [lastError, setLastError] = useState('');
   const { toast } = useToast();
 
   const corpus = partner.contentCorpus;
@@ -56,9 +57,11 @@ export function ContentHarvestButton({ partner, onUpdate }: { partner: any; onUp
       if (!response.ok || !result.success) throw new Error(result.error || 'Harvest failed.');
 
       toast({ title: 'Content harvested', description: `${result.pageCount} pages, ${result.totalWords.toLocaleString()} words captured.` });
+      setLastError('');
       onUpdate();
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Harvest failed', description: e.message });
+      setLastError(e.message || '');
       setShowManual(true);
     } finally {
       setIsHarvesting(false);
@@ -218,6 +221,14 @@ ${text}`;
                   >
                     Site won&rsquo;t harvest? Paste the website text manually
                   </button>
+                )}
+                {lastError && (
+                  <div className="space-y-1 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-destructive">
+                      Last failure &mdash; what the server saw
+                    </p>
+                    <p className="text-[11px] text-foreground break-all whitespace-pre-wrap">{lastError}</p>
+                  </div>
                 )}
                 {showManual && (
                   <div className="space-y-2 rounded-md border border-dashed p-3 bg-muted/20">
