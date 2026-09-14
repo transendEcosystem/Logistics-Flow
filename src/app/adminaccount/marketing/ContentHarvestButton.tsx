@@ -33,6 +33,7 @@ export function ContentHarvestButton({ partner, onUpdate }: { partner: any; onUp
   const [manualText, setManualText] = useState('');
   const [showManual, setShowManual] = useState(false);
   const [lastError, setLastError] = useState('');
+  const [isClassifying, setIsClassifying] = useState(false);
   const { toast } = useToast();
 
   const corpus = partner.contentCorpus;
@@ -133,6 +134,37 @@ Reply with one compact JSON object and nothing else. No markdown, no code fences
 
 WEBSITE TEXT:
 ${text}`;
+  };
+
+  const classifyAutomatically = async () => {
+    setIsClassifying(true);
+    try {
+      const token = await getClientSideAuthToken();
+      if (!token) throw new Error('Session expired.');
+
+      const response = await fetch('/api/research/classify', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: partner.id, collection: partner.sourceCollection }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || 'Classification failed.');
+
+      await performAdminAction(token, 'saveServiceProfile', {
+        partnerId: partner.id,
+        collection: partner.sourceCollection,
+        profile: result.profile,
+      });
+
+      toast({ title: 'Service profile saved', description: `${companyName} is now indexed and shop-ready.` });
+      setStructureText('');
+      setIsOpen(false);
+      onUpdate();
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Classification failed', description: e.message });
+    } finally {
+      setIsClassifying(false);
+    }
   };
 
   const saveStructure = async () => {
@@ -296,7 +328,17 @@ ${text}`;
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">
                       Step 2 &mdash; Classify the harvested text
-                    </label>
+                    </label>                    <Button
+                      onClick={classifyAutomatically}
+                      disabled={isClassifying || isSaving}
+                      className="w-full font-bold"
+                    >
+                      {isClassifying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                      Classify Automatically
+                    </Button>
+                    <p className="text-[11px] text-muted-foreground">
+                      Runs on the server and saves the profile in one step. No copying required.
+                    </p>
                     <Button
                       variant="outline"
                       className="w-full font-bold"
@@ -310,18 +352,18 @@ ${text}`;
                       }}
                     >
                       <Sparkles className="mr-2 h-4 w-4" />
-                      Copy Classification Prompt
+                      Copy Prompt Instead
                     </Button>
                     <p className="text-[11px] text-muted-foreground">
-                      Paste this into a full chat assistant such as Gemini or ChatGPT. Google&rsquo;s
-                      <span className="font-semibold"> AI Mode</span> in Search rejects long inputs and will answer
-                      &ldquo;no response available for this search&rdquo;.
+                      Manual fallback. Paste into a full chat assistant such as Gemini or ChatGPT &mdash;
+                      Google&rsquo;s <span className="font-semibold">AI Mode</span> in Search rejects prompts like this
+                      and replies &ldquo;no response available for this search&rdquo;.
                     </p>
                   </div>
 
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">
-                      Step 3 &mdash; Paste the returned JSON
+                      Step 3 &mdash; Paste the returned JSON (only if you copied the prompt)
                     </label>
                     <Textarea
                       value={structureText}
