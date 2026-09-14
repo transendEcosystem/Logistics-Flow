@@ -259,6 +259,26 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
 
             <Separator />
 
+            {Array.isArray(partner?.otherStaff) && partner.otherStaff.length > 0 && (
+                <div className="space-y-3 text-left text-foreground">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                        <Sparkles className="h-4 w-4" /> Other Staff Found By Research
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                        These people were found but did not match one of the four contact roles above. Copy any you want into a role.
+                    </p>
+                    <div className="rounded-xl border bg-slate-50 divide-y">
+                        {partner.otherStaff.map((person: any, index: number) => (
+                            <div key={index} className="p-3 text-xs space-y-0.5">
+                                <p className="font-bold">{person.name}{person.role ? ` \u2014 ${person.role}` : ''}</p>
+                                {person.email && <p className="text-muted-foreground break-all">{person.email}</p>}
+                                {person.mobile && <p className="text-muted-foreground">{person.mobile}</p>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div className="space-y-4 text-left text-foreground text-foreground">
                 <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2 text-left text-foreground">
                     <Sparkles className="h-4 w-4" /> Technical Profile

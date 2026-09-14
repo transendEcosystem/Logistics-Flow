@@ -46,11 +46,21 @@ function specificUrl(value: any): string {
 
 function roleToField(role: string): string | null {
     const value = role.toLowerCase();
-    if (/ceo|owner|managing director|\bmd\b|founder|proprietor/.test(value)) return 'ceo';
-    if (/marketing|brand|sales/.test(value)) return 'marketingManager';
-    if (/operation|logistics manager|fleet|depot|transport manager/.test(value)) return 'operationsManager';
-    if (/technical|workshop|engineer|maintenance|it\b/.test(value)) return 'technicalManager';
+    if (/ceo|owner|managing director|\bmd\b|founder|proprietor|principal|chairman/.test(value)) return 'ceo';
+    if (/marketing|brand|sales|commercial/.test(value)) return 'marketingManager';
+    if (/operation|logistics manager|fleet|depot|transport manager|dispatch|warehouse/.test(value)) return 'operationsManager';
+    if (/technical|workshop|engineer|maintenance|estimat|service manager|it\b/.test(value)) return 'technicalManager';
     return null;
+}
+
+// Research assistants often wrap values in markdown links such as
+// "[Acme](https://google.com/search?q=acme)". The label is the real value, so the
+// link wrapper is stripped before anything is written to the record.
+function stripMarkdown(value: any): string {
+    let text = String(value ?? '').trim();
+    const link = text.match(/^\[([^\]]+)\]\((?:[^)]*)\)$/);
+    if (link) text = link[1];
+    return text.replace(/\[([^\]]+)\]\((?:[^)]*)\)/g, '$1').replace(/[*_`]/g, '').trim();
 }
 
 // The short and full prompts return different shapes, so both are folded into the record schema here.
@@ -59,24 +69,30 @@ function normalizeFindings(raw: any) {
     const otherStaff: any[] = [];
 
     for (const field of ['companyName', 'industrial_category', 'email', 'phone', 'address', 'primaryContactRole']) {
-        if (raw[field]) findings[field] = String(raw[field]).trim();
+        if (raw[field]) {
+            const value = stripMarkdown(raw[field]);
+            if (value) findings[field] = value;
+        }
     }
 
     if (raw.website) findings.website = normalizeUrl(raw.website);
 
     const wording = raw.minedServiceWording || raw.servicesDescription;
-    if (wording) findings.minedServiceWording = String(wording).trim();
+    if (wording) findings.minedServiceWording = stripMarkdown(wording);
 
     if (raw.confidence) findings.researchConfidence = String(raw.confidence).trim();
+
+    // A verified general address is better than leaving a contact with no email at all.
+    const fallbackEmail = stripMarkdown(raw.emailVerification?.email || raw.email || '');
 
     for (const field of ['marketingManager', 'operationsManager', 'technicalManager', 'ceo']) {
         const contact = raw[field];
         if (contact && typeof contact === 'object' && contact.name) {
             findings[field] = {
-                name: String(contact.name).trim(),
-                role: contact.role ? String(contact.role).trim() : '',
-                email: contact.email ? String(contact.email).trim() : '',
-                mobile: contact.mobile ? String(contact.mobile).trim() : '',
+                name: stripMarkdown(contact.name),
+                role: contact.role ? stripMarkdown(contact.role) : '',
+                email: contact.email ? stripMarkdown(contact.email) : '',
+                mobile: contact.mobile ? stripMarkdown(contact.mobile) : '',
             };
         }
     }
@@ -84,16 +100,22 @@ function normalizeFindings(raw: any) {
     if (Array.isArray(raw.managementTeam)) {
         for (const person of raw.managementTeam) {
             if (!person?.name) continue;
-            const role = String(person.role || '').trim();
+            const role = stripMarkdown(person.role || '');
             const field = roleToField(role);
             const entry = {
-                name: String(person.name).trim(),
+                name: stripMarkdown(person.name),
                 role,
-                email: person.email ? String(person.email).trim() : '',
-                mobile: person.mobile ? String(person.mobile).trim() : '',
+                email: person.email ? stripMarkdown(person.email) : '',
+                mobile: person.mobile ? stripMarkdown(person.mobile) : '',
             };
             if (field && !findings[field]) findings[field] = entry;
             else otherStaff.push({ ...entry, source: person.source ? specificUrl(person.source) : '' });
+        }
+    }
+
+    for (const field of ['marketingManager', 'operationsManager', 'technicalManager', 'ceo']) {
+        if (findings[field] && !findings[field].email && fallbackEmail) {
+            findings[field].email = fallbackEmail;
         }
     }
 
@@ -101,8 +123,8 @@ function normalizeFindings(raw: any) {
         for (const person of raw.otherStaff) {
             if (person?.name) {
                 otherStaff.push({
-                    name: String(person.name).trim(),
-                    role: person.role ? String(person.role).trim() : '',
+                    name: stripMarkdown(person.name),
+                    role: person.role ? stripMarkdown(person.role) : '',
                     source: person.source ? specificUrl(person.source) : '',
                 });
             }
@@ -180,10 +202,13 @@ export function EnrichPartnerButton({ partner, onUpdate }: { partner: any, onUpd
             });
 
             const applied = result.applied?.length || 0;
-            const skipped = result.skipped?.length || 0;
+            const skippedFields: string[] = result.skipped || [];
             toast({
-                title: applied ? `${applied} field${applied === 1 ? '' : 's'} updated` : 'Nothing to apply',
-                description: skipped ? `${skipped} field${skipped === 1 ? '' : 's'} already had a value and were kept.` : undefined,
+                variant: !applied && skippedFields.length ? 'destructive' : 'default',
+                title: applied ? `${applied} field${applied === 1 ? '' : 's'} updated` : 'Nothing was applied',
+                description: skippedFields.length
+                    ? `Kept existing values for: ${skippedFields.join(', ')}. Re-run with "Overwrite" ticked to replace them.`
+                    : undefined,
             });
 
             setFindingsText('');
@@ -227,8 +252,12 @@ For servicesDescription, quote prose sentences from the About or Services page. 
 
 Return one complete JSON object in one response. Do not use citations, markdown links, code fences, "Use code with caution", or separate JSON fragments around URLs. Put every URL as ordinary text inside its JSON string value.
 
+CRITICAL formatting rule: every JSON string value must be plain text only. Never write a value as a markdown link such as "[Acme Ltd](https://google.com/search?q=acme)" \u2014 write "Acme Ltd" and put the URL in sourceUrls instead. This applies to companyName and to every person's name.
+
+For each person in managementTeam, also return their direct email and mobile if the site publishes them; otherwise use null.
+
 Reply with only this JSON and nothing else:
-{"record_id":"${partner.id}","companyName":null,"website":null,"email":null,"phone":null,"address":null,"industrial_category":null,"servicesDescription":null,"managementTeam":[{"name":null,"role":null,"source":null}],"contactability":{"websiteStatus":"active | broken | domain_not_found | not_found | unverifiable","recommendedChannel":"email | phone | whatsapp | social | manual_verification","notes":[]},"emailVerification":{"email":null,"domain":null,"domainStatus":"registered | domain_not_found | unverifiable","mxStatus":"mx_found | no_mx_found | not_checked","bounceRisk":"low | medium | high","evidence":"What was checked"},"sourceUrls":[],"confidence":null}`;
+{"record_id":"${partner.id}","companyName":null,"website":null,"email":null,"phone":null,"address":null,"industrial_category":null,"servicesDescription":null,"managementTeam":[{"name":null,"role":null,"email":null,"mobile":null,"source":null}],"contactability":{"websiteStatus":"active | broken | domain_not_found | not_found | unverifiable","recommendedChannel":"email | phone | whatsapp | social | manual_verification","notes":[]},"emailVerification":{"email":null,"domain":null,"domainStatus":"registered | domain_not_found | unverifiable","mxStatus":"mx_found | no_mx_found | not_checked","bounceRisk":"low | medium | high","evidence":"What was checked"},"sourceUrls":[],"confidence":null}`;
         }
 
         return `You are a verification-first research assistant. Accuracy matters more than completeness. Work through the stages below IN ORDER and do not skip ahead.
@@ -435,6 +464,24 @@ SELF-AUDIT: for every non-null value, name the URL you read it on. If you cannot
                             {preview?.findings && (
                                 <div className="border rounded-md p-3 bg-muted/20 space-y-1">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Will be applied</p>
+                                    {(() => {
+                                        const blocked = Object.keys(preview.findings).filter(
+                                            f => partner[f] !== undefined && partner[f] !== null && partner[f] !== ''
+                                        );
+                                        if (!blocked.length || overwrite) return null;
+                                        return (
+                                            <div className="rounded-md border border-amber-400 bg-amber-50 p-2 text-xs text-amber-900">
+                                                <p className="font-bold">
+                                                    {blocked.length} field{blocked.length === 1 ? '' : 's'} will NOT be saved
+                                                </p>
+                                                <p className="mt-0.5">
+                                                    These already hold a value, so the new research is discarded:{' '}
+                                                    <span className="font-mono font-semibold">{blocked.join(', ')}</span>. Tick
+                                                    &ldquo;Overwrite&rdquo; below to replace them.
+                                                </p>
+                                            </div>
+                                        );
+                                    })()}
                                     {Object.entries(preview.findings).map(([field, value]) => {
                                         const hasExisting = partner[field] !== undefined && partner[field] !== null && partner[field] !== '';
                                         return (
