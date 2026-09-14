@@ -8,7 +8,7 @@ import { Loader2, PlusCircle, ClipboardList, Trash2, CheckCircle, Circle, Save }
 import { DataTable } from '@/components/ui/data-table';
 import { type ColumnDef } from '@/hooks/use-data-table';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { getClientSideAuthToken, useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { getClientSideAuthToken, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { formatDateSafe } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -16,7 +16,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { collection, query, where, orderBy, serverTimestamp } from 'firebase/firestore';
 
 const taskSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters.'),
@@ -73,20 +72,20 @@ function TaskForm({ partner, onTaskAdded }: { partner: any; onTaskAdded: () => v
             const token = await getClientSideAuthToken();
             if (!token) throw new Error("Authentication failed.");
             
-            const taskData = { 
-                ...values, 
-                status: 'pending', 
-                createdAt: { _methodName: 'serverTimestamp' },
-                updatedAt: { _methodName: 'serverTimestamp' }
+            const taskData = {
+                ...values,
+                recordId: partner.id,
+                collection: partner.collection || partner.collectionName,
             };
-            const path = `partners/${partner.id}/tasks`;
 
-            await fetch('/api/addUserDoc', {
+            const response = await fetch('/api/admin', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ collectionPath: path, data: taskData }),
+                body: JSON.stringify({ action: 'createRecordTask', payload: taskData }),
             });
-            
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Failed to create task.');
+
             toast({ title: 'Task Created' });
             onTaskAdded();
             form.reset({ title: '', description: '', dueDate: '', assigneeId: values.assigneeId });
@@ -133,45 +132,58 @@ function TaskForm({ partner, onTaskAdded }: { partner: any; onTaskAdded: () => v
 }
 
 function TasksListContent({ partner }: { partner: any }) {
-    const firestore = useFirestore();
     const { user } = useUser();
     const { toast } = useToast();
+    const [tasks, setTasks] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Query sub-collection for a specific partner
-    const tasksQuery = useMemoFirebase(() => {
-        if (!firestore || !partner?.id) return null;
-        return query(
-            collection(firestore, 'partners', partner.id, 'tasks'), 
-            orderBy('createdAt', 'desc')
-        );
-    }, [firestore, partner.id]);
+    // Tasks are read through the admin API so records in any registry work and
+    // the client is not subject to Firestore rules for this admin-only view.
+    const forceRefresh = useCallback(async () => {
+        if (!partner?.id) return;
+        setIsLoading(true);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            const response = await fetch('/api/admin', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'getRecordTasks',
+                    payload: { recordId: partner.id, collection: partner.collection || partner.collectionName },
+                }),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Failed to load tasks.');
+            setTasks(result.data || []);
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Could not load tasks', description: e.message });
+        } finally {
+            setIsLoading(false);
+        }
+    }, [partner?.id, partner?.collection, partner?.collectionName, toast]);
 
-    const { data: tasks, isLoading, forceRefresh } = useCollection(tasksQuery);
+    useEffect(() => { forceRefresh(); }, [forceRefresh]);
 
     const handleAction = useCallback(async (task: any, action: 'toggle' | 'delete') => {
         if (!user) return;
         try {
             const token = await getClientSideAuthToken();
             if (!token) throw new Error("Authentication failed.");
-            
-            if (action === 'delete') {
-                await fetch('/api/deleteUserDoc', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: `partners/${partner.id}/tasks/${task.id}` }),
-                });
-                toast({ title: "Task Deleted" });
-            } else if (action === 'toggle') {
-                await fetch('/api/updateUserDoc', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        path: `partners/${partner.id}/tasks/${task.id}`,
-                        data: { status: task.status === 'pending' ? 'completed' : 'pending', updatedAt: { _methodName: 'serverTimestamp' } }
-                    }),
-                });
-                toast({ title: `Task marked as ${task.status === 'pending' ? 'completed' : 'pending'}.` });
-            }
+
+            const mode = action === 'delete'
+                ? 'dismiss'
+                : (task.status === 'pending' ? 'complete' : 'reopen');
+
+            const response = await fetch('/api/admin', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'updateFollowUpTask', payload: { taskId: task.id, mode } }),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Action failed.');
+
+            toast({ title: action === 'delete' ? 'Task Deleted' : `Task marked as ${mode === 'complete' ? 'completed' : 'pending'}.` });
             forceRefresh();
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Action Failed', description: e.message });

@@ -81,6 +81,139 @@ async function findResearchRecord(adminDb: any, recordId: string, preferredColle
   return null;
 }
 
+// --- Follow-up task register ---------------------------------------------
+
+const DEFAULT_COMMUNICATION_POLICY = {
+  enabled: true,
+  emailFollowUpHours: 72,
+  whatsappFollowUpHours: 24,
+  socialFollowUpHours: 48,
+  callFollowUpHours: 120,
+  defaultFollowUpHours: 72,
+  escalateToCallAfterFollowUps: 2,
+  maxFollowUps: 3,
+};
+
+type CommunicationPolicy = typeof DEFAULT_COMMUNICATION_POLICY;
+
+function coerceHours(value: any, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.round(parsed), 24 * 365);
+}
+
+function normalizeCommunicationPolicy(raw: any): CommunicationPolicy {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  return {
+    enabled: source.enabled !== false,
+    emailFollowUpHours: coerceHours(source.emailFollowUpHours, DEFAULT_COMMUNICATION_POLICY.emailFollowUpHours),
+    whatsappFollowUpHours: coerceHours(source.whatsappFollowUpHours, DEFAULT_COMMUNICATION_POLICY.whatsappFollowUpHours),
+    socialFollowUpHours: coerceHours(source.socialFollowUpHours, DEFAULT_COMMUNICATION_POLICY.socialFollowUpHours),
+    callFollowUpHours: coerceHours(source.callFollowUpHours, DEFAULT_COMMUNICATION_POLICY.callFollowUpHours),
+    defaultFollowUpHours: coerceHours(source.defaultFollowUpHours, DEFAULT_COMMUNICATION_POLICY.defaultFollowUpHours),
+    escalateToCallAfterFollowUps: Math.max(0, Math.round(Number(source.escalateToCallAfterFollowUps ?? DEFAULT_COMMUNICATION_POLICY.escalateToCallAfterFollowUps)) || 0),
+    maxFollowUps: Math.max(0, Math.round(Number(source.maxFollowUps ?? DEFAULT_COMMUNICATION_POLICY.maxFollowUps)) || 0),
+  };
+}
+
+async function loadCommunicationPolicy(db: any): Promise<CommunicationPolicy> {
+  try {
+    const snapshot = await db.collection('configuration').doc('communicationPolicy').get();
+    return normalizeCommunicationPolicy(snapshot.exists ? snapshot.data() : null);
+  } catch {
+    return { ...DEFAULT_COMMUNICATION_POLICY };
+  }
+}
+
+// Maps whatever channel wording the UI used onto a policy interval.
+function hoursForChannel(policy: CommunicationPolicy, channel: string): number {
+  const value = (channel || '').toLowerCase();
+  if (value.includes('whatsapp') || value.includes('sms')) return policy.whatsappFollowUpHours;
+  if (value.includes('call') || value.includes('phone')) return policy.callFollowUpHours;
+  if (value.includes('linkedin') || value.includes('social') || value.includes('facebook') || value.includes('dm')) return policy.socialFollowUpHours;
+  if (value.includes('email') || value.includes('mail') || value.includes('engage')) return policy.emailFollowUpHours;
+  return policy.defaultFollowUpHours;
+}
+
+function recordDisplayName(data: any): string {
+  return String(
+    data?.companyName
+    || data?.tradingName
+    || `${data?.firstName || ''} ${data?.lastName || ''}`.trim()
+    || data?.email
+    || 'Unnamed record'
+  ).trim();
+}
+
+/**
+ * Creates (or replaces) the outstanding follow-up task for a record after outreach is sent.
+ * Deterministic id per record so repeated sends reschedule rather than pile up duplicates.
+ */
+async function scheduleFollowUpTask(db: any, opts: {
+  recordRef: any;
+  collection: string;
+  recordId: string;
+  recordData: any;
+  channel: string;
+  subject: string;
+  sentAt: string;
+  actorUid: string;
+}) {
+  const policy = await loadCommunicationPolicy(db);
+  if (!policy.enabled) return null;
+
+  const followUpNumber = Number(opts.recordData?.followUpCount || 0) + 1;
+  if (policy.maxFollowUps > 0 && followUpNumber > policy.maxFollowUps) return null;
+
+  const escalateToCall = policy.escalateToCallAfterFollowUps > 0
+    && followUpNumber > policy.escalateToCallAfterFollowUps;
+  const actionType = escalateToCall ? 'call' : 'email';
+  const hours = escalateToCall
+    ? policy.callFollowUpHours
+    : hoursForChannel(policy, opts.channel);
+
+  const dueAt = new Date(new Date(opts.sentAt).getTime() + hours * 60 * 60 * 1000).toISOString();
+  const companyName = recordDisplayName(opts.recordData);
+  const taskId = `followup_${opts.collection}_${opts.recordId}`;
+
+  const task = {
+    id: taskId,
+    source: 'auto_follow_up',
+    status: 'pending',
+    actionType,
+    title: escalateToCall
+      ? `Call ${companyName} — no reply after ${followUpNumber - 1} follow-up(s)`
+      : `Follow up with ${companyName} re: ${opts.subject}`,
+    description: `${opts.channel} sent ${new Date(opts.sentAt).toISOString()}. Policy allows ${hours}h before follow-up #${followUpNumber}.`,
+    recordId: opts.recordId,
+    recordCollection: opts.collection,
+    companyName,
+    contactEmail: String(opts.recordData?.email || '').trim() || null,
+    contactPhone: String(opts.recordData?.phone || opts.recordData?.mobile || '').trim() || null,
+    lastChannel: opts.channel,
+    lastSubject: opts.subject,
+    lastOutreachAt: opts.sentAt,
+    followUpNumber,
+    dueAt,
+    dueDate: dueAt.slice(0, 10),
+    assigneeId: String(opts.recordData?.assigneeId || opts.actorUid || '').trim() || null,
+    createdBy: opts.actorUid,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await Promise.all([
+    db.collection('platformTasks').doc(taskId).set(task, { merge: true }),
+    opts.recordRef.set({
+      nextFollowUpAt: dueAt,
+      nextFollowUpAction: actionType,
+      followUpCount: followUpNumber,
+    }, { merge: true }),
+  ]);
+
+  return task;
+}
+
 function normalizeRegistryType(rawType?: string): string {
   const value = (rawType || '').toString().toLowerCase();
   if (!value) return 'all';
@@ -1401,7 +1534,170 @@ export async function POST(request: Request) {
         }, { merge: true }),
       ]);
 
-      return NextResponse.json({ success: true, id: communicationRef.id, collection: located.collection }, { status: 200 });
+      let followUpTask: any = null;
+      try {
+        followUpTask = await scheduleFollowUpTask(db, {
+          recordRef: located.ref,
+          collection: located.collection,
+          recordId: partnerId,
+          recordData: located.data,
+          channel,
+          subject,
+          sentAt: now,
+          actorUid: adminUid,
+        });
+      } catch (followUpError: any) {
+        // A scheduling failure must never block the outreach itself from being logged.
+        console.error('Follow-up scheduling failed', followUpError);
+      }
+
+      return NextResponse.json({
+        success: true,
+        id: communicationRef.id,
+        collection: located.collection,
+        followUpTask,
+      }, { status: 200 });
+    }
+
+    if (action === 'getCommunicationPolicy') {
+      const policy = await loadCommunicationPolicy(db);
+      return NextResponse.json({ success: true, data: policy, defaults: DEFAULT_COMMUNICATION_POLICY }, { status: 200 });
+    }
+
+    if (action === 'saveCommunicationPolicy') {
+      const policy = normalizeCommunicationPolicy(resolvedPayload?.policy || resolvedPayload);
+      await db.collection('configuration').doc('communicationPolicy').set({
+        ...policy,
+        updatedAt: new Date().toISOString(),
+        updatedBy: adminUid,
+      }, { merge: true });
+      return NextResponse.json({ success: true, data: policy }, { status: 200 });
+    }
+
+    if (action === 'getFollowUpRegister') {
+      const includeCompleted = resolvedPayload?.includeCompleted === true;
+      const snapshot = await db.collection('platformTasks').limit(500).get().catch(() => ({ docs: [] }));
+      const nowMs = Date.now();
+      const startOfTomorrow = new Date();
+      startOfTomorrow.setHours(24, 0, 0, 0);
+
+      const tasks = snapshot.docs
+        .map((doc: any) => ({ ...(doc.data() || {}), id: doc.id }))
+        .filter((task: any) => includeCompleted || task.status !== 'completed')
+        .map((task: any) => {
+          const dueMs = task.dueAt ? new Date(task.dueAt).getTime() : NaN;
+          let bucket = 'upcoming';
+          if (task.status === 'completed') bucket = 'completed';
+          else if (!Number.isFinite(dueMs)) bucket = 'upcoming';
+          else if (dueMs <= nowMs) bucket = 'overdue';
+          else if (dueMs < startOfTomorrow.getTime()) bucket = 'due_today';
+          return { ...task, bucket, hoursUntilDue: Number.isFinite(dueMs) ? Math.round((dueMs - nowMs) / 36e5) : null };
+        })
+        .sort((a: any, b: any) => String(a.dueAt || '').localeCompare(String(b.dueAt || '')));
+
+      return NextResponse.json({
+        success: true,
+        data: tasks,
+        summary: {
+          overdue: tasks.filter((t: any) => t.bucket === 'overdue').length,
+          dueToday: tasks.filter((t: any) => t.bucket === 'due_today').length,
+          upcoming: tasks.filter((t: any) => t.bucket === 'upcoming').length,
+        },
+      }, { status: 200 });
+    }
+
+    if (action === 'updateFollowUpTask') {
+      const taskId = String(resolvedPayload?.taskId || resolvedPayload?.id || '').trim();
+      const mode = String(resolvedPayload?.mode || '').trim();
+      if (!taskId || !mode) {
+        return NextResponse.json({ success: false, error: 'Task ID and mode are required.' }, { status: 400 });
+      }
+
+      const taskRef = db.collection('platformTasks').doc(taskId);
+      const nowIso = new Date().toISOString();
+
+      if (mode === 'dismiss') {
+        await taskRef.delete();
+        return NextResponse.json({ success: true, deleted: true }, { status: 200 });
+      }
+
+      if (mode === 'snooze') {
+        const hours = coerceHours(resolvedPayload?.hours, 24);
+        const dueAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+        await taskRef.set({ dueAt, dueDate: dueAt.slice(0, 10), status: 'pending', updatedAt: nowIso }, { merge: true });
+        return NextResponse.json({ success: true, dueAt }, { status: 200 });
+      }
+
+      if (mode === 'complete' || mode === 'reopen') {
+        const completed = mode === 'complete';
+        await taskRef.set({
+          status: completed ? 'completed' : 'pending',
+          completedAt: completed ? nowIso : null,
+          completedBy: completed ? adminUid : null,
+          updatedAt: nowIso,
+        }, { merge: true });
+        return NextResponse.json({ success: true, status: completed ? 'completed' : 'pending' }, { status: 200 });
+      }
+
+      if (mode === 'assign') {
+        await taskRef.set({ assigneeId: String(resolvedPayload?.assigneeId || '').trim() || null, updatedAt: nowIso }, { merge: true });
+        return NextResponse.json({ success: true }, { status: 200 });
+      }
+
+      return NextResponse.json({ success: false, error: `Unsupported mode "${mode}".` }, { status: 400 });
+    }
+
+    // Per-record tasks. Resolves the record across every registry so suppliers,
+    // leads and transporters work, not just `partners`.
+    if (action === 'getRecordTasks' || action === 'createRecordTask') {
+      const recordId = String(resolvedPayload?.recordId || resolvedPayload?.partnerId || resolvedPayload?.id || '').trim();
+      if (!recordId) {
+        return NextResponse.json({ success: false, error: 'Record ID is required.' }, { status: 400 });
+      }
+      const located = await findResearchRecord(db, recordId, resolvedPayload?.collection);
+      if (!located) {
+        return NextResponse.json({ success: false, error: `Record ${recordId} was not found.` }, { status: 404 });
+      }
+
+      if (action === 'getRecordTasks') {
+        const [subSnap, registerSnap] = await Promise.all([
+          located.ref.collection('tasks').limit(200).get().catch(() => ({ docs: [] })),
+          db.collection('platformTasks').where('recordId', '==', recordId).limit(200).get().catch(() => ({ docs: [] })),
+        ]);
+        const merged = [
+          ...subSnap.docs.map((doc: any) => ({ ...(doc.data() || {}), id: doc.id, scope: 'record' })),
+          ...registerSnap.docs.map((doc: any) => ({ ...(doc.data() || {}), id: doc.id, scope: 'register' })),
+        ].sort((a: any, b: any) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+        return NextResponse.json({ success: true, data: merged, collection: located.collection }, { status: 200 });
+      }
+
+      const nowIso = new Date().toISOString();
+      const taskRef = db.collection('platformTasks').doc();
+      const dueDate = String(resolvedPayload?.dueDate || '').trim();
+      const task = {
+        id: taskRef.id,
+        source: 'manual',
+        status: 'pending',
+        actionType: String(resolvedPayload?.actionType || 'email').trim(),
+        title: String(resolvedPayload?.title || '').trim(),
+        description: String(resolvedPayload?.description || '').trim(),
+        recordId,
+        recordCollection: located.collection,
+        companyName: recordDisplayName(located.data),
+        contactEmail: String(located.data?.email || '').trim() || null,
+        contactPhone: String(located.data?.phone || located.data?.mobile || '').trim() || null,
+        assigneeId: String(resolvedPayload?.assigneeId || '').trim() || null,
+        dueDate: dueDate || nowIso.slice(0, 10),
+        dueAt: dueDate ? new Date(`${dueDate}T09:00:00.000Z`).toISOString() : nowIso,
+        createdBy: adminUid,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      if (!task.title) {
+        return NextResponse.json({ success: false, error: 'Task title is required.' }, { status: 400 });
+      }
+      await taskRef.set(task);
+      return NextResponse.json({ success: true, data: task }, { status: 200 });
     }
 
     if (action === 'bulkLogForensicInitiated') {

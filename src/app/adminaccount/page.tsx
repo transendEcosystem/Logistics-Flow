@@ -49,6 +49,7 @@ import {
   Eye,
   Globe,
   ClipboardList,
+  ListChecks,
   Warehouse,
   Network,
   HelpCircle,
@@ -102,6 +103,7 @@ import AdminGuides from '@/app/adminaccount/guides';
 import AdsOversight from '@/app/adminaccount/ads-oversight';
 import SocialStudio from '@/app/adminaccount/social-studio';
 import EngagementPipeline from '@/app/adminaccount/marketing/EngagementPipeline';
+import FollowUpRegister from '@/app/adminaccount/follow-up-register';
 import PartnerAgreementsPanel from '@/app/adminaccount/marketing/PartnerAgreementsPanel';
 import DividendManagement from '@/app/adminaccount/dividend-management';
 import HandshakeOversight from '@/app/adminaccount/handshake-oversight';
@@ -203,6 +205,7 @@ function AdminAccountContent() {
       case 'partner-agreements': return <PartnerAgreementsPanel />;
       case 'commercials': return <Commercials />;
       case 'engagement-pipeline': return <EngagementPipeline />;
+      case 'follow-up-register': return <FollowUpRegister />;
       default: return <AdminDashboardContent />;
     }
   }, [activeView]);
@@ -266,6 +269,12 @@ function AdminAccountContent() {
               <SidebarMenuItem>
                   <SidebarMenuButton tooltip="Automation" isActive={activeView === 'engagement-pipeline'} onClick={() => navigate('engagement-pipeline')}>
                       <Zap className="text-primary fill-primary/20" /><span>Auto-Pilot</span>
+                  </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                  <SidebarMenuButton tooltip="Follow-Up Register" isActive={activeView === 'follow-up-register'} onClick={() => navigate('follow-up-register')}>
+                      <ListChecks className="text-primary" /><span>Follow-Up Register</span>
                   </SidebarMenuButton>
               </SidebarMenuItem>
 
