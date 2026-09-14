@@ -2,6 +2,22 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminApp } from '@/lib/firebase-admin';
+import { APP_BASE_URL } from '@/lib/app-url';
+
+/**
+ * Behind App Hosting the request URL is the container's internal address
+ * (http://0.0.0.0:8080), so it can never be used to build a link that is sent to
+ * a recipient. The public origin is resolved from the proxy headers, falling
+ * back to the configured base URL.
+ */
+function publicOrigin(req: NextRequest): string {
+  const forwardedHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  if (forwardedHost && !/^(0\.0\.0\.0|127\.0\.0\.1|\[::\]|localhost)(:|$)/.test(forwardedHost)) {
+    const proto = req.headers.get('x-forwarded-proto') || 'https';
+    return `${proto}://${forwardedHost}`;
+  }
+  return APP_BASE_URL;
+}
 
 /**
  * INTERACTION TRACKING ENDPOINT
@@ -120,13 +136,20 @@ export async function GET(req: NextRequest, { params }: { params: { partnerId: s
   }
 
   // REDIRECT LOGIC
+  const origin = publicOrigin(req);
+
   if (dest) {
-      return NextResponse.redirect(new URL(dest, req.url));
+      // Only ever redirect within this site, so a crafted "dest" cannot turn a
+      // tracking link into an open redirect to a third-party domain.
+      const target = new URL(dest, origin);
+      const safePath = target.origin === new URL(origin).origin
+          ? `${target.pathname}${target.search}${target.hash}`
+          : '/';
+      return NextResponse.redirect(`${origin}${safePath}`);
   }
 
   if (source === 'ad_click' && advertiserId) {
-      const redirectUrl = `${process.env.NEXT_PUBLIC_BASE_URL || ''}/shops/${advertiserId}`;
-      return NextResponse.redirect(redirectUrl);
+      return NextResponse.redirect(`${origin}/shops/${advertiserId}`);
   }
 
   // Return pixel for email opens

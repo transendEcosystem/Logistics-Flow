@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { getClientSideAuthToken, useUser, useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { copyHtmlToClipboard, cn } from '@/lib/utils';
+import { APP_BASE_URL } from '@/lib/app-url';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { collection, query, where, limit } from 'firebase/firestore';
@@ -147,7 +148,7 @@ function escapeHtml(value: string) {
 
 function deepDiveEmailHtml(partner: any) {
     const text = deepDiveContent(partner, 'outlook');
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://logisticsflow.co.za');
+    const baseUrl = APP_BASE_URL;
     const partnerId = partner?.id || 'PROSPECT';
     const optInPath = `/opt-in/${partnerId}`;
     const optInLink = `${baseUrl}/api/trackEmailOpen/${partnerId}?source=app&dest=${encodeURIComponent(optInPath)}`;
@@ -404,8 +405,8 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                                     <br />
                                     {deepDiveContent(currentPartner, 'outlook')}
                                     <p style={{ marginTop: '16pt' }}>
-                                        <a href={`${window.location.origin}/opt-in/${currentPartner.id}`} style={{ color: '#228B22', fontWeight: 'bold', textDecoration: 'underline' }}>
-                                            {window.location.origin}/opt-in/{currentPartner.id}
+                                        <a href={`${APP_BASE_URL}/opt-in/${currentPartner.id}`} style={{ color: '#228B22', fontWeight: 'bold', textDecoration: 'underline' }}>
+                                            {APP_BASE_URL}/opt-in/{currentPartner.id}
                                         </a>
                                     </p>
                                 </div>
@@ -425,7 +426,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                                         <li><strong>Capital division:</strong> Access in-house finance where traditional banks fail.</li>
                                     </ul>
                                     <p style={{ margin: '15pt 0' }}><strong>Are you ready to establish the handshake?</strong></p>
-                                    <p><a href={`${window.location.origin}/opt-in/${currentPartner.id}`} style={{ color: '#228B22', fontWeight: 'bold' }}>{window.location.origin}/opt-in/{currentPartner.id}</a></p>
+                                    <p><a href={`${APP_BASE_URL}/opt-in/${currentPartner.id}`} style={{ color: '#228B22', fontWeight: 'bold' }}>{APP_BASE_URL}/opt-in/{currentPartner.id}</a></p>
                                 </div>
                             )}
                             {activeTab === 'platform-dm' && (
@@ -434,7 +435,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                                     <p style={{ margin: '10pt 0' }}>I've been following your content here and think your creative influence is a perfect match for a strategic partnership we're launching for the South African transport industry.</p>
                                     <p>We're offering influencers **Free 4K AI Studio access** and a **30% recurring annuity** on all referrals. We've already cataloged your business in our industrial registry.</p>
                                     <p style={{ marginTop: '10pt' }}>Are you interested in the details? Let's establish the handshake here:</p>
-                                    <p><a href={`${window.location.origin}/opt-in/${currentPartner.id}?role=associate`} style={{ color: '#228B22', fontWeight: 'bold' }}>{window.location.origin}/opt-in/{currentPartner.id}</a></p>
+                                    <p><a href={`${APP_BASE_URL}/opt-in/${currentPartner.id}?role=associate`} style={{ color: '#228B22', fontWeight: 'bold' }}>{APP_BASE_URL}/opt-in/{currentPartner.id}</a></p>
                                 </div>
                             )}
                             {activeTab === 'transporter-value-prop' && <TransporterValueProposition partner={currentPartner} />}
