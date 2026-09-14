@@ -25,6 +25,7 @@ const USER_AGENT = 'LogisticsFlowResearchBot/1.0 (+https://logisticsflow.co.za)'
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const MIN_PAGE_WORDS = 20;
+const MAX_REDIRECTS = 6;
 
 // Pages carrying the service wording we index on, in priority order.
 const PRIORITY_PATTERNS = [
@@ -111,34 +112,64 @@ async function assertPublicHost(hostname: string): Promise<void> {
   }
 }
 
-async function fetchText(url: string, userAgent: string = USER_AGENT): Promise<string | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        'User-Agent': userAgent,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-ZA,en;q=0.9',
-      },
-    });
-    if (!response.ok) return null;
-    const contentType = response.headers.get('content-type') || '';
-    // An absent content-type is treated as HTML rather than discarded outright.
-    if (contentType && !/text\/html|application\/xhtml|application\/xml|text\/xml|text\/plain/i.test(contentType)) {
-      return null;
-    }
+interface FetchOutcome {
+  html: string;
+  finalUrl: string;
+}
 
-    const buffer = await response.arrayBuffer();
-    if (buffer.byteLength > MAX_BYTES) return null;
-    return new TextDecoder('utf-8').decode(buffer);
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
+// Redirects are followed by hand because some hosts answer the apex with a
+// protocol-downgrading 301 (https -> http -> https) that the runtime fetch may
+// refuse, leaving us holding the tiny "Moved Permanently" stub body instead of
+// the real page. Tracking the final URL also tells us where the site truly lives.
+async function fetchPage(url: string, userAgent: string = USER_AGENT): Promise<FetchOutcome | null> {
+  let current = url;
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(current, {
+        signal: controller.signal,
+        redirect: 'manual',
+        headers: {
+          'User-Agent': userAgent,
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-ZA,en;q=0.9',
+        },
+      });
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) return null;
+        const next = new URL(location, current);
+        if (next.protocol !== 'http:' && next.protocol !== 'https:') return null;
+        await assertPublicHost(next.hostname);
+        current = next.toString();
+        continue;
+      }
+
+      if (!response.ok) return null;
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType && !/text\/html|application\/xhtml|application\/xml|text\/xml|text\/plain/i.test(contentType)) {
+        return null;
+      }
+
+      const buffer = await response.arrayBuffer();
+      if (buffer.byteLength > MAX_BYTES) return null;
+      return { html: new TextDecoder('utf-8').decode(buffer), finalUrl: response.url || current };
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+
+  return null;
+}
+
+async function fetchText(url: string, userAgent: string = USER_AGENT): Promise<string | null> {
+  const outcome = await fetchPage(url, userAgent);
+  return outcome ? outcome.html : null;
 }
 
 // Falls back to metadata and structured data when the visible body is empty,
@@ -244,15 +275,21 @@ export function htmlToText(html: string, options: { keepChrome?: boolean } = {})
     .trim();
 }
 
-function extractLinks(html: string, origin: string): string[] {
+function extractLinks(html: string, base: string): string[] {
   const links = new Set<string>();
+  const baseHost = new URL(base).hostname.toLowerCase().replace(/^www\./, '');
+  const baseProtocol = new URL(base).protocol;
   const regex = /<a\s[^>]*href\s*=\s*["']([^"']+)["']/gi;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(html)) !== null) {
     try {
-      const resolved = new URL(match[1], origin);
-      if (resolved.origin !== origin) continue;
+      const resolved = new URL(match[1], base);
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') continue;
+      // Sites routinely mix http/https and www/apex in their own markup, so the
+      // host is compared loosely and the link is pulled back onto our scheme.
+      if (resolved.hostname.toLowerCase().replace(/^www\./, '') !== baseHost) continue;
       if (EXCLUDE_PATTERNS.test(resolved.pathname)) continue;
+      resolved.protocol = baseProtocol;
       resolved.hash = '';
       links.add(resolved.toString());
     } catch {
@@ -265,15 +302,18 @@ function extractLinks(html: string, origin: string): string[] {
 async function readSitemap(origin: string): Promise<string[]> {
   const xml = await fetchText(`${origin}/sitemap.xml`);
   if (!xml) return [];
+  const originHost = new URL(origin).hostname.toLowerCase().replace(/^www\./, '');
+  const originProtocol = new URL(origin).protocol;
   const urls: string[] = [];
   const regex = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(xml)) !== null) {
     try {
       const resolved = new URL(match[1]);
-      if (resolved.origin === origin && !EXCLUDE_PATTERNS.test(resolved.pathname)) {
-        urls.push(resolved.toString());
-      }
+      if (resolved.hostname.toLowerCase().replace(/^www\./, '') !== originHost) continue;
+      if (EXCLUDE_PATTERNS.test(resolved.pathname)) continue;
+      resolved.protocol = originProtocol;
+      urls.push(resolved.toString());
     } catch {
       // Ignore malformed sitemap entries.
     }
@@ -322,22 +362,25 @@ export async function harvestSite(website: string): Promise<HarvestResult> {
   let activeOrigin = '';
   let activeAgent = USER_AGENT;
   let homeHtml: string | null = null;
+  let landingUrl = '';
 
   outer: for (const agent of [USER_AGENT, BROWSER_USER_AGENT]) {
     for (const candidate of originVariants) {
-      const html = await fetchText(candidate, agent);
-      if (html && wordCountOf(bestTextFor(html)) >= MIN_PAGE_WORDS) {
+      const outcome = await fetchPage(candidate, agent);
+      if (outcome && wordCountOf(bestTextFor(outcome.html)) >= MIN_PAGE_WORDS) {
         activeOrigin = candidate;
         activeAgent = agent;
-        homeHtml = html;
+        homeHtml = outcome.html;
+        landingUrl = outcome.finalUrl;
         break outer;
       }
       // Remember any reachable response so the error can distinguish
       // "unreachable" from "reachable but empty".
-      if (html && !homeHtml) {
+      if (outcome && !homeHtml) {
         activeOrigin = candidate;
         activeAgent = agent;
-        homeHtml = html;
+        homeHtml = outcome.html;
+        landingUrl = outcome.finalUrl;
       }
     }
   }
@@ -345,15 +388,26 @@ export async function harvestSite(website: string): Promise<HarvestResult> {
   if (!homeHtml) throw new Error('The website could not be reached. It may be offline, blocking automated access, or the address may be wrong.');
   if (!activeOrigin) activeOrigin = origin;
 
-  const disallowed = await readDisallowedPaths(activeOrigin);
+  // The apex often redirects into a subdirectory (for example /new/), so the
+  // crawl is anchored on where we actually landed rather than the bare origin.
+  let landing: URL;
+  try {
+    landing = new URL(landingUrl || activeOrigin);
+  } catch {
+    landing = new URL(activeOrigin);
+  }
+  const crawlOrigin = landing.origin;
+  const homeUrl = landing.toString();
+
+  const disallowed = await readDisallowedPaths(crawlOrigin);
   const isAllowed = (url: string) => {
     const path = new URL(url).pathname;
     return !disallowed.some(rule => rule !== '/' && path.startsWith(rule));
   };
 
-  const candidates = new Set<string>([`${activeOrigin}/`]);
-  for (const url of await readSitemap(activeOrigin)) candidates.add(url);
-  for (const url of extractLinks(homeHtml, activeOrigin)) candidates.add(url);
+  const candidates = new Set<string>([homeUrl]);
+  for (const url of await readSitemap(crawlOrigin)) candidates.add(url);
+  for (const url of extractLinks(homeHtml, homeUrl)) candidates.add(url);
 
   const skipped: string[] = [];
   const ordered = Array.from(candidates)
@@ -368,7 +422,7 @@ export async function harvestSite(website: string): Promise<HarvestResult> {
   const pages: HarvestedPage[] = [];
   let reachedPages = 0;
   for (const url of ordered) {
-    const html = url === `${activeOrigin}/` ? homeHtml : await fetchText(url, activeAgent);
+    const html = url === homeUrl ? homeHtml : await fetchText(url, activeAgent);
     if (!html) continue;
     reachedPages += 1;
     const text = bestTextFor(html);
@@ -379,8 +433,8 @@ export async function harvestSite(website: string): Promise<HarvestResult> {
 
   if (pages.length === 0) {
     const reason = reachedPages > 0
-      ? `Reached ${reachedPages} page${reachedPages === 1 ? '' : 's'} on ${activeOrigin}, but they returned no readable text. This usually means the site builds its content with JavaScript in the browser, or the host is serving a placeholder to automated visitors. Use the "Paste website text" option to supply the copy manually.`
-      : `No page on ${activeOrigin} returned readable content. The site may be blocking automated access.`;
+      ? `Reached ${reachedPages} page${reachedPages === 1 ? '' : 's'} on ${crawlOrigin}, but they returned no readable text. This usually means the site builds its content with JavaScript in the browser, or the host is serving a placeholder to automated visitors. Use the "Paste website text" option to supply the copy manually.`
+      : `No page on ${crawlOrigin} returned readable content. The site may be blocking automated access.`;
     throw new Error(reason);
   }
 
