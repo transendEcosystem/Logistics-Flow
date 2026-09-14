@@ -250,14 +250,32 @@ ${text}`;
                   </div>
                 )}
                 {corpus && (
-                  <ScrollArea className="h-28 w-full border rounded-md p-3 bg-muted/20">
-                    {(corpus.pages || []).map((page: any) => (
-                      <div key={page.url} className="text-xs mb-1">
-                        <span className="font-medium">{page.wordCount}w</span>{' '}
-                        <span className="text-muted-foreground break-all">{page.url}</span>
-                      </div>
-                    ))}
-                  </ScrollArea>
+                  <>
+                    <div className="flex items-center justify-between rounded-md border bg-emerald-50 px-3 py-2">
+                      <span className="text-xs font-bold text-emerald-900">
+                        {(corpus.totalWords || 0).toLocaleString()} words captured across {corpus.pageCount || 0} pages
+                      </span>
+                      {!hasProfile && (
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">
+                          Step 2 still required
+                        </span>
+                      )}
+                    </div>
+                    <ScrollArea className="h-28 w-full border rounded-md p-3 bg-muted/20">
+                      {(corpus.pages || []).map((page: any) => (
+                        <div key={page.url} className="text-xs mb-1">
+                          <span className="font-medium">{page.wordCount}w</span>{' '}
+                          <span className="text-muted-foreground break-all">{page.url}</span>
+                        </div>
+                      ))}
+                    </ScrollArea>
+                    {!hasProfile && (
+                      <p className="text-[11px] text-amber-700">
+                        Harvested text is stored but not yet classified. Run Step 2 below to turn it into the
+                        Technical Profile, service tags and shop listing.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 

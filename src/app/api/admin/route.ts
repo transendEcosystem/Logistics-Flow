@@ -885,12 +885,23 @@ export async function POST(request: Request) {
         shopProfile.keywords.join(' '),
       ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 60_000);
 
+      // The gap analysis often leaves a one-line stub here. The classification pass
+      // produces a far richer write-up, so the longer of the two wins rather than
+      // letting whichever arrived first permanently short-circuit the other.
+      const existingWording = String(located.data.minedServiceWording || '').trim();
+      const harvestedWording = shopProfile.longDescription;
+      const wordsIn = (value: string) => value.split(/\s+/).filter(Boolean).length;
+      const minedServiceWording =
+        wordsIn(harvestedWording) > wordsIn(existingWording)
+          ? harvestedWording
+          : existingWording || harvestedWording || null;
+
       await located.ref.set({
         serviceProfile,
         shopProfile,
         campaignAngles,
         searchCorpus,
-        minedServiceWording: located.data.minedServiceWording || shopProfile.longDescription || null,
+        minedServiceWording,
         researchStage: 'service_profile_complete',
         serviceProfileSavedAt: new Date().toISOString(),
         serviceProfileSavedBy: adminUid,
