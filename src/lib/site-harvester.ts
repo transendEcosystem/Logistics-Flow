@@ -20,6 +20,11 @@ const MAX_PAGES = 12;
 const MAX_BYTES = 2_000_000;
 const FETCH_TIMEOUT_MS = 12_000;
 const USER_AGENT = 'LogisticsFlowResearchBot/1.0 (+https://logisticsflow.co.za)';
+// Some hosts serve a near-empty shell or a challenge page to unknown bots. When the
+// polite bot identity yields nothing readable we retry once as a normal browser.
+const BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const MIN_PAGE_WORDS = 20;
 
 // Pages carrying the service wording we index on, in priority order.
 const PRIORITY_PATTERNS = [
@@ -36,14 +41,45 @@ const PRIORITY_PATTERNS = [
 ];
 
 const EXCLUDE_PATTERNS = /\.(pdf|jpe?g|png|gif|svg|webp|zip|docx?|xlsx?|mp4|mp3|css|js)(\?|$)/i;
+const NON_WEBSITE_HOSTS = [
+  'google.',
+  'bing.com',
+  'facebook.com',
+  'linkedin.com',
+  'instagram.com',
+  'x.com',
+  'twitter.com',
+  'tiktok.com',
+];
+
+function extractUrlFromSearchResult(url: URL): string | null {
+  for (const key of ['url', 'u', 'q']) {
+    const value = url.searchParams.get(key);
+    if (value && /^https?:\/\//i.test(value)) return value;
+  }
+  return null;
+}
 
 export function normalizeSiteUrl(raw: string): string | null {
-  const value = String(raw || '').trim();
+  const value = String(raw || '')
+    .trim()
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/^<|>$/g, '');
   if (!value) return null;
   const candidate = /^https?:\/\//i.test(value) ? value : `https://${value.replace(/^\/+/, '')}`;
   try {
-    const url = new URL(candidate);
+    let url = new URL(candidate);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, '');
+
+    if (NON_WEBSITE_HOSTS.some(host => hostname.includes(host))) {
+      const extracted = extractUrlFromSearchResult(url);
+      if (!extracted) return null;
+      url = new URL(extracted);
+    }
+
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    if (!url.hostname.includes('.')) return null;
     return url.origin;
   } catch {
     return null;
@@ -75,18 +111,25 @@ async function assertPublicHost(hostname: string): Promise<void> {
   }
 }
 
-async function fetchText(url: string): Promise<string | null> {
+async function fetchText(url: string, userAgent: string = USER_AGENT): Promise<string | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
       signal: controller.signal,
       redirect: 'follow',
-      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml,application/xml' },
+      headers: {
+        'User-Agent': userAgent,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-ZA,en;q=0.9',
+      },
     });
     if (!response.ok) return null;
     const contentType = response.headers.get('content-type') || '';
-    if (!/text\/html|application\/xhtml|application\/xml|text\/xml|text\/plain/i.test(contentType)) return null;
+    // An absent content-type is treated as HTML rather than discarded outright.
+    if (contentType && !/text\/html|application\/xhtml|application\/xml|text\/xml|text\/plain/i.test(contentType)) {
+      return null;
+    }
 
     const buffer = await response.arrayBuffer();
     if (buffer.byteLength > MAX_BYTES) return null;
@@ -96,6 +139,63 @@ async function fetchText(url: string): Promise<string | null> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Falls back to metadata and structured data when the visible body is empty,
+// which is the normal shape of a JavaScript-rendered single page application.
+function extractFallbackText(html: string): string {
+  const parts: string[] = [];
+
+  const title = extractTitle(html);
+  if (title) parts.push(title);
+
+  const metaRegex = /<meta\s[^>]*>/gi;
+  let meta: RegExpExecArray | null;
+  while ((meta = metaRegex.exec(html)) !== null) {
+    const tag = meta[0];
+    const nameMatch = tag.match(/(?:name|property)\s*=\s*["']([^"']+)["']/i);
+    const contentMatch = tag.match(/content\s*=\s*["']([^"']*)["']/i);
+    if (!nameMatch || !contentMatch) continue;
+    if (!/description|og:title|og:description|og:site_name|keywords|twitter:(title|description)/i.test(nameMatch[1])) {
+      continue;
+    }
+    const value = decodeEntities(contentMatch[1]).trim();
+    if (value) parts.push(value);
+  }
+
+  const ldRegex = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let ld: RegExpExecArray | null;
+  while ((ld = ldRegex.exec(html)) !== null) {
+    const values: string[] = [];
+    const collect = (node: any) => {
+      if (!node) return;
+      if (typeof node === 'string') { values.push(node); return; }
+      if (Array.isArray(node)) { node.forEach(collect); return; }
+      if (typeof node === 'object') Object.values(node).forEach(collect);
+    };
+    try { collect(JSON.parse(ld[1])); } catch { /* Ignore malformed JSON-LD. */ }
+    parts.push(...values.filter(value => value.length > 1 && !/^https?:\/\//i.test(value)));
+  }
+
+  return Array.from(new Set(parts.map(part => part.trim()).filter(Boolean))).join('\n');
+}
+
+function wordCountOf(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+// Progressively less aggressive extraction: chrome-stripped body, then the raw
+// body (for sites whose copy lives inside header/footer), then page metadata.
+function bestTextFor(html: string): string {
+  const stripped = htmlToText(html);
+  if (wordCountOf(stripped) >= MIN_PAGE_WORDS) return stripped;
+
+  const raw = htmlToText(html, { keepChrome: true });
+  if (wordCountOf(raw) >= MIN_PAGE_WORDS) return raw;
+
+  const fallback = extractFallbackText(html);
+  const best = [stripped, raw, fallback].sort((a, b) => wordCountOf(b) - wordCountOf(a))[0];
+  return best || '';
 }
 
 function extractTitle(html: string): string {
@@ -114,17 +214,21 @@ function decodeEntities(value: string): string {
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
 }
 
-export function htmlToText(html: string): string {
-  const withoutChrome = html
+export function htmlToText(html: string, options: { keepChrome?: boolean } = {}): string {
+  let withoutChrome = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
     .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
-    .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
-    .replace(/<header[\s\S]*?<\/header>/gi, ' ')
-    .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
-    .replace(/<form[\s\S]*?<\/form>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ');
+
+  if (!options.keepChrome) {
+    withoutChrome = withoutChrome
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
+      .replace(/<header[\s\S]*?<\/header>/gi, ' ')
+      .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
+      .replace(/<form[\s\S]*?<\/form>/gi, ' ');
+  }
 
   return decodeEntities(
     withoutChrome
@@ -208,18 +312,48 @@ export async function harvestSite(website: string): Promise<HarvestResult> {
   const hostname = new URL(origin).hostname;
   await assertPublicHost(hostname);
 
-  const disallowed = await readDisallowedPaths(origin);
+  // Some hosts only answer on one of the apex/www variants, or block our bot identity.
+  const originVariants = [origin];
+  const altOrigin = hostname.startsWith('www.')
+    ? origin.replace('://www.', '://')
+    : origin.replace('://', '://www.');
+  if (altOrigin !== origin) originVariants.push(altOrigin);
+
+  let activeOrigin = '';
+  let activeAgent = USER_AGENT;
+  let homeHtml: string | null = null;
+
+  outer: for (const agent of [USER_AGENT, BROWSER_USER_AGENT]) {
+    for (const candidate of originVariants) {
+      const html = await fetchText(candidate, agent);
+      if (html && wordCountOf(bestTextFor(html)) >= MIN_PAGE_WORDS) {
+        activeOrigin = candidate;
+        activeAgent = agent;
+        homeHtml = html;
+        break outer;
+      }
+      // Remember any reachable response so the error can distinguish
+      // "unreachable" from "reachable but empty".
+      if (html && !homeHtml) {
+        activeOrigin = candidate;
+        activeAgent = agent;
+        homeHtml = html;
+      }
+    }
+  }
+
+  if (!homeHtml) throw new Error('The website could not be reached. It may be offline, blocking automated access, or the address may be wrong.');
+  if (!activeOrigin) activeOrigin = origin;
+
+  const disallowed = await readDisallowedPaths(activeOrigin);
   const isAllowed = (url: string) => {
     const path = new URL(url).pathname;
     return !disallowed.some(rule => rule !== '/' && path.startsWith(rule));
   };
 
-  const homeHtml = await fetchText(origin);
-  if (!homeHtml) throw new Error('The website could not be reached.');
-
-  const candidates = new Set<string>([`${origin}/`]);
-  for (const url of await readSitemap(origin)) candidates.add(url);
-  for (const url of extractLinks(homeHtml, origin)) candidates.add(url);
+  const candidates = new Set<string>([`${activeOrigin}/`]);
+  for (const url of await readSitemap(activeOrigin)) candidates.add(url);
+  for (const url of extractLinks(homeHtml, activeOrigin)) candidates.add(url);
 
   const skipped: string[] = [];
   const ordered = Array.from(candidates)
@@ -232,15 +366,23 @@ export async function harvestSite(website: string): Promise<HarvestResult> {
     .slice(0, MAX_PAGES);
 
   const pages: HarvestedPage[] = [];
+  let reachedPages = 0;
   for (const url of ordered) {
-    const html = url === `${origin}/` ? homeHtml : await fetchText(url);
+    const html = url === `${activeOrigin}/` ? homeHtml : await fetchText(url, activeAgent);
     if (!html) continue;
-    const text = htmlToText(html);
-    if (text.split(/\s+/).filter(Boolean).length < 20) continue;
-    pages.push({ url, title: extractTitle(html), text, wordCount: text.split(/\s+/).filter(Boolean).length });
+    reachedPages += 1;
+    const text = bestTextFor(html);
+    const wordCount = wordCountOf(text);
+    if (wordCount < MIN_PAGE_WORDS) continue;
+    pages.push({ url, title: extractTitle(html), text, wordCount });
   }
 
-  if (pages.length === 0) throw new Error('No readable page content was found on this website.');
+  if (pages.length === 0) {
+    const reason = reachedPages > 0
+      ? `Reached ${reachedPages} page${reachedPages === 1 ? '' : 's'} on ${activeOrigin}, but they returned no readable text. This usually means the site builds its content with JavaScript in the browser, or the host is serving a placeholder to automated visitors. Use the "Paste website text" option to supply the copy manually.`
+      : `No page on ${activeOrigin} returned readable content. The site may be blocking automated access.`;
+    throw new Error(reason);
+  }
 
   return {
     pages,

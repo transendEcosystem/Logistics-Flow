@@ -55,11 +55,50 @@ export async function POST(request: Request) {
     }
 
     const website = String(body?.website || located.data.website || '').trim();
+    const manualText = String(body?.manualText || '').trim();
+
+    // Manual fallback for sites that render with JavaScript or block automated access.
+    if (manualText) {
+      if (manualText.split(/\s+/).filter(Boolean).length < 20) {
+        return NextResponse.json({ success: false, error: 'Paste at least 20 words of website text.' }, { status: 400 });
+      }
+      const page = {
+        url: normalizeSiteUrl(website) || website || 'manual-entry',
+        title: String(located.data.companyName || located.data.name || 'Manually supplied content'),
+        text: manualText.slice(0, 20_000),
+        wordCount: manualText.split(/\s+/).filter(Boolean).length,
+      };
+      const harvestedAt = new Date().toISOString();
+
+      await located.ref.set({
+        contentCorpus: {
+          pages: [page],
+          totalWords: page.wordCount,
+          pageCount: 1,
+          harvestedAt,
+          sourceOrigin: normalizeSiteUrl(website) || null,
+          source: 'manual',
+        },
+        searchCorpus: buildSearchCorpus([page as any]),
+        researchStage: 'content_harvested',
+        updatedAt: harvestedAt,
+      }, { merge: true });
+
+      return NextResponse.json({
+        success: true,
+        collection: located.collection,
+        pageCount: 1,
+        totalWords: page.wordCount,
+        manual: true,
+        pages: [{ url: page.url, title: page.title, wordCount: page.wordCount }],
+      });
+    }
+
     if (!website) {
       return NextResponse.json({ success: false, error: 'This record has no website. Run the gap analysis first.' }, { status: 400 });
     }
     if (!normalizeSiteUrl(website)) {
-      return NextResponse.json({ success: false, error: `"${website}" is not a valid website address.` }, { status: 400 });
+      return NextResponse.json({ success: false, error: `"${website}" is not a valid company website address. Paste the company homepage, not a Google, Maps, LinkedIn, Facebook or Instagram URL.` }, { status: 400 });
     }
 
     const result = await harvestSite(website);

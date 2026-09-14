@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2, FileText, Sparkles, Save, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { parseAiJson } from '@/lib/ai-json';
 
 async function performAdminAction(token: string, action: string, payload: any) {
@@ -28,10 +29,17 @@ export function ContentHarvestButton({ partner, onUpdate }: { partner: any; onUp
   const [isHarvesting, setIsHarvesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [structureText, setStructureText] = useState('');
+  const [websiteToHarvest, setWebsiteToHarvest] = useState(partner.website || '');
+  const [manualText, setManualText] = useState('');
+  const [showManual, setShowManual] = useState(false);
   const { toast } = useToast();
 
   const corpus = partner.contentCorpus;
   const companyName = partner.companyName || partner.name || 'this company';
+
+  useEffect(() => {
+    setWebsiteToHarvest(partner.website || '');
+  }, [partner.website]);
 
   const harvest = async () => {
     setIsHarvesting(true);
@@ -42,7 +50,7 @@ export function ContentHarvestButton({ partner, onUpdate }: { partner: any; onUp
       const response = await fetch('/api/research/harvest', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId: partner.id, collection: partner.sourceCollection }),
+        body: JSON.stringify({ recordId: partner.id, collection: partner.sourceCollection, website: websiteToHarvest }),
       });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error || 'Harvest failed.');
@@ -51,6 +59,37 @@ export function ContentHarvestButton({ partner, onUpdate }: { partner: any; onUp
       onUpdate();
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Harvest failed', description: e.message });
+      setShowManual(true);
+    } finally {
+      setIsHarvesting(false);
+    }
+  };
+
+  const harvestManual = async () => {
+    setIsHarvesting(true);
+    try {
+      const token = await getClientSideAuthToken();
+      if (!token) throw new Error('Session expired.');
+
+      const response = await fetch('/api/research/harvest', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recordId: partner.id,
+          collection: partner.sourceCollection,
+          website: websiteToHarvest,
+          manualText,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || 'Harvest failed.');
+
+      toast({ title: 'Content saved', description: `${result.totalWords.toLocaleString()} words captured from your paste.` });
+      setManualText('');
+      setShowManual(false);
+      onUpdate();
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Manual harvest failed', description: e.message });
     } finally {
       setIsHarvesting(false);
     }
@@ -117,7 +156,7 @@ ${text}`;
     }
   };
 
-  const hasWebsite = Boolean(partner.website);
+  const hasWebsite = Boolean(websiteToHarvest.trim());
   const hasProfile = Boolean(partner.serviceProfile);
 
   return (
@@ -158,10 +197,58 @@ ${text}`;
                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">
                   Step 1 &mdash; Fetch the site
                 </label>
+                <Input
+                  value={websiteToHarvest}
+                  onChange={e => setWebsiteToHarvest(e.target.value)}
+                  placeholder="https://www.company.co.za"
+                  className="bg-white font-mono text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Use the company homepage only. Do not paste a Google search page, Google Maps result, LinkedIn, Facebook or Instagram URL here.
+                </p>
                 <Button onClick={harvest} disabled={isHarvesting} variant="outline" className="w-full font-bold">
                   {isHarvesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                   {corpus ? 'Re-harvest Website Content' : 'Harvest Website Content'}
                 </Button>
+                {!showManual && (
+                  <button
+                    type="button"
+                    onClick={() => setShowManual(true)}
+                    className="text-[11px] underline text-muted-foreground hover:text-foreground"
+                  >
+                    Site won&rsquo;t harvest? Paste the website text manually
+                  </button>
+                )}
+                {showManual && (
+                  <div className="space-y-2 rounded-md border border-dashed p-3 bg-muted/20">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      Manual fallback &mdash; paste website text
+                    </label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Open the company site in your browser, select the About / Services copy, and paste it here.
+                      Use this when the site builds its pages with JavaScript or blocks automated visitors.
+                    </p>
+                    <Textarea
+                      value={manualText}
+                      onChange={e => setManualText(e.target.value)}
+                      placeholder="Paste the company's About, Services and Contact page text here..."
+                      className="bg-white text-xs min-h-[140px]"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={harvestManual}
+                        disabled={isHarvesting || manualText.trim().split(/\s+/).filter(Boolean).length < 20}
+                        className="flex-1 font-bold"
+                      >
+                        {isHarvesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Save Pasted Content
+                      </Button>
+                      <Button variant="ghost" onClick={() => setShowManual(false)} disabled={isHarvesting}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {corpus && (
                   <ScrollArea className="h-28 w-full border rounded-md p-3 bg-muted/20">
                     {(corpus.pages || []).map((page: any) => (
