@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { 
     Loader2, Mail, Zap, Send, ShieldCheck, MessageSquare, Smartphone, Info, 
     ChevronRight, ChevronLeft, Target, Ban, Filter, MousePointer2, Gift, 
-    Handshake, ExternalLink, AtSign, Building, DollarSign, FileText, Presentation, Sparkles, UserCheck 
+    Handshake, ExternalLink, AtSign, Building, DollarSign, FileText, Presentation, Sparkles, UserCheck, Layers 
 } from 'lucide-react';
 import { getClientSideAuthToken, useUser, useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { copyHtmlToClipboard, cn } from '@/lib/utils';
@@ -32,6 +32,31 @@ import TheWedge from './content/TheWedge';
 import TheSignal from './content/TheSignal';
 import TheEliteFilter from './content/TheEliteFilter';
 import TheBreakUp from './content/TheBreakUp';
+
+// The Offer is audience-specific. This mirrors the AUDIENCE_CONFIG mapping used by
+// the Marketing & Pitch Library so the engagement hub sends the identical document.
+import PartnerOffer from './offers/PartnerOffer';
+import InvestorOffer from './offers/InvestorOffer';
+import DeveloperOffer from './offers/DeveloperOffer';
+import SupplierOffer from './offers/SupplierOffer';
+import TransporterOffer from './offers/TransporterOffer';
+import AssociateOffer from './offers/AssociateOffer';
+
+const OFFER_BY_AUDIENCE: Record<string, React.ComponentType<any>> = {
+    partner: PartnerOffer,
+    isa: PartnerOffer,
+    associate: AssociateOffer,
+    supplier: SupplierOffer,
+    transporter: TransporterOffer,
+    haulier: TransporterOffer,
+    finance: InvestorOffer,
+    investor: InvestorOffer,
+    developer: DeveloperOffer,
+    warehouse: PartnerOffer,
+    distribution: PartnerOffer,
+    load: PartnerOffer,
+    'buy-sell': PartnerOffer,
+};
 
 interface EngageDialogProps {
   open: boolean;
@@ -67,12 +92,16 @@ const ALL_ENGAGEMENT_TABS = [
     { id: 'revenue-model', label: 'Revenue Model', icon: DollarSign },
     { id: 'offer', label: 'The Offer', icon: FileText },
     { id: 'pitch', label: 'The Pitch', icon: Presentation },
+    { id: 'framework', label: 'The Framework', icon: Layers },
     { id: 'sales-intelligence', label: 'Sales Intelligence', icon: Sparkles },
-    { id: 'the-wedge', label: 'The Wedge', icon: Target },
-    { id: 'the-signal', label: 'The Signal', icon: MousePointer2 },
-    { id: 'the-elite-filter', label: 'The Elite Filter', icon: Filter },
-    { id: 'the-break-up', label: 'The Break-Up', icon: Ban },
+    { id: 'the-wedge', label: 'The Wedge', icon: Target, tactical: true },
+    { id: 'the-signal', label: 'The Signal', icon: MousePointer2, tactical: true },
+    { id: 'the-elite-filter', label: 'The Elite Filter', icon: Filter, tactical: true },
+    { id: 'the-break-up', label: 'The Break-Up', icon: Ban, tactical: true },
 ];
+
+const NARRATIVE_TABS = ALL_ENGAGEMENT_TABS.filter(t => !t.tactical);
+const TACTICAL_TABS = ALL_ENGAGEMENT_TABS.filter(t => t.tactical);
 
 function resolveContact(partner: any) {
     if (!partner) return { name: 'Partner', email: '', mobile: '', whatsapp: '' };
@@ -207,6 +236,8 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
       if (aud.endsWith('s')) aud = aud.slice(0, -1);
       return aud;
   }, [audience]);
+
+  const OfferForAudience = OFFER_BY_AUDIENCE[normalizedAudience] || PartnerOffer;
 
   const targetCollection = useMemo(() => {
       if (!currentPartner) return 'partners';
@@ -359,7 +390,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                 <div className="w-64 border-r bg-muted/10 p-4 space-y-4 overflow-y-auto text-left">
                     <div className="space-y-1 text-left">
                         <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-2 mb-2 block">Standard Narrative</Label>
-                        {ALL_ENGAGEMENT_TABS.slice(0, 11).filter(t => (!t.hideFor || !t.hideFor.includes(normalizedAudience)) && (!t.requiresProfile || Boolean(currentPartner.commercialProfile?.engagementPack))).map((tab) => (
+                        {NARRATIVE_TABS.filter(t => (!t.hideFor || !t.hideFor.includes(normalizedAudience)) && (!t.requiresProfile || Boolean(currentPartner.commercialProfile?.engagementPack))).map((tab) => (
                             <Button
                                 key={tab.id}
                                 variant={activeTab === tab.id ? "secondary" : "ghost"}
@@ -378,7 +409,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                         <Label className="text-[10px] font-black uppercase tracking-widest text-primary px-2 mb-2 block flex items-center gap-2 text-left">
                             <Zap className="h-3 w-3" /> Tactical Sequences
                         </Label>
-                        {ALL_ENGAGEMENT_TABS.slice(10).map((tab) => (
+                        {TACTICAL_TABS.map((tab) => (
                             <Button
                                 key={tab.id}
                                 variant={activeTab === tab.id ? "secondary" : "ghost"}
@@ -446,7 +477,10 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                             {activeTab === 'tech-architecture' && <TechArchitecture partner={currentPartner} />}
                             {activeTab === 'revenue-model' && <RevenueModel partner={currentPartner} />}
                             {activeTab === 'sales-intelligence' && <SalesIntelligence partner={currentPartner} />}
-                            
+                            {activeTab === 'offer' && <OfferForAudience partner={currentPartner} />}
+                            {activeTab === 'pitch' && <PitchDeck partner={currentPartner} />}
+                            {activeTab === 'framework' && <Framework partner={currentPartner} />}
+
                             {activeTab === 'the-wedge' && <TheWedge partner={currentPartner} audience={normalizedAudience} />}
                             {activeTab === 'the-signal' && <TheSignal partner={currentPartner} />}
                             {activeTab === 'the-elite-filter' && <TheEliteFilter partner={currentPartner} />}
