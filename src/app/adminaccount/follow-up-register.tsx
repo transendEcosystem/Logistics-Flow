@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import {
     Loader2, Save, RefreshCw, Phone, Mail, AlarmClock, CalendarClock,
-    CheckCircle2, AlertTriangle, Clock, Trash2, Settings2, ListChecks
+    CheckCircle2, AlertTriangle, Clock, Trash2, Settings2, ListChecks,
+    PlayCircle, SkipForward, XCircle, ArrowRight
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { getClientSideAuthToken } from '@/firebase';
@@ -114,6 +115,8 @@ export default function FollowUpRegister() {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [busyId, setBusyId] = useState<string | null>(null);
+    const [batchQueue, setBatchQueue] = useState<string[] | null>(null);
+    const [batchIndex, setBatchIndex] = useState(0);
 
     const load = useCallback(async () => {
         setIsLoading(true);
@@ -177,6 +180,79 @@ export default function FollowUpRegister() {
         }
     }, [toast]);
 
+    const grouped = useMemo(() => ({
+        overdue: tasks.filter(t => t.bucket === 'overdue'),
+        due_today: tasks.filter(t => t.bucket === 'due_today'),
+        upcoming: tasks.filter(t => t.bucket === 'upcoming'),
+    }), [tasks]);
+
+    const actionable = useMemo(() => [...grouped.overdue, ...grouped.due_today], [grouped]);
+
+    // Batch Mode: step through every actionable task one at a time so a whole
+    // day's worth of follow-ups becomes one click per record instead of hunting
+    // through the list. Uses task IDs (not object refs) so the queue stays valid
+    // as tasks get removed from `tasks` on each send/skip.
+    const startBatch = useCallback(() => {
+        if (actionable.length === 0) return;
+        setBatchQueue(actionable.map(t => t.id));
+        setBatchIndex(0);
+    }, [actionable]);
+
+    const stopBatch = useCallback(() => {
+        setBatchQueue(null);
+        setBatchIndex(0);
+    }, []);
+
+    const currentBatchTask = useMemo(() => {
+        if (!batchQueue || batchQueue.length === 0) return null;
+        const id = batchQueue[batchIndex];
+        return tasks.find(t => t.id === id) || null;
+    }, [batchQueue, batchIndex, tasks]);
+
+    const advanceBatch = useCallback(() => {
+        setBatchIndex(prev => {
+            const next = prev + 1;
+            if (!batchQueue || next >= batchQueue.length) {
+                setBatchQueue(null);
+                return 0;
+            }
+            return next;
+        });
+    }, [batchQueue]);
+
+    const handleBatchSend = useCallback(async (task: any) => {
+        setBusyId(task.id);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            if (task.actionType === 'call') {
+                if (task.contactPhone) window.open(`tel:${String(task.contactPhone).replace(/\s/g, '')}`, '_self');
+                await performAdminAction(token, 'updateFollowUpTask', { taskId: task.id, mode: 'sent', channel: 'Phone' });
+            } else {
+                const prepared = await performAdminAction(token, 'prepareFollowUpMessage', { taskId: task.id });
+                const { mailtoLink, whatsappLink } = prepared.data || {};
+                const link = task.contactPhone ? (whatsappLink || mailtoLink) : mailtoLink;
+                if (!link) {
+                    toast({ variant: 'destructive', title: 'No contact channel available', description: 'Skipping this record.' });
+                    advanceBatch();
+                    return;
+                }
+                window.open(link, '_blank');
+                await performAdminAction(token, 'updateFollowUpTask', { taskId: task.id, mode: 'sent', channel: task.contactPhone ? 'WhatsApp' : 'Email' });
+            }
+            setTasks(prev => prev.filter(t => t.id !== task.id));
+            advanceBatch();
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Could not prepare message', description: e.message });
+        } finally {
+            setBusyId(null);
+        }
+    }, [toast, advanceBatch]);
+
+    const handleBatchSkip = useCallback(() => {
+        advanceBatch();
+    }, [advanceBatch]);
+
     const savePolicy = useCallback(async () => {
         setIsSaving(true);
         try {
@@ -191,14 +267,6 @@ export default function FollowUpRegister() {
             setIsSaving(false);
         }
     }, [policy, toast]);
-
-    const grouped = useMemo(() => ({
-        overdue: tasks.filter(t => t.bucket === 'overdue'),
-        due_today: tasks.filter(t => t.bucket === 'due_today'),
-        upcoming: tasks.filter(t => t.bucket === 'upcoming'),
-    }), [tasks]);
-
-    const actionable = useMemo(() => [...grouped.overdue, ...grouped.due_today], [grouped]);
 
     if (isLoading) {
         return <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
@@ -215,6 +283,40 @@ export default function FollowUpRegister() {
                 </div>
                 <Button variant="outline" onClick={load}><RefreshCw className="mr-2 h-4 w-4" /> Refresh</Button>
             </div>
+
+            {batchQueue ? (
+                <Card className="border-primary">
+                    <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="flex items-center gap-2 text-base">
+                                <PlayCircle className="h-4 w-4 text-primary" /> Batch Mode &middot; {batchIndex + 1} of {batchQueue.length}
+                            </CardTitle>
+                            <Button size="sm" variant="ghost" onClick={stopBatch}><XCircle className="mr-1 h-3.5 w-3.5" /> Exit batch</Button>
+                        </div>
+                        <CardDescription>Send or skip each task below &mdash; the next one loads automatically.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {currentBatchTask ? (
+                            <div className="space-y-3">
+                                <TaskRow task={currentBatchTask} onAction={handleAction} onSend={handleBatchSend} busyId={busyId} />
+                                <div className="flex justify-end">
+                                    <Button size="sm" variant="outline" onClick={handleBatchSkip} disabled={busyId === currentBatchTask.id}>
+                                        <SkipForward className="mr-1 h-3.5 w-3.5" /> Skip for now
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="py-6 text-center text-sm text-muted-foreground">Batch complete &mdash; nothing left in the queue.</p>
+                        )}
+                    </CardContent>
+                </Card>
+            ) : (
+                <div className="flex justify-end">
+                    <Button onClick={startBatch} disabled={actionable.length === 0}>
+                        <PlayCircle className="mr-2 h-4 w-4" /> Start Batch ({actionable.length})
+                    </Button>
+                </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-3">
                 <Card><CardHeader className="pb-2"><CardDescription>Overdue</CardDescription><CardTitle className="text-3xl text-destructive">{summary.overdue}</CardTitle></CardHeader></Card>
