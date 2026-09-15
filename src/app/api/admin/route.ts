@@ -1644,7 +1644,112 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true }, { status: 200 });
       }
 
+      // Fired the instant the one-click Send/Call button opens the mailto:/wa.me/tel:
+      // link. Completes this task and immediately schedules the next follow-up in
+      // the sequence, so the register always reflects what was just actioned.
+      if (mode === 'sent') {
+        const taskSnap = await taskRef.get();
+        if (!taskSnap.exists) {
+          return NextResponse.json({ success: false, error: 'Task not found.' }, { status: 404 });
+        }
+        const task = taskSnap.data() || {};
+        const located = await findResearchRecord(db, task.recordId, task.recordCollection);
+
+        await taskRef.set({ status: 'completed', completedAt: nowIso, completedBy: adminUid, updatedAt: nowIso }, { merge: true });
+
+        let nextTask: any = null;
+        if (located) {
+          try {
+            nextTask = await scheduleFollowUpTask(db, {
+              recordRef: located.ref,
+              collection: located.collection,
+              recordId: task.recordId,
+              recordData: located.data,
+              channel: task.actionType === 'call' ? 'Call' : (String(resolvedPayload?.channel || task.lastChannel || 'Email')),
+              subject: task.lastSubject || task.title,
+              sentAt: nowIso,
+              actorUid: adminUid,
+            });
+          } catch (e) {
+            console.error('Failed to schedule next follow-up', e);
+          }
+
+          await located.ref.set({
+            lastOutreachAt: nowIso,
+            lastOutreachChannel: task.actionType === 'call' ? 'Call' : 'Email',
+            engagementStage: 'Contacted',
+            engagementScore: FieldValue.increment(10),
+            outreachCount: FieldValue.increment(1),
+            engagementLogs: FieldValue.arrayUnion({
+              timestamp: nowIso,
+              action: 'follow_up_sent',
+              subject: task.lastSubject || task.title,
+              channel: task.actionType === 'call' ? 'Call' : 'Email',
+              notes: 'Sent from the Follow-Up Register one-click queue.',
+              loggedBy: adminUid,
+            }),
+          }, { merge: true }).catch(() => {});
+        }
+
+        return NextResponse.json({ success: true, nextTask }, { status: 200 });
+      }
+
       return NextResponse.json({ success: false, error: `Unsupported mode "${mode}".` }, { status: 400 });
+    }
+
+    // Generates the ready-to-send follow-up copy for a task so the register can
+    // open a pre-filled mailto:/wa.me link with one click, no template hunting.
+    if (action === 'prepareFollowUpMessage') {
+      const taskId = String(resolvedPayload?.taskId || '').trim();
+      if (!taskId) {
+        return NextResponse.json({ success: false, error: 'Task ID is required.' }, { status: 400 });
+      }
+      const taskSnap = await db.collection('platformTasks').doc(taskId).get();
+      if (!taskSnap.exists) {
+        return NextResponse.json({ success: false, error: 'Task not found.' }, { status: 404 });
+      }
+      const task = taskSnap.data() || {};
+      const companyName = task.companyName || 'there';
+      const firstName = String(companyName).split(' ')[0];
+      const followUpNumber = Number(task.followUpNumber || 1);
+      const isCall = task.actionType === 'call';
+
+      // Escalating tone by follow-up number, same progression used across the
+      // engagement template library (nudge -> value reminder -> last call).
+      const STAGE_COPY = [
+        {
+          subject: `Following up: ${task.lastSubject || 'Logistics Flow partnership'}`,
+          body: `Hi ${firstName},\n\nJust following up on my note re: "${task.lastSubject || 'our partnership proposal'}" — wanted to check this reached you and see if you had any questions.\n\nHappy to jump on a quick call if that's easier.\n\nRegards,\nThe Logistics Flow Team`,
+        },
+        {
+          subject: `Still keen to connect — ${companyName}`,
+          body: `Hi ${firstName},\n\nCircling back once more. The offer we sent through is still open, and I don't want ${companyName} to miss the window on this.\n\nCan I send through a short summary, or would a 10-minute call suit better?\n\nRegards,\nThe Logistics Flow Team`,
+        },
+        {
+          subject: `Last call before we close this out — ${companyName}`,
+          body: `Hi ${firstName},\n\nThis will be my last note on this for now — I don't want to keep filling your inbox. If timing isn't right, that's completely fine.\n\nIf you'd like to pick this back up whenever suits, just reply and I'll pick up where we left off.\n\nRegards,\nThe Logistics Flow Team`,
+        },
+      ];
+      const stage = STAGE_COPY[Math.min(followUpNumber - 1, STAGE_COPY.length - 1)];
+
+      const mailtoLink = task.contactEmail
+        ? `mailto:${task.contactEmail}?subject=${encodeURIComponent(stage.subject)}&body=${encodeURIComponent(stage.body)}`
+        : null;
+      const whatsappNumber = task.contactPhone ? String(task.contactPhone).replace(/\s/g, '').replace(/^\+/, '').replace(/^0/, '27') : null;
+      const whatsappLink = whatsappNumber
+        ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(stage.body)}`
+        : null;
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          subject: stage.subject,
+          body: stage.body,
+          mailtoLink: isCall ? null : mailtoLink,
+          whatsappLink,
+          telLink: task.contactPhone ? `tel:${String(task.contactPhone).replace(/\s/g, '')}` : null,
+        },
+      }, { status: 200 });
     }
 
     // Per-record tasks. Resolves the record across every registry so suppliers,

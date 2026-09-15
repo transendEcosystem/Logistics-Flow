@@ -42,7 +42,7 @@ const BUCKET_META: Record<string, { label: string; icon: any; className: string 
     upcoming: { label: 'Upcoming', icon: CalendarClock, className: 'text-muted-foreground' },
 };
 
-function TaskRow({ task, onAction, busyId }: { task: any; onAction: (task: any, mode: string, extra?: any) => void; busyId: string | null }) {
+function TaskRow({ task, onAction, onSend, busyId }: { task: any; onAction: (task: any, mode: string, extra?: any) => void; onSend: (task: any) => void; busyId: string | null }) {
     const meta = BUCKET_META[task.bucket] || BUCKET_META.upcoming;
     const Icon = meta.icon;
     const isCall = task.actionType === 'call';
@@ -80,10 +80,22 @@ function TaskRow({ task, onAction, busyId }: { task: any; onAction: (task: any, 
                 )}
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
+                {!isCall && (task.contactEmail || task.contactPhone) ? (
+                    <Button size="sm" disabled={busy} onClick={() => onSend(task)}>
+                        {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Mail className="mr-1 h-3.5 w-3.5" />} Send Follow-Up
+                    </Button>
+                ) : null}
+                {isCall && task.contactPhone ? (
+                    <Button size="sm" asChild disabled={busy} onClick={() => onAction(task, 'sent')}>
+                        <a href={`tel:${String(task.contactPhone).replace(/\s/g, '')}`}>
+                            <Phone className="mr-1 h-3.5 w-3.5" /> Call Now
+                        </a>
+                    </Button>
+                ) : null}
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => onAction(task, 'snooze', { hours: 24 })}>
                     <Clock className="mr-1 h-3.5 w-3.5" /> Snooze 24h
                 </Button>
-                <Button size="sm" disabled={busy} onClick={() => onAction(task, 'complete')}>
+                <Button size="sm" variant="secondary" disabled={busy} onClick={() => onAction(task, 'complete')}>
                     {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1 h-3.5 w-3.5" />} Done
                 </Button>
                 <Button size="sm" variant="ghost" disabled={busy} onClick={() => onAction(task, 'dismiss')}>
@@ -134,6 +146,32 @@ export default function FollowUpRegister() {
             toast({ title: mode === 'complete' ? 'Task completed' : mode === 'snooze' ? 'Snoozed for 24 hours' : 'Task dismissed' });
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Action failed', description: e.message });
+        } finally {
+            setBusyId(null);
+        }
+    }, [toast]);
+
+    // One-click "Send Follow-Up": fetches the pre-written message for this stage,
+    // opens the recipient's own WhatsApp/Outlook with it already filled in, then
+    // marks the task sent and schedules the next follow-up automatically.
+    const handleSend = useCallback(async (task: any) => {
+        setBusyId(task.id);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            const prepared = await performAdminAction(token, 'prepareFollowUpMessage', { taskId: task.id });
+            const { mailtoLink, whatsappLink } = prepared.data || {};
+            const link = task.contactPhone ? (whatsappLink || mailtoLink) : mailtoLink;
+            if (!link) {
+                toast({ variant: 'destructive', title: 'No contact channel available', description: 'This record has no email or phone number.' });
+                return;
+            }
+            window.open(link, '_blank');
+            await performAdminAction(token, 'updateFollowUpTask', { taskId: task.id, mode: 'sent', channel: task.contactPhone ? 'WhatsApp' : 'Email' });
+            setTasks(prev => prev.filter(t => t.id !== task.id));
+            toast({ title: 'Follow-up prepared and sent', description: 'The next follow-up has been scheduled automatically.' });
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Could not prepare message', description: e.message });
         } finally {
             setBusyId(null);
         }
@@ -199,7 +237,7 @@ export default function FollowUpRegister() {
                             <AlertDescription>No follow-ups are due. New tasks appear automatically once the policy interval elapses after an outreach.</AlertDescription>
                         </Alert>
                     ) : actionable.map(task => (
-                        <TaskRow key={task.id} task={task} onAction={handleAction} busyId={busyId} />
+                        <TaskRow key={task.id} task={task} onAction={handleAction} onSend={handleSend} busyId={busyId} />
                     ))}
                 </TabsContent>
 
@@ -207,7 +245,7 @@ export default function FollowUpRegister() {
                     {grouped.upcoming.length === 0 ? (
                         <p className="py-8 text-center text-sm text-muted-foreground">No scheduled follow-ups yet.</p>
                     ) : grouped.upcoming.map(task => (
-                        <TaskRow key={task.id} task={task} onAction={handleAction} busyId={busyId} />
+                        <TaskRow key={task.id} task={task} onAction={handleAction} onSend={handleSend} busyId={busyId} />
                     ))}
                 </TabsContent>
 
