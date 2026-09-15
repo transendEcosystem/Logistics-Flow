@@ -1617,6 +1617,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, data: results }, { status: 200 });
     }
 
+    if (action === 'listRecordsByCollection') {
+      const collection = String(resolvedPayload?.collection || '').trim();
+      if (!RESEARCH_COLLECTIONS.includes(collection)) {
+        return NextResponse.json({ success: false, error: 'Unknown register.' }, { status: 400 });
+      }
+      const snapshot = await db.collection(collection).orderBy('companyName', 'asc').limit(1000).get().catch(() => db.collection(collection).limit(1000).get());
+      const results = snapshot.docs.map((doc: any) => {
+        const data = doc.data() || {};
+        return {
+          id: doc.id,
+          collection,
+          companyName: recordDisplayName(data),
+          email: data.email || data.marketingManager?.email || null,
+          phone: data.phone || data.mobile || null,
+        };
+      }).sort((a: any, b: any) => String(a.companyName).localeCompare(String(b.companyName)));
+
+      return NextResponse.json({ success: true, data: results }, { status: 200 });
+    }
+
     if (action === 'getCommunicationPolicy') {
       const policy = await loadCommunicationPolicy(db);
       return NextResponse.json({ success: true, data: policy, defaults: DEFAULT_COMMUNICATION_POLICY }, { status: 200 });

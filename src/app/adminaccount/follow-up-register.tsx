@@ -118,8 +118,26 @@ function LogOutcomeForm({ task, onLog, busy }: { task: any; onLog: (extra: any) 
     );
 }
 
+const REGISTER_OPTIONS: { value: string; label: string }[] = [
+    { value: 'leads', label: 'Leads' },
+    { value: 'partners', label: 'Partners' },
+    { value: 'suppliers', label: 'Suppliers' },
+    { value: 'transporters', label: 'Transporters' },
+    { value: 'strategic_partners', label: 'Strategic Partners' },
+    { value: 'isa_agents', label: 'ISA Agents' },
+    { value: 'digital_associates', label: 'Digital Associates' },
+    { value: 'investors', label: 'Investors' },
+    { value: 'finance_co', label: 'Finance Companies' },
+    { value: 'developers', label: 'Developers' },
+    { value: 'drivers', label: 'Drivers' },
+    { value: 'debtors', label: 'Debtors' },
+    { value: 'lending_clients', label: 'Lending Clients' },
+    { value: 'companies', label: 'Companies' },
+];
+
 function NewEventDialog({ onLogged }: { onLogged: () => void }) {
     const [open, setOpen] = useState(false);
+    const [registerValue, setRegisterValue] = useState('');
     const [term, setTerm] = useState('');
     const [results, setResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
@@ -135,7 +153,7 @@ function NewEventDialog({ onLogged }: { onLogged: () => void }) {
     const stopSequence = !!selectedMeta?.stopSequence;
 
     const reset = () => {
-        setTerm(''); setResults([]); setSelected(null); setChannel('Call');
+        setRegisterValue(''); setTerm(''); setResults([]); setSelected(null); setChannel('Call');
         setOutcome(''); setNotes(''); setFollowUpDate('');
     };
 
@@ -147,6 +165,24 @@ function NewEventDialog({ onLogged }: { onLogged: () => void }) {
             const token = await getClientSideAuthToken();
             if (!token) throw new Error('Authentication failed.');
             const res = await performAdminAction(token, 'searchAnyRecord', { term: value.trim() });
+            setResults(res.data || []);
+        } catch {
+            setResults([]);
+        } finally {
+            setIsSearching(false);
+        }
+    }, []);
+
+    const handleRegisterChange = useCallback(async (value: string) => {
+        setRegisterValue(value);
+        setTerm('');
+        setResults([]);
+        if (!value) return;
+        setIsSearching(true);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            const res = await performAdminAction(token, 'listRecordsByCollection', { collection: value });
             setResults(res.data || []);
         } catch {
             setResults([]);
@@ -196,24 +232,37 @@ function NewEventDialog({ onLogged }: { onLogged: () => void }) {
 
                 {!selected ? (
                     <div className="space-y-3">
+                        <div className="space-y-1">
+                            <Label className="text-xs font-bold uppercase tracking-wide">Register (optional)</Label>
+                            <Select value={registerValue} onValueChange={handleRegisterChange}>
+                                <SelectTrigger className="h-9"><SelectValue placeholder="Choose a register to browse..." /></SelectTrigger>
+                                <SelectContent>
+                                    {REGISTER_OPTIONS.map(r => (
+                                        <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-[11px] text-muted-foreground">Pick a register to list its leads below, or search across all registers instead.</p>
+                        </div>
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                             <Input
                                 value={term}
-                                onChange={(e) => handleSearch(e.target.value)}
-                                placeholder="Search by company name or email..."
+                                onChange={(e) => { setRegisterValue(''); handleSearch(e.target.value); }}
+                                placeholder="Or search by company name or email across all registers..."
                                 className="pl-9"
-                                autoFocus
                             />
                         </div>
                         <div className="max-h-64 space-y-1 overflow-y-auto">
                             {isSearching ? (
                                 <p className="py-4 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p>
                             ) : results.length === 0 ? (
-                                term.trim().length >= 2 ? (
+                                registerValue ? (
+                                    <p className="py-4 text-center text-sm text-muted-foreground">No records found in this register.</p>
+                                ) : term.trim().length >= 2 ? (
                                     <p className="py-4 text-center text-sm text-muted-foreground">No matching records found.</p>
                                 ) : (
-                                    <p className="py-4 text-center text-sm text-muted-foreground">Type at least 2 characters to search.</p>
+                                    <p className="py-4 text-center text-sm text-muted-foreground">Choose a register above, or type at least 2 characters to search.</p>
                                 )
                             ) : results.map(r => (
                                 <button
