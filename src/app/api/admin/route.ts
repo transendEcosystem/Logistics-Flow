@@ -158,6 +158,7 @@ async function scheduleFollowUpTask(db: any, opts: {
   subject: string;
   sentAt: string;
   actorUid: string;
+  overrideDueAt?: string | null;
 }) {
   const policy = await loadCommunicationPolicy(db);
   if (!policy.enabled) return null;
@@ -172,7 +173,11 @@ async function scheduleFollowUpTask(db: any, opts: {
     ? policy.callFollowUpHours
     : hoursForChannel(policy, opts.channel);
 
-  const dueAt = new Date(new Date(opts.sentAt).getTime() + hours * 60 * 60 * 1000).toISOString();
+  // A manually-picked follow-up date (from the register's Log Outcome form) always
+  // wins over the policy-calculated default.
+  const dueAt = opts.overrideDueAt
+    ? new Date(opts.overrideDueAt).toISOString()
+    : new Date(new Date(opts.sentAt).getTime() + hours * 60 * 60 * 1000).toISOString();
   const companyName = recordDisplayName(opts.recordData);
   const taskId = `followup_${opts.collection}_${opts.recordId}`;
 
@@ -1699,6 +1704,89 @@ export async function POST(request: Request) {
               loggedBy: adminUid,
             }),
           }, { merge: true }).catch(() => {});
+        }
+
+        return NextResponse.json({ success: true, nextTask }, { status: 200 });
+      }
+
+      // Logs the outcome of an actual conversation/attempt (call, WhatsApp reply, etc.)
+      // against the task's underlying record and either reschedules the next follow-up
+      // (per policy or a manually-picked date) or stops the sequence entirely.
+      if (mode === 'outcome') {
+        const outcome = String(resolvedPayload?.outcome || '').trim();
+        const notes = String(resolvedPayload?.notes || '').trim();
+        const stopSequence = resolvedPayload?.stopSequence === true;
+        const overrideDueAt = resolvedPayload?.followUpDate
+          ? new Date(String(resolvedPayload.followUpDate)).toISOString()
+          : null;
+
+        if (!outcome) {
+          return NextResponse.json({ success: false, error: 'Outcome is required.' }, { status: 400 });
+        }
+
+        const taskSnap = await taskRef.get();
+        if (!taskSnap.exists) {
+          return NextResponse.json({ success: false, error: 'Task not found.' }, { status: 404 });
+        }
+        const task = taskSnap.data() || {};
+        const located = await findResearchRecord(db, task.recordId, task.recordCollection);
+
+        const logEntry = {
+          timestamp: nowIso,
+          action: 'outcome_logged',
+          subject: outcome,
+          channel: task.actionType === 'call' ? 'Call' : (task.lastChannel || 'Email'),
+          notes,
+          loggedBy: adminUid,
+        };
+
+        if (located) {
+          await located.ref.set({
+            lastOutcome: outcome,
+            lastOutcomeAt: nowIso,
+            lastOutcomeNotes: notes || null,
+            engagementLogs: FieldValue.arrayUnion(logEntry),
+            updatedAt: nowIso,
+            ...(stopSequence ? { nextFollowUpAt: null, nextFollowUpAction: null, followUpSequenceStopped: true } : {}),
+          }, { merge: true }).catch(() => {});
+
+          const commRef = located.ref.collection('communications').doc();
+          await commRef.set({
+            id: commRef.id,
+            type: task.actionType === 'call' ? 'Call' : (task.lastChannel || 'Email'),
+            subject: outcome,
+            notes,
+            createdAt: FieldValue.serverTimestamp(),
+            createdBy: adminUid,
+          }).catch(() => {});
+        }
+
+        await taskRef.set({
+          status: 'completed',
+          completedAt: nowIso,
+          completedBy: adminUid,
+          outcome,
+          outcomeNotes: notes || null,
+          updatedAt: nowIso,
+        }, { merge: true });
+
+        let nextTask: any = null;
+        if (located && !stopSequence) {
+          try {
+            nextTask = await scheduleFollowUpTask(db, {
+              recordRef: located.ref,
+              collection: located.collection,
+              recordId: task.recordId,
+              recordData: located.data,
+              channel: task.actionType === 'call' ? 'Call' : (task.lastChannel || 'Email'),
+              subject: task.lastSubject || task.title,
+              sentAt: nowIso,
+              actorUid: adminUid,
+              overrideDueAt,
+            });
+          } catch (e) {
+            console.error('Failed to schedule follow-up after outcome log', e);
+          }
         }
 
         return NextResponse.json({ success: true, nextTask }, { status: 200 });

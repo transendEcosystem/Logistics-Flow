@@ -18,7 +18,9 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Textarea } from '@/components/ui/textarea';
+import { Users, MessageSquarePlus } from 'lucide-react';
 
 async function performAdminAction(token: string, action: string, payload?: any) {
     const response = await fetch('/api/admin', {
@@ -44,6 +46,76 @@ const BUCKET_META: Record<string, { label: string; icon: any; className: string 
     due_today: { label: 'Due today', icon: AlarmClock, className: 'text-amber-500' },
     upcoming: { label: 'Upcoming', icon: CalendarClock, className: 'text-muted-foreground' },
 };
+
+const OUTCOME_OPTIONS: { value: string; label: string; stopSequence?: boolean }[] = [
+    { value: 'No Answer', label: 'No Answer' },
+    { value: 'Left Voicemail', label: 'Left Voicemail' },
+    { value: 'Asked to Follow Up', label: 'Asked to Follow Up' },
+    { value: 'Asked for Online Presentation', label: 'Asked for Online Presentation' },
+    { value: 'Interested — Sent Info', label: 'Interested — Sent Info' },
+    { value: 'Not Interested', label: 'Not Interested', stopSequence: true },
+    { value: 'Wrong Number / Invalid Contact', label: 'Wrong Number / Invalid Contact', stopSequence: true },
+    { value: 'Other', label: 'Other' },
+];
+
+function LogOutcomeForm({ task, onLog, busy }: { task: any; onLog: (extra: any) => void; busy: boolean }) {
+    const [open, setOpen] = useState(false);
+    const [outcome, setOutcome] = useState('');
+    const [notes, setNotes] = useState('');
+    const [followUpDate, setFollowUpDate] = useState('');
+
+    const selectedMeta = OUTCOME_OPTIONS.find(o => o.value === outcome);
+    const stopSequence = !!selectedMeta?.stopSequence;
+
+    const handleSubmit = () => {
+        if (!outcome) return;
+        onLog({ outcome, notes, followUpDate: followUpDate || null, stopSequence });
+        setOpen(false);
+        setOutcome('');
+        setNotes('');
+        setFollowUpDate('');
+    };
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <Button size="sm" variant="outline" disabled={busy}>
+                    <MessageSquarePlus className="mr-1 h-3.5 w-3.5" /> Log Outcome
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 space-y-3 text-left" align="end">
+                <div className="space-y-1">
+                    <Label className="text-xs font-bold uppercase tracking-wide">What happened?</Label>
+                    <Select value={outcome} onValueChange={setOutcome}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="Select an outcome..." /></SelectTrigger>
+                        <SelectContent>
+                            {OUTCOME_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="space-y-1">
+                    <Label className="text-xs font-bold uppercase tracking-wide">Notes</Label>
+                    <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details of the call/conversation..." className="min-h-[60px] text-sm" />
+                </div>
+                {!stopSequence && (
+                    <div className="space-y-1">
+                        <Label className="text-xs font-bold uppercase tracking-wide">Next follow-up date (optional)</Label>
+                        <Input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} className="h-9" />
+                        <p className="text-[11px] text-muted-foreground">Leave blank to use the default communication policy timing.</p>
+                    </div>
+                )}
+                {stopSequence && (
+                    <Alert className="py-2">
+                        <AlertDescription className="text-xs">This outcome stops the automated follow-up sequence for this record.</AlertDescription>
+                    </Alert>
+                )}
+                <Button size="sm" className="w-full" disabled={!outcome || busy} onClick={handleSubmit}>
+                    {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null} Save Outcome
+                </Button>
+            </PopoverContent>
+        </Popover>
+    );
+}
 
 function TaskRow({ task, onAction, onSend, onAssign, staff, busyId }: { task: any; onAction: (task: any, mode: string, extra?: any) => void; onSend: (task: any) => void; onAssign: (task: any, staffId: string) => void; staff: any[]; busyId: string | null }) {
     const meta = BUCKET_META[task.bucket] || BUCKET_META.upcoming;
@@ -107,6 +179,7 @@ function TaskRow({ task, onAction, onSend, onAssign, staff, busyId }: { task: an
                         </a>
                     </Button>
                 ) : null}
+                <LogOutcomeForm task={task} busy={busy} onLog={(extra) => onAction(task, 'outcome', extra)} />
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => onAction(task, 'snooze', { hours: 24 })}>
                     <Clock className="mr-1 h-3.5 w-3.5" /> Snooze 24h
                 </Button>
@@ -176,7 +249,12 @@ export default function FollowUpRegister() {
             if (!token) throw new Error('Authentication failed.');
             await performAdminAction(token, 'updateFollowUpTask', { taskId: task.id, mode, ...extra });
             setTasks(prev => prev.filter(t => t.id !== task.id));
-            toast({ title: mode === 'complete' ? 'Task completed' : mode === 'snooze' ? 'Snoozed for 24 hours' : 'Task dismissed' });
+            toast({
+                title: mode === 'complete' ? 'Task completed'
+                    : mode === 'snooze' ? 'Snoozed for 24 hours'
+                    : mode === 'outcome' ? 'Outcome logged'
+                    : 'Task dismissed'
+            });
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Action failed', description: e.message });
         } finally {
