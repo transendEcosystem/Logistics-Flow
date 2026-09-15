@@ -1494,6 +1494,10 @@ export async function POST(request: Request) {
       const channel = String(communication?.type || communication?.communicationType || communication?.channel || 'Manual').trim();
       const subject = String(communication?.subject || 'Manual engagement').trim();
       const notes = String(communication?.notes || '').trim();
+      const stopSequence = resolvedPayload?.stopSequence === true;
+      const overrideDueAt = resolvedPayload?.followUpDate
+        ? new Date(String(resolvedPayload.followUpDate)).toISOString()
+        : null;
 
       if (!partnerId || !channel || !subject) {
         return NextResponse.json({ success: false, error: 'Partner ID, communication type, and subject are required.' }, { status: 400 });
@@ -1525,6 +1529,12 @@ export async function POST(request: Request) {
         createdBy: adminUid,
       };
 
+      // Complete any still-open follow-up task for this record so logging a new event
+      // here doesn't leave a stale task sitting in the register alongside the new one.
+      const openTaskId = `followup_${located.collection}_${partnerId}`;
+      const openTaskSnap = await db.collection('platformTasks').doc(openTaskId).get().catch(() => null);
+      const hasOpenTask = openTaskSnap && openTaskSnap.exists && (openTaskSnap.data() || {}).status !== 'completed';
+
       await Promise.all([
         communicationRef.set(communicationRecord),
         located.ref.set({
@@ -1536,24 +1546,31 @@ export async function POST(request: Request) {
           outreachCount: FieldValue.increment(1),
           updatedAt: now,
           engagementLogs: FieldValue.arrayUnion(logEntry),
+          ...(stopSequence ? { nextFollowUpAt: null, nextFollowUpAction: null, followUpSequenceStopped: true } : {}),
         }, { merge: true }),
+        hasOpenTask
+          ? db.collection('platformTasks').doc(openTaskId).set({ status: 'completed', completedAt: now, completedBy: adminUid, updatedAt: now }, { merge: true })
+          : Promise.resolve(),
       ]);
 
       let followUpTask: any = null;
-      try {
-        followUpTask = await scheduleFollowUpTask(db, {
-          recordRef: located.ref,
-          collection: located.collection,
-          recordId: partnerId,
-          recordData: located.data,
-          channel,
-          subject,
-          sentAt: now,
-          actorUid: adminUid,
-        });
-      } catch (followUpError: any) {
-        // A scheduling failure must never block the outreach itself from being logged.
-        console.error('Follow-up scheduling failed', followUpError);
+      if (!stopSequence) {
+        try {
+          followUpTask = await scheduleFollowUpTask(db, {
+            recordRef: located.ref,
+            collection: located.collection,
+            recordId: partnerId,
+            recordData: located.data,
+            channel,
+            subject,
+            sentAt: now,
+            actorUid: adminUid,
+            overrideDueAt,
+          });
+        } catch (followUpError: any) {
+          // A scheduling failure must never block the outreach itself from being logged.
+          console.error('Follow-up scheduling failed', followUpError);
+        }
       }
 
       return NextResponse.json({
@@ -1562,6 +1579,42 @@ export async function POST(request: Request) {
         collection: located.collection,
         followUpTask,
       }, { status: 200 });
+    }
+
+    // Lets the "New Event" picker in the Follow-Up Register find any record across every
+    // registry collection by company name or email, even if it has no open task yet.
+    if (action === 'searchAnyRecord') {
+      const term = String(resolvedPayload?.term || '').trim().toLowerCase();
+      if (term.length < 2) {
+        return NextResponse.json({ success: true, data: [] }, { status: 200 });
+      }
+
+      const results: any[] = [];
+      for (const collection of RESEARCH_COLLECTIONS) {
+        if (results.length >= 25) break;
+        try {
+          const snapshot = await db.collection(collection).limit(500).get();
+          for (const doc of snapshot.docs) {
+            const data = doc.data() || {};
+            const name = String(data.companyName || data.tradingName || `${data.firstName || ''} ${data.lastName || ''}`.trim() || '').toLowerCase();
+            const email = String(data.email || data.marketingManager?.email || '').toLowerCase();
+            if (name.includes(term) || email.includes(term)) {
+              results.push({
+                id: doc.id,
+                collection,
+                companyName: recordDisplayName(data),
+                email: data.email || data.marketingManager?.email || null,
+                phone: data.phone || data.mobile || null,
+              });
+              if (results.length >= 25) break;
+            }
+          }
+        } catch {
+          // Ignore collections that fail — others may still succeed.
+        }
+      }
+
+      return NextResponse.json({ success: true, data: results }, { status: 200 });
     }
 
     if (action === 'getCommunicationPolicy') {

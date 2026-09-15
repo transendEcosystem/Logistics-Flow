@@ -20,7 +20,8 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
-import { Users, MessageSquarePlus } from 'lucide-react';
+import { Users, MessageSquarePlus, Search, PlusCircle, Building2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 async function performAdminAction(token: string, action: string, payload?: any) {
     const response = await fetch('/api/admin', {
@@ -114,6 +115,179 @@ function LogOutcomeForm({ task, onLog, busy }: { task: any; onLog: (extra: any) 
                 </Button>
             </PopoverContent>
         </Popover>
+    );
+}
+
+function NewEventDialog({ onLogged }: { onLogged: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [term, setTerm] = useState('');
+    const [results, setResults] = useState<any[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const [selected, setSelected] = useState<any | null>(null);
+    const [channel, setChannel] = useState('Call');
+    const [outcome, setOutcome] = useState('');
+    const [notes, setNotes] = useState('');
+    const [followUpDate, setFollowUpDate] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
+    const { toast } = useToast();
+
+    const selectedMeta = OUTCOME_OPTIONS.find(o => o.value === outcome);
+    const stopSequence = !!selectedMeta?.stopSequence;
+
+    const reset = () => {
+        setTerm(''); setResults([]); setSelected(null); setChannel('Call');
+        setOutcome(''); setNotes(''); setFollowUpDate('');
+    };
+
+    const handleSearch = useCallback(async (value: string) => {
+        setTerm(value);
+        if (value.trim().length < 2) { setResults([]); return; }
+        setIsSearching(true);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            const res = await performAdminAction(token, 'searchAnyRecord', { term: value.trim() });
+            setResults(res.data || []);
+        } catch {
+            setResults([]);
+        } finally {
+            setIsSearching(false);
+        }
+    }, []);
+
+    const handleSubmit = async () => {
+        if (!selected || !outcome) return;
+        setIsSaving(true);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            await performAdminAction(token, 'logCommunication', {
+                partnerId: selected.id,
+                collection: selected.collection,
+                type: channel,
+                subject: outcome,
+                notes,
+                followUpDate: followUpDate || null,
+                stopSequence,
+            });
+            toast({ title: 'Event logged', description: `${selected.companyName} — ${outcome}` });
+            setOpen(false);
+            reset();
+            onLogged();
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Could not log event', description: e.message });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
+            <DialogTrigger asChild>
+                <Button onClick={() => setOpen(true)}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> New Event
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg text-left">
+                <DialogHeader>
+                    <DialogTitle>Log a New Event</DialogTitle>
+                    <DialogDescription>Record any call, message, or contact attempt — even for a record not currently in the queue.</DialogDescription>
+                </DialogHeader>
+
+                {!selected ? (
+                    <div className="space-y-3">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                value={term}
+                                onChange={(e) => handleSearch(e.target.value)}
+                                placeholder="Search by company name or email..."
+                                className="pl-9"
+                                autoFocus
+                            />
+                        </div>
+                        <div className="max-h-64 space-y-1 overflow-y-auto">
+                            {isSearching ? (
+                                <p className="py-4 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto h-4 w-4 animate-spin" /></p>
+                            ) : results.length === 0 ? (
+                                term.trim().length >= 2 ? (
+                                    <p className="py-4 text-center text-sm text-muted-foreground">No matching records found.</p>
+                                ) : (
+                                    <p className="py-4 text-center text-sm text-muted-foreground">Type at least 2 characters to search.</p>
+                                )
+                            ) : results.map(r => (
+                                <button
+                                    key={`${r.collection}_${r.id}`}
+                                    className="flex w-full items-center gap-2 rounded-md border p-2 text-left text-sm hover:bg-muted"
+                                    onClick={() => setSelected(r)}
+                                >
+                                    <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                    <span className="min-w-0 flex-1 truncate">
+                                        <span className="font-medium">{r.companyName}</span>
+                                        <span className="block truncate text-xs text-muted-foreground">{r.email || r.phone || r.collection}</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between rounded-md border bg-muted/40 p-2">
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold">{selected.companyName}</p>
+                                <p className="truncate text-xs text-muted-foreground">{selected.email || selected.phone || selected.collection}</p>
+                            </div>
+                            <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>Change</Button>
+                        </div>
+
+                        <div className="space-y-1">
+                            <Label className="text-xs font-bold uppercase tracking-wide">Channel</Label>
+                            <Select value={channel} onValueChange={setChannel}>
+                                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="Call">Call</SelectItem>
+                                    <SelectItem value="WhatsApp">WhatsApp</SelectItem>
+                                    <SelectItem value="Email">Email</SelectItem>
+                                    <SelectItem value="Meeting">Meeting</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1">
+                            <Label className="text-xs font-bold uppercase tracking-wide">What happened?</Label>
+                            <Select value={outcome} onValueChange={setOutcome}>
+                                <SelectTrigger className="h-9"><SelectValue placeholder="Select an outcome..." /></SelectTrigger>
+                                <SelectContent>
+                                    {OUTCOME_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1">
+                            <Label className="text-xs font-bold uppercase tracking-wide">Notes</Label>
+                            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details of the call/conversation..." className="min-h-[60px] text-sm" />
+                        </div>
+
+                        {!stopSequence && (
+                            <div className="space-y-1">
+                                <Label className="text-xs font-bold uppercase tracking-wide">Next follow-up date (optional)</Label>
+                                <Input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} className="h-9" />
+                                <p className="text-[11px] text-muted-foreground">Leave blank to use the default communication policy timing.</p>
+                            </div>
+                        )}
+                        {stopSequence && (
+                            <Alert className="py-2">
+                                <AlertDescription className="text-xs">This outcome stops the automated follow-up sequence for this record.</AlertDescription>
+                            </Alert>
+                        )}
+
+                        <Button className="w-full" disabled={!outcome || isSaving} onClick={handleSubmit}>
+                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Save Event
+                        </Button>
+                    </div>
+                )}
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -419,7 +593,8 @@ export default function FollowUpRegister() {
                     </CardContent>
                 </Card>
             ) : (
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-2">
+                    <NewEventDialog onLogged={load} />
                     <Button onClick={startBatch} disabled={actionable.length === 0}>
                         <PlayCircle className="mr-2 h-4 w-4" /> Start Batch ({actionable.length})
                     </Button>
