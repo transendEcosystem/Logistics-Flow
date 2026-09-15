@@ -17,6 +17,8 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Users } from 'lucide-react';
 
 async function performAdminAction(token: string, action: string, payload?: any) {
     const response = await fetch('/api/admin', {
@@ -43,7 +45,7 @@ const BUCKET_META: Record<string, { label: string; icon: any; className: string 
     upcoming: { label: 'Upcoming', icon: CalendarClock, className: 'text-muted-foreground' },
 };
 
-function TaskRow({ task, onAction, onSend, busyId }: { task: any; onAction: (task: any, mode: string, extra?: any) => void; onSend: (task: any) => void; busyId: string | null }) {
+function TaskRow({ task, onAction, onSend, onAssign, staff, busyId }: { task: any; onAction: (task: any, mode: string, extra?: any) => void; onSend: (task: any) => void; onAssign: (task: any, staffId: string) => void; staff: any[]; busyId: string | null }) {
     const meta = BUCKET_META[task.bucket] || BUCKET_META.upcoming;
     const Icon = meta.icon;
     const isCall = task.actionType === 'call';
@@ -79,6 +81,18 @@ function TaskRow({ task, onAction, onSend, busyId }: { task: any; onAction: (tas
                 ) : (
                     <p className="text-xs text-destructive">No {isCall ? 'phone number' : 'email address'} on the record.</p>
                 )}
+                <div className="flex items-center gap-1.5 pt-1">
+                    <Users className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <Select value={task.assigneeId || 'none'} onValueChange={(v) => onAssign(task, v)}>
+                        <SelectTrigger className="h-7 w-[180px] text-xs">
+                            <SelectValue placeholder="Unallocated" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="none">Unallocated</SelectItem>
+                            {staff.map(s => <SelectItem key={s.id} value={s.id}>{s.firstName} {s.lastName}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
                 {!isCall && (task.contactEmail || task.contactPhone) ? (
@@ -117,19 +131,22 @@ export default function FollowUpRegister() {
     const [busyId, setBusyId] = useState<string | null>(null);
     const [batchQueue, setBatchQueue] = useState<string[] | null>(null);
     const [batchIndex, setBatchIndex] = useState(0);
+    const [staff, setStaff] = useState<any[]>([]);
 
     const load = useCallback(async () => {
         setIsLoading(true);
         try {
             const token = await getClientSideAuthToken();
             if (!token) throw new Error('Authentication failed.');
-            const [register, policyResult] = await Promise.all([
+            const [register, policyResult, staffResult] = await Promise.all([
                 performAdminAction(token, 'getFollowUpRegister', {}),
                 performAdminAction(token, 'getCommunicationPolicy', {}),
+                performAdminAction(token, 'getPlatformStaff', {}).catch(() => ({ data: [] })),
             ]);
             setTasks(register.data || []);
             setSummary(register.summary || { overdue: 0, dueToday: 0, upcoming: 0 });
             setPolicy(policyResult.data);
+            setStaff(staffResult.data || []);
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Could not load the register', description: e.message });
         } finally {
@@ -138,6 +155,19 @@ export default function FollowUpRegister() {
     }, [toast]);
 
     useEffect(() => { load(); }, [load]);
+
+    const handleAssign = useCallback(async (task: any, staffId: string) => {
+        const assigneeId = staffId === 'none' ? null : staffId;
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, assigneeId } : t));
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            await performAdminAction(token, 'updateFollowUpTask', { taskId: task.id, mode: 'assign', assigneeId });
+            toast({ title: 'Record allocated' });
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Assignment failed', description: e.message });
+        }
+    }, [toast]);
 
     const handleAction = useCallback(async (task: any, mode: string, extra?: any) => {
         setBusyId(task.id);
@@ -298,7 +328,7 @@ export default function FollowUpRegister() {
                     <CardContent>
                         {currentBatchTask ? (
                             <div className="space-y-3">
-                                <TaskRow task={currentBatchTask} onAction={handleAction} onSend={handleBatchSend} busyId={busyId} />
+                                <TaskRow task={currentBatchTask} onAction={handleAction} onSend={handleBatchSend} onAssign={handleAssign} staff={staff} busyId={busyId} />
                                 <div className="flex justify-end">
                                     <Button size="sm" variant="outline" onClick={handleBatchSkip} disabled={busyId === currentBatchTask.id}>
                                         <SkipForward className="mr-1 h-3.5 w-3.5" /> Skip for now
@@ -339,7 +369,7 @@ export default function FollowUpRegister() {
                             <AlertDescription>No follow-ups are due. New tasks appear automatically once the policy interval elapses after an outreach.</AlertDescription>
                         </Alert>
                     ) : actionable.map(task => (
-                        <TaskRow key={task.id} task={task} onAction={handleAction} onSend={handleSend} busyId={busyId} />
+                        <TaskRow key={task.id} task={task} onAction={handleAction} onSend={handleSend} onAssign={handleAssign} staff={staff} busyId={busyId} />
                     ))}
                 </TabsContent>
 
@@ -347,7 +377,7 @@ export default function FollowUpRegister() {
                     {grouped.upcoming.length === 0 ? (
                         <p className="py-8 text-center text-sm text-muted-foreground">No scheduled follow-ups yet.</p>
                     ) : grouped.upcoming.map(task => (
-                        <TaskRow key={task.id} task={task} onAction={handleAction} onSend={handleSend} busyId={busyId} />
+                        <TaskRow key={task.id} task={task} onAction={handleAction} onSend={handleSend} onAssign={handleAssign} staff={staff} busyId={busyId} />
                     ))}
                 </TabsContent>
 

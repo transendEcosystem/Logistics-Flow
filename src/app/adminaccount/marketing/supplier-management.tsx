@@ -21,11 +21,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { PartnerOversightDialog } from './PartnerOversightDialog';
 import { EngageDialog } from './EngageDialog';
-import { CommunicationLogDialog } from './CommunicationLogDialog';
 import { PartnerTasksDialog } from './PartnerTasksDialog';
-import { AddCommunicationLogDialog } from './AddCommunicationLogDialog';
 import { downloadDataAsCSV, formatDateSafe, cn } from '@/lib/utils';
 import { EnrichPartnerButton } from './EnrichPartnerButton';
 import { CommercialDeepDiveButton } from './CommercialDeepDiveButton';
@@ -524,14 +521,7 @@ export default function SupplierManagement() {
             <ContentHarvestButton partner={row.original} onUpdate={() => fetchData()} />
             <CommercialDeepDiveButton partner={row.original} onUpdate={() => fetchData()} onEngage={handleEngage} />
             <Button variant="ghost" size="icon" onClick={() => handleEngage(row.original)}><Send className="h-4 w-4 text-primary" /></Button>
-            <AddCommunicationLogDialog 
-                partnerId={row.original.id} 
-                collection={row.original.source === 'Lead' ? 'leads' : 'partners'} 
-                onLogAdded={() => fetchData()} 
-            />
-            <CommunicationLogDialog partnerId={row.original.id} partnerName={row.original.companyName} />
             <PartnerTasksDialog partner={row.original} />
-            <PartnerOversightDialog partner={row.original} onUpdate={() => fetchData()} />
             <Button variant="ghost" size="icon" onClick={() => setDialog({ type: 'edit', data: row.original })}><Edit className="h-4 w-4" /></Button>
             <Button variant="ghost" size="icon" onClick={() => setDialog({ type: 'delete', data: row.original })}><Trash2 className="h-4 w-4 text-destructive" /></Button>
           </div>

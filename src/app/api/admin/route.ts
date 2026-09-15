@@ -1640,7 +1640,17 @@ export async function POST(request: Request) {
       }
 
       if (mode === 'assign') {
-        await taskRef.set({ assigneeId: String(resolvedPayload?.assigneeId || '').trim() || null, updatedAt: nowIso }, { merge: true });
+        const assigneeId = String(resolvedPayload?.assigneeId || '').trim() || null;
+        const taskSnap = await taskRef.get();
+        const task = taskSnap.exists ? (taskSnap.data() || {}) : {};
+        await taskRef.set({ assigneeId, updatedAt: nowIso }, { merge: true });
+        // Keep the underlying record's assignment in sync so it persists beyond this one task.
+        if (task.recordId) {
+          const located = await findResearchRecord(db, task.recordId, task.recordCollection);
+          if (located) {
+            await located.ref.set({ assigneeId, updatedAt: nowIso }, { merge: true });
+          }
+        }
         return NextResponse.json({ success: true }, { status: 200 });
       }
 
