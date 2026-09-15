@@ -95,6 +95,13 @@ service cloud.firestore {
       match /{allSub=**} { allow read, write: if isAdmin(); }
     }
 
+    match /suppliers/{supplierId} {
+      allow get: if true;
+      allow list: if isSignedIn();
+      allow write: if isAdmin();
+      match /{allSub=**} { allow read, write: if isAdmin(); }
+    }
+
     match /configuration/{allPaths=**} {
       allow read: if true;
       allow write: if isAdmin();
@@ -112,7 +119,8 @@ service cloud.firestore {
     }
 
     match /visitors/{visitorId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if true;
     }
 
     match /companies/{companyId} {
@@ -160,7 +168,8 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get, list, read: if isSignedIn(); 
-      allow update: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && request.auth.uid == userId &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isSuperAdmin', 'claims']));
       allow create: if isSignedIn(); 
       
       match /{allSub=**} {
@@ -214,7 +223,7 @@ service cloud.firestore {
     }
 
     // --- COLLECTION GROUP RULES ---
-    match /{path=**}/transactions/{id} { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    match /{path=**}/transactions/{id} { allow read: if isAdmin() || (isSignedIn() && resource != null && isMember(resource.data.companyId)); allow write: if isAdmin(); }
     match /{path=**}/adCampaigns/{id} { allow read: if true; allow write: if isAdmin(); }
     match /{path=**}/shops/{id} { allow read: if true; allow write: if isAdmin(); }
     match /{path=**}/products/{id} { allow read: if true; allow write: if isAdmin(); }

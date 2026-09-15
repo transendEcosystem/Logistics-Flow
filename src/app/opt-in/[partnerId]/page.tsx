@@ -60,9 +60,17 @@ export default function OptInPage() {
     useEffect(() => {
         if (isUserLoading || !activeRecord || user) return;
         const email = activeRecord.email || activeRecord.marketingManager?.email || '';
-        const emailParam = email ? `&email=${encodeURIComponent(email)}` : '';
-        window.location.replace(`/signin?redirect=${encodeURIComponent(invitePath)}${emailParam}`);
-    }, [activeRecord, invitePath, isUserLoading, user]);
+        const firstName = activeRecord.firstName || activeRecord.marketingManager?.firstName || '';
+        const lastName = activeRecord.lastName || activeRecord.marketingManager?.lastName || '';
+        const params = new URLSearchParams();
+        params.set('redirect', invitePath);
+        params.set('ref', partnerId);
+        if (email) params.set('email', email);
+        if (firstName) params.set('firstName', firstName);
+        if (lastName) params.set('lastName', lastName);
+        // New prospects have no existing account — send them to account creation, not sign-in.
+        window.location.replace(`/join?${params.toString()}`);
+    }, [activeRecord, invitePath, isUserLoading, user, partnerId]);
 
     const canAccept = useMemo(() => {
         return marketingConsent && popiConsent && termsConsent;
