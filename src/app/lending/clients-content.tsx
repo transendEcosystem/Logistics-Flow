@@ -23,9 +23,6 @@ import { Separator } from '@/components/ui/separator';
 
 import { EnrichPartnerButton } from '@/app/adminaccount/marketing/EnrichPartnerButton';
 import { CommercialDeepDiveButton } from '@/app/adminaccount/marketing/CommercialDeepDiveButton';
-import { PartnerOversightDialog } from '@/app/adminaccount/marketing/PartnerOversightDialog';
-import { AddCommunicationLogDialog } from '@/app/adminaccount/marketing/AddCommunicationLogDialog';
-import { CommunicationLogDialog } from '@/app/adminaccount/marketing/CommunicationLogDialog';
 
 async function performAdminAction(token: string, action: string, payload: any) {
     const response = await fetch('/api/admin', {
@@ -59,7 +56,12 @@ export default function ClientsContent() {
             const token = await getClientSideAuthToken();
             if (!token) throw new Error("Authentication failed.");
             const result = await performAdminAction(token, 'getLendingData', { collectionName: 'lendingClients' });
-            setClients(result.data || []);
+            const records = result.data || [];
+            setClients(records.sort((first: any, second: any) => {
+                const firstDate = new Date(first.updatedAt || first.createdAt || 0).getTime();
+                const secondDate = new Date(second.updatedAt || second.createdAt || 0).getTime();
+                return secondDate - firstDate;
+            }));
         } catch (e: any) {
             setError(e.message);
             toast({ variant: 'destructive', title: 'Error loading clients', description: e.message });
@@ -87,8 +89,8 @@ export default function ClientsContent() {
         setSelectedClient(null);
     };
 
-    const handleSaveSuccess = () => {
-        forceRefresh();
+    const handleSaveSuccess = async () => {
+        await forceRefresh();
         handleBackToList();
     };
 
@@ -149,10 +151,6 @@ export default function ClientsContent() {
                         <Scale className="h-4 w-4 text-primary" />
                     </Link>
                 </Button>
-                <AddCommunicationLogDialog partnerId={row.original.id} collection="lendingClients" onLogAdded={forceRefresh} />
-                <CommunicationLogDialog partnerId={row.original.id} partnerName={row.original.name} />
-                <PartnerOversightDialog partner={row.original} onUpdate={forceRefresh} />
-                
                 <Separator orientation="vertical" className="h-4 mx-1" />
                 
                 <Button asChild variant="ghost" size="icon" title="View Detail"><Link href={`/lending/clients/${row.original.id}`}><Eye className="h-4 w-4" /></Link></Button>

@@ -24,9 +24,6 @@ import { Separator } from '@/components/ui/separator';
 
 import { EnrichPartnerButton } from '@/app/adminaccount/marketing/EnrichPartnerButton';
 import { CommercialDeepDiveButton } from '@/app/adminaccount/marketing/CommercialDeepDiveButton';
-import { PartnerOversightDialog } from '@/app/adminaccount/marketing/PartnerOversightDialog';
-import { AddCommunicationLogDialog } from '@/app/adminaccount/marketing/AddCommunicationLogDialog';
-import { CommunicationLogDialog } from '@/app/adminaccount/marketing/CommunicationLogDialog';
 import { InitializeSubFacilityModal } from './InitializeSubFacilityModal';
 
 export default function DebtorsContent() {
@@ -155,9 +152,6 @@ export default function DebtorsContent() {
             <div className="flex justify-end items-center gap-1 text-left text-foreground">
                 <EnrichPartnerButton partner={row.original} onUpdate={forceRefresh} />
                 <CommercialDeepDiveButton partner={row.original} onUpdate={forceRefresh} />
-                <AddCommunicationLogDialog partnerId={row.original.id} collection="lendingDebtors" onLogAdded={forceRefresh} />
-                <CommunicationLogDialog partnerId={row.original.id} partnerName={row.original.name} />
-                <PartnerOversightDialog partner={row.original} onUpdate={forceRefresh} />
                 <Separator orientation="vertical" className="h-4 mx-1" />
                 <Button variant="ghost" size="icon" onClick={() => handleEdit(row.original)} title="Edit Record"><Edit className="h-4 w-4" /></Button>
                 <Button variant="ghost" size="icon" onClick={() => { setDebtorToDelete(row.original); setIsDeleteAlertOpen(true); }} title="Delete"><Trash2 className="h-4 w-4 text-destructive" /></Button>

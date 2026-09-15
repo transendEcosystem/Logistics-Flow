@@ -9,7 +9,6 @@ import { type ColumnDef } from '@/hooks/use-data-table';
 import { Badge } from '@/components/ui/badge';
 import { getClientSideAuthToken } from '@/firebase';
 import { Button } from '@/components/ui/button';
-import { PartnerOversightDialog } from './marketing/PartnerOversightDialog';
 import MemberActionMenu from '@/app/backend/member-action-menu';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
@@ -131,16 +130,37 @@ export default function UnifiedDirectory() {
             )
         },
         {
-            header: 'Engagement Result',
+            header: 'Engagement Tracking',
             cell: ({ row }) => {
-                if (!row.original.lastOutreachSubject) return <span className="text-xs text-muted-foreground italic">No Outreach</span>;
+                const logs = row.original.engagementLogs || [];
+                const stage = row.original.engagementStage || (row.original.lastOutreachSubject ? 'Contacted' : null);
+                const score = row.original.engagementScore || 0;
+
+                if (!stage && !logs.length && !row.original.lastOutreachSubject) {
+                    return <span className="text-xs text-muted-foreground italic">No Outreach</span>;
+                }
+
                 return (
-                    <div className="flex flex-col text-left">
-                        <Badge variant="outline" className="text-[9px] h-4 uppercase font-bold border-primary/20 text-primary w-fit">{row.original.lastOutreachSubject}</Badge>
-                        {row.original.lastOpenedAt && (
-                            <div className="flex items-center gap-1 text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 mt-1 w-fit">
-                                <UserCheck className="h-2.5 w-2.5" /> Read
-                            </div>
+                    <div className="flex flex-col text-left gap-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <Badge variant={stage === 'Converted' ? 'default' : 'secondary'} className="text-[9px] h-4 uppercase font-bold">
+                                {stage || 'Engaged'}
+                            </Badge>
+                            {score > 0 && (
+                                <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                    {score} pts
+                                </span>
+                            )}
+                        </div>
+                        {row.original.lastOutreachSubject && (
+                            <span className="text-[10px] text-slate-700 font-medium truncate max-w-[170px]">
+                                {row.original.lastOutreachSubject}
+                            </span>
+                        )}
+                        {logs.length > 0 && (
+                            <span className="text-[9px] text-muted-foreground font-semibold">
+                                {logs.length} touchpoint{logs.length > 1 ? 's' : ''} logged
+                            </span>
                         )}
                     </div>
                 );
@@ -167,7 +187,6 @@ export default function UnifiedDirectory() {
                                     <Send className="h-4 w-4 text-primary" />
                                 </Link>
                             </Button>
-                            <PartnerOversightDialog partner={row.original} onUpdate={loadData} />
                         </>
                     ) : (
                         <MemberActionMenu member={row.original} onUpdate={loadData} />

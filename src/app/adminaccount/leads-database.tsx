@@ -44,11 +44,8 @@ import { EnrichPartnerButton } from '@/app/adminaccount/marketing/EnrichPartnerB
 import { CommercialDeepDiveButton } from '@/app/adminaccount/marketing/CommercialDeepDiveButton';
 import { ContentHarvestButton } from '@/app/adminaccount/marketing/ContentHarvestButton';
 import { PartnerTasksDialog } from '@/app/adminaccount/marketing/PartnerTasksDialog';
-import { CommunicationLogDialog } from '@/app/adminaccount/marketing/CommunicationLogDialog';
 import { EngageDialog } from '@/app/adminaccount/marketing/EngageDialog';
-import { PartnerOversightDialog } from '@/app/adminaccount/marketing/PartnerOversightDialog';
 import { BulkImportDialog } from '@/app/adminaccount/marketing/BulkImportDialog';
-import { AddCommunicationLogDialog } from '@/app/adminaccount/marketing/AddCommunicationLogDialog';
 
 async function performAdminAction(token: string, action: string, payload?: any) {
   const response = await fetch('/api/admin', {
@@ -298,6 +295,7 @@ function LeadsDatabaseComponent() {
     }
   }
 
+
   const columns: ColumnDef<any>[] = useMemo(() => [
     { accessorKey: 'companyName', header: 'Lead Entity' },
     { 
@@ -341,6 +339,11 @@ function LeadsDatabaseComponent() {
         cell: ({ row }) => (
             <div className="flex flex-col gap-1 text-left text-foreground text-foreground text-foreground">
                 <Badge variant={row.original.status === 'active' ? 'default' : 'outline'} className="capitalize text-[10px] font-black w-fit">{row.original.status}</Badge>
+                {row.original.companyId && (
+                    <Badge className="bg-green-100 text-green-700 text-[8px] h-4 uppercase font-black border-none gap-1 py-0 px-1.5 w-fit text-left">
+                        <UserCheck className="h-2 w-2" /> Member ({row.original.invitationStatus === 'registered' ? 'Registered' : 'Invited'})
+                    </Badge>
+                )}
                 {row.original.enhancementMethod && (
                     <Badge className="bg-primary/10 text-primary text-[8px] h-4 uppercase font-black border-none gap-1 py-0 px-1.5 w-fit text-left text-foreground">
                         <Zap className="h-2 w-2 fill-current" /> {row.original.enhancementMethod} {formatDateSafe(row.original.lastEnrichedAt, "dd/MM")}
@@ -358,10 +361,7 @@ function LeadsDatabaseComponent() {
           <ContentHarvestButton partner={row.original} onUpdate={forceRefresh} />
           <CommercialDeepDiveButton partner={row.original} onUpdate={forceRefresh} />
           <Button variant="ghost" size="icon" onClick={() => setEngageLead(row.original)} title="Engage"><Send className="h-4 w-4 text-primary" /></Button>
-          <AddCommunicationLogDialog partnerId={row.original.id} collection="leads" onLogAdded={forceRefresh} />
-          <CommunicationLogDialog partnerId={row.original.id} partnerName={row.original.companyName} />
           <PartnerTasksDialog partner={row.original} />
-          <PartnerOversightDialog partner={row.original} onUpdate={forceRefresh} />
           <Button variant="ghost" size="icon" onClick={() => { setEditLead(row.original); }}><Edit className="h-4 w-4" /></Button>
           <Button variant="ghost" size="icon" onClick={() => { setDeleteLead(row.original); setIsDeleteAlertOpen(true); }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
         </div>
