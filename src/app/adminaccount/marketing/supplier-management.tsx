@@ -116,7 +116,15 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
       const token = await getClientSideAuthToken();
       if (!token) throw new Error("Auth failed.");
       const coll = partner?.sourceCollection || (partner?.source === 'Lead' ? 'leads' : targetType === 'supplier' ? 'suppliers' : 'partners');
-      await performAdminAction(token, 'savePartner', { collection: coll, partner: { id: partner?.id, ...values, type: targetType } });
+      const explicitType = partner ? (values.type || partner.type) : targetType;
+      await performAdminAction(token, 'savePartner', {
+        collection: coll,
+        partner: {
+          id: partner?.id,
+          ...values,
+          ...(explicitType ? { type: explicitType } : {}),
+        },
+      });
       toast({ title: 'Record Saved' });
       onSave();
       onOpenChange(false);
@@ -323,6 +331,7 @@ export default function SupplierManagement() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
+  const [registryTypeFilter, setRegistryTypeFilter] = useState<'supplier' | 'unclassified'>('supplier');
   const type = 'supplier';
 
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
@@ -341,7 +350,7 @@ export default function SupplierManagement() {
       if (!token) throw new Error('Authentication failed.');
 
       const res: any = await performAdminAction(token, 'getRegistryIndexPage', {
-        type,
+        type: registryTypeFilter,
         term: appliedSearchTerm,
         status: statusFilter,
         category: categoryFilter,
@@ -370,14 +379,14 @@ export default function SupplierManagement() {
     } finally {
       if (requestId === requestIdRef.current) setIsLoading(false);
     }
-  }, [appliedSearchTerm, assigneeFilter, categoryFilter, pageSize, statusFilter, tagFilter, toast]);
+  }, [appliedSearchTerm, assigneeFilter, categoryFilter, pageSize, registryTypeFilter, statusFilter, tagFilter, toast]);
 
   useEffect(() => { fetchData(pageIndex); }, [fetchData, pageIndex]);
 
   useEffect(() => {
     pageCursorsRef.current = { 0: null };
     setPageIndex(0);
-  }, [appliedSearchTerm, statusFilter, categoryFilter, assigneeFilter, tagFilter, pageSize]);
+  }, [appliedSearchTerm, statusFilter, categoryFilter, assigneeFilter, tagFilter, pageSize, registryTypeFilter]);
 
   useEffect(() => {
     const loadStaff = async () => {
@@ -647,7 +656,7 @@ export default function SupplierManagement() {
                 <CardTitle className="flex items-center gap-2 text-2xl font-black font-headline text-left text-foreground"><Building className="h-6 w-6" /> Supplier Registry</CardTitle>
                 <CardDescription className="text-left text-muted-foreground">
                   {indexReady
-                    ? `Indexed database view (${totalCount.toLocaleString()} records).`
+                    ? `${registryTypeFilter === 'supplier' ? 'Supplier' : 'Unclassified'} index (${totalCount.toLocaleString()} records).`
                     : 'Registry index setup is required. Use Rebuild Index to populate it.'}
                 </CardDescription>
               </div>
@@ -680,7 +689,17 @@ export default function SupplierManagement() {
           </CardHeader>
           <Card className="text-left text-foreground">
               <CardContent className="pt-6 text-left">
-                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6 p-4 bg-muted/30 rounded-lg text-left text-foreground">
+                  <div className="grid grid-cols-1 md:grid-cols-7 gap-4 mb-6 p-4 bg-muted/30 rounded-lg text-left text-foreground">
+                    <div className="space-y-1 text-left">
+                        <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5 text-left">Registry View</Label>
+                        <Select value={registryTypeFilter} onValueChange={(value: 'supplier' | 'unclassified') => setRegistryTypeFilter(value)}>
+                            <SelectTrigger className="h-9 bg-white text-xs text-left text-foreground"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="supplier">Suppliers</SelectItem>
+                                <SelectItem value="unclassified">Unclassified</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
                     <div className="space-y-1 text-left">
                         <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5 text-left">Status Filter</Label>
                         <Select value={statusFilter} onValueChange={setStatusFilter}>

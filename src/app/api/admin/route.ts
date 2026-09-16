@@ -1592,7 +1592,6 @@ export async function POST(request: Request) {
           ? db.collection('platformTasks').doc(openTaskId).set({ status: 'completed', completedAt: now, completedBy: adminUid, updatedAt: now }, { merge: true })
           : Promise.resolve(),
       ]);
-      await syncRegistryIndexDocument(db, located.collection, partnerId);
 
       let followUpTask: any = null;
       if (!stopSequence) {
@@ -1613,6 +1612,7 @@ export async function POST(request: Request) {
           console.error('Follow-up scheduling failed', followUpError);
         }
       }
+      await syncRegistryIndexDocument(db, located.collection, partnerId);
 
       return NextResponse.json({
         success: true,
@@ -1768,6 +1768,7 @@ export async function POST(request: Request) {
           const located = await findResearchRecord(db, task.recordId, task.recordCollection);
           if (located) {
             await located.ref.set({ assigneeId, updatedAt: nowIso }, { merge: true });
+            await syncRegistryIndexDocument(db, located.collection, String(task.recordId));
           }
         }
         return NextResponse.json({ success: true }, { status: 200 });
@@ -1817,7 +1818,8 @@ export async function POST(request: Request) {
               notes: 'Sent from the Follow-Up Register one-click queue.',
               loggedBy: adminUid,
             }),
-          }, { merge: true }).catch(() => {});
+          }, { merge: true });
+          await syncRegistryIndexDocument(db, located.collection, String(task.recordId));
         }
 
         return NextResponse.json({ success: true, nextTask }, { status: 200 });
@@ -1901,6 +1903,9 @@ export async function POST(request: Request) {
           } catch (e) {
             console.error('Failed to schedule follow-up after outcome log', e);
           }
+        }
+        if (located) {
+          await syncRegistryIndexDocument(db, located.collection, String(task.recordId));
         }
 
         return NextResponse.json({ success: true, nextTask }, { status: 200 });
