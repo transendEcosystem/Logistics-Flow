@@ -2321,6 +2321,108 @@ export async function POST(request: Request) {
       }, { status: 200 });
     }
 
+    if (action === 'getRegistryClassificationGaps') {
+      // Diagnoses why records exist in the raw registry but don't show up under a specific
+      // type tab (Suppliers, Transporters, etc.): they were harvested/handshaken into `leads`/
+      // `partners`/`companies` but never got a `type`/`role`/`category` field set, so the
+      // type filter in searchRegistry silently excludes them.
+      const scanCollections = ['leads', 'partners', 'companies'];
+      const maxDocsToScan = 60000;
+      let unclassifiedCount = 0;
+      let totalScanned = 0;
+      const sample: Array<{ id: string; collection: string; companyName: string; createdAt?: any }> = [];
+
+      for (const collectionName of scanCollections) {
+        try {
+          let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+          let scanned = 0;
+          while (scanned < maxDocsToScan) {
+            let queryRef: FirebaseFirestore.Query = db.collection(collectionName).orderBy(FieldPath.documentId());
+            if (lastDoc) queryRef = queryRef.startAfter(lastDoc);
+            const batchLimit = Math.min(1000, maxDocsToScan - scanned);
+            const snapshot = await queryRef.limit(batchLimit).get();
+            if (snapshot.empty) break;
+
+            for (const doc of snapshot.docs) {
+              const data = doc.data();
+              const hasClassification = Boolean(data.type || data.role || data.declaredRole || data.category || data.industrial_category);
+              totalScanned += 1;
+              if (!hasClassification) {
+                unclassifiedCount += 1;
+                if (sample.length < 50) {
+                  sample.push({ id: doc.id, collection: collectionName, companyName: data.companyName || data.name || '(unnamed)', createdAt: data.createdAt });
+                }
+              }
+            }
+
+            scanned += snapshot.docs.length;
+            lastDoc = snapshot.docs[snapshot.docs.length - 1];
+            if (snapshot.docs.length < batchLimit) break;
+          }
+        } catch (e: any) {
+          console.error(`getRegistryClassificationGaps: error scanning "${collectionName}":`, e?.message || e);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        totalScanned,
+        unclassifiedCount,
+        sample
+      }, { status: 200 });
+    }
+
+    if (action === 'classifyUnclassifiedRecords') {
+      // Bulk-tags records that have no type/role/category with a default type (e.g. 'supplier')
+      // so they become visible under the matching registry tab. Scoped to leads/partners/companies
+      // since those are the collections handshake/harvest tools write into without a fixed type.
+      const defaultType = String(resolvedPayload?.defaultType || 'supplier').trim();
+      const scanCollections = ['leads', 'partners', 'companies'];
+      const maxDocsToScan = 60000;
+      let updatedCount = 0;
+
+      for (const collectionName of scanCollections) {
+        try {
+          let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+          let scanned = 0;
+          while (scanned < maxDocsToScan) {
+            let queryRef: FirebaseFirestore.Query = db.collection(collectionName).orderBy(FieldPath.documentId());
+            if (lastDoc) queryRef = queryRef.startAfter(lastDoc);
+            const batchLimit = Math.min(500, maxDocsToScan - scanned);
+            const snapshot = await queryRef.limit(batchLimit).get();
+            if (snapshot.empty) break;
+
+            const batch = db.batch();
+            let batchCount = 0;
+            for (const doc of snapshot.docs) {
+              const data = doc.data();
+              const hasClassification = Boolean(data.type || data.role || data.declaredRole || data.category || data.industrial_category);
+              if (!hasClassification) {
+                batch.update(doc.ref, { type: defaultType, classifiedAt: new Date().toISOString(), classifiedBy: 'gapAnalysis' });
+                batchCount += 1;
+              }
+            }
+            if (batchCount > 0) {
+              await batch.commit();
+              updatedCount += batchCount;
+            }
+
+            scanned += snapshot.docs.length;
+            lastDoc = snapshot.docs[snapshot.docs.length - 1];
+            if (snapshot.docs.length < batchLimit) break;
+          }
+        } catch (e: any) {
+          console.error(`classifyUnclassifiedRecords: error scanning "${collectionName}":`, e?.message || e);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        updatedCount,
+        message: `Classified ${updatedCount} previously untagged records as "${defaultType}".`
+      }, { status: 200 });
+    }
+
     if (action === 'searchRegistry') {
       const requestType = normalizeRegistryType(resolvedPayload?.type || requestBody?.type || requestBody?.collection || request.url);
       const typeValues = getMatchingTypeValues(requestType);

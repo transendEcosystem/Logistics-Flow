@@ -557,6 +557,33 @@ export default function SupplierManagement() {
     }
   }
 
+  const [isClassifying, setIsClassifying] = useState(false);
+
+  async function handleClassifyGaps() {
+    setIsClassifying(true);
+    try {
+      const token = await getClientSideAuthToken();
+      if (!token) return;
+      const gapRes: any = await performAdminAction(token, 'getRegistryClassificationGaps', {});
+      const gapCount = gapRes?.unclassifiedCount || 0;
+      if (gapCount === 0) {
+        toast({ title: 'No gaps found', description: 'Every record already has a type/category set.' });
+        return;
+      }
+      const confirmed = window.confirm(
+        `${gapCount} record(s) exist in the registry with no type/category set (e.g. from digital handshakes or harvest tools), so they never appear under a specific tab like Suppliers.\n\nTag all of them as "supplier" now so they become visible and searchable?`
+      );
+      if (!confirmed) return;
+      const res: any = await performAdminAction(token, 'classifyUnclassifiedRecords', { defaultType: 'supplier' });
+      toast({ title: 'Classification complete', description: res?.message || `Updated ${res?.updatedCount || 0} records.` });
+      fetchData();
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message });
+    } finally {
+      setIsClassifying(false);
+    }
+  }
+
   return (
     <div className="space-y-6 text-left text-foreground">
       <EngageDialog open={dialog.type === 'engage'} onOpenChange={(o) => !o && setDialog({ type: null })} partners={dialog.data || []} initialIndex={dialog.initialIndex} audience="suppliers" onEngageSuccess={() => fetchData()} />
@@ -579,6 +606,7 @@ export default function SupplierManagement() {
               </div>
               <div className="flex flex-wrap gap-2 text-left w-full md:w-auto">
                   <Button variant="outline" size="sm" onClick={() => fetchData()} className="text-foreground"><RotateCcw className="h-4 w-4 mr-2" /> Sync Registry</Button>
+                  <Button variant="outline" size="sm" onClick={handleClassifyGaps} disabled={isClassifying} className="text-foreground"><Wrench className="h-4 w-4 mr-2" /> {isClassifying ? 'Checking...' : 'Fix Missing Classifications'}</Button>
                   <Popover>
                       <PopoverTrigger asChild>
                           <Button variant="outline" className="gap-2 text-foreground"><Settings2 className="h-4 w-4" /> Columns</Button>
