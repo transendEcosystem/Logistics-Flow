@@ -2315,17 +2315,22 @@ export async function POST(request: Request) {
       const collectedRecords = new Map<string, Record<string, any>>();
       // Previously capped at 5000 regardless of pageSize, which silently truncated large
       // registries (e.g. 20000+ suppliers) so records beyond the cap were never searchable.
-      // Now the query window scales with the requested pageSize, up to a generous safety ceiling.
-      const maxQueryWindow = Math.min(Math.max(pageSize * 3, 250), 50000);
+      // Scaled this up, but keep it bounded enough to avoid request timeouts — collections that
+      // support a `type` filter can safely use a larger window since Firestore filters server-side;
+      // the unfiltered `companies` fallback scan is kept modest to avoid pulling huge unrelated data.
+      const filteredQueryWindow = Math.min(Math.max(pageSize * 3, 250), 20000);
+      const unfilteredQueryWindow = Math.min(Math.max(pageSize * 2, 250), 3000);
 
       for (const candidateCollection of collectionCandidates) {
         try {
           let queryRef: FirebaseFirestore.Query = db.collection(candidateCollection);
+          const isFiltered = typeValues.length > 0 && candidateCollection !== 'companies';
 
-          if (typeValues.length && candidateCollection !== 'companies') {
+          if (isFiltered) {
             queryRef = queryRef.where('type', 'in', typeValues);
           }
 
+          const maxQueryWindow = isFiltered ? filteredQueryWindow : unfilteredQueryWindow;
           const snapshot = await queryRef.limit(maxQueryWindow).get();
           for (const doc of snapshot.docs) {
             const record = { id: doc.id, ...doc.data(), sourceCollection: candidateCollection };
