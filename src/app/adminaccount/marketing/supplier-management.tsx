@@ -323,7 +323,7 @@ export default function SupplierManagement() {
     actions: true
   });
 
-  const fetchData = useCallback(async (limit: number = 20000) => {
+  const fetchData = useCallback(async (limit: number = 100000) => {
     setIsLoading(true);
     try {
       const token = await getClientSideAuthToken();
