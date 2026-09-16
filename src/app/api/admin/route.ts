@@ -2340,8 +2340,9 @@ export async function POST(request: Request) {
 
           // Firestore hard-caps limit() at 10,000, so a single query can never see beyond that —
           // registries with more records than that (e.g. 20,000+ suppliers) need multiple pages
-          // to be fully scanned. Page through with startAfter cursors up to a safety ceiling.
-          const maxDocsToScan = Math.min(Math.max(maxQueryWindow, 10000), 60000);
+          // to be fully scanned. Page through with startAfter cursors up to a safety ceiling,
+          // sized off the requested pageSize (not the per-query window, which is itself capped at 10000).
+          const maxDocsToScan = Math.min(Math.max(pageSize * 3, 10000), 60000);
           let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
           let scanned = 0;
 
