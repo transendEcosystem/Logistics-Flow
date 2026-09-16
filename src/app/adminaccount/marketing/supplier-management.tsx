@@ -350,13 +350,14 @@ export default function SupplierManagement() {
           const { initializeFirebase } = await import('@/firebase');
           const { firestore } = initializeFirebase();
           const clientDb = getFirestore(firestore.app);
+          const safeLimit = Math.min(limit, 10000); // Firestore caps limit() at 10,000
 
-          const q1 = query(collection(clientDb, 'partners'), where('type', 'in', ['supplier', 'suppliers']), limitFn(limit));
+          const q1 = query(collection(clientDb, 'partners'), where('type', 'in', ['supplier', 'suppliers']), limitFn(safeLimit));
           const snap1 = await getDocs(q1);
           let list = snap1.docs.map(doc => ({ id: doc.id, ...doc.data(), source: 'Member' }));
 
           if (list.length === 0) {
-            const q2 = query(collection(clientDb, 'leads'), where('type', 'in', ['supplier', 'suppliers']), limitFn(limit));
+            const q2 = query(collection(clientDb, 'leads'), where('type', 'in', ['supplier', 'suppliers']), limitFn(safeLimit));
             const snap2 = await getDocs(q2);
             list = snap2.docs.map(doc => ({ id: doc.id, ...doc.data(), source: 'Lead' }));
           }

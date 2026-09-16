@@ -2318,7 +2318,7 @@ export async function POST(request: Request) {
       // Scaled this up, but keep it bounded enough to avoid request timeouts — collections that
       // support a `type` filter can safely use a larger window since Firestore filters server-side;
       // the unfiltered `companies` fallback scan is kept modest to avoid pulling huge unrelated data.
-      const filteredQueryWindow = Math.min(Math.max(pageSize * 3, 250), 20000);
+      const filteredQueryWindow = Math.min(Math.max(pageSize * 3, 250), 10000);
       const unfilteredQueryWindow = Math.min(Math.max(pageSize * 2, 250), 3000);
 
       for (const candidateCollection of collectionCandidates) {
