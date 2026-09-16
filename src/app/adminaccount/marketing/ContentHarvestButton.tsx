@@ -34,10 +34,30 @@ export function ContentHarvestButton({ partner, onUpdate }: { partner: any; onUp
   const [showManual, setShowManual] = useState(false);
   const [lastError, setLastError] = useState('');
   const [isClassifying, setIsClassifying] = useState(false);
+  const [fullPartner, setFullPartner] = useState<any>(null);
   const { toast } = useToast();
 
-  const corpus = partner.contentCorpus;
-  const companyName = partner.companyName || partner.name || 'this company';
+  // The bulk registry list strips large content/service blobs to keep that response small; when
+  // this dialog opens for a record that has one, fetch the full record so it can be displayed.
+  useEffect(() => {
+    if (!isOpen || fullPartner) return;
+    const needsFetch = (partner.has_contentCorpus && !partner.contentCorpus) || (partner.has_serviceProfile && !partner.serviceProfile);
+    if (!needsFetch) return;
+    (async () => {
+      try {
+        const token = await getClientSideAuthToken();
+        if (!token) return;
+        const res = await performAdminAction(token, 'getRecordDetail', { id: partner.id, collection: partner.sourceCollection });
+        if (res?.data) setFullPartner(res.data);
+      } catch (e) {
+        // Non-fatal — dialog still works for starting a fresh harvest.
+      }
+    })();
+  }, [isOpen, fullPartner, partner]);
+
+  const activePartner = fullPartner || partner;
+  const corpus = activePartner.contentCorpus;
+  const companyName = activePartner.companyName || activePartner.name || 'this company';
 
   useEffect(() => {
     setWebsiteToHarvest(partner.website || '');
@@ -193,7 +213,7 @@ ${text}`;
   };
 
   const hasWebsite = Boolean(websiteToHarvest.trim());
-  const hasProfile = Boolean(partner.serviceProfile);
+  const hasProfile = Boolean(activePartner.serviceProfile || activePartner.has_serviceProfile);
 
   return (
     <>

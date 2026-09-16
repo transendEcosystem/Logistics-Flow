@@ -2303,6 +2303,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, data: members }, { status: 200 });
     }
 
+    if (action === 'getRecordDetail') {
+      // Fetches a single record's full data (including large corpus/profile blobs that are
+      // stripped out of the bulk `searchRegistry` list response to keep that payload small).
+      const recordId = String(resolvedPayload?.id || resolvedPayload?.partnerId || '').trim();
+      const recordCollection = String(resolvedPayload?.collection || resolvedPayload?.sourceCollection || '').trim();
+      if (!recordId || !recordCollection) {
+        return NextResponse.json({ success: false, error: 'id and collection are required' }, { status: 400 });
+      }
+      const docSnap = await db.collection(recordCollection).doc(recordId).get();
+      if (!docSnap.exists) {
+        return NextResponse.json({ success: false, error: 'Record not found' }, { status: 404 });
+      }
+      return NextResponse.json({
+        success: true,
+        data: { id: docSnap.id, ...docSnap.data(), sourceCollection: recordCollection }
+      }, { status: 200 });
+    }
+
     if (action === 'searchRegistry') {
       const requestType = normalizeRegistryType(resolvedPayload?.type || requestBody?.type || requestBody?.collection || request.url);
       const typeValues = getMatchingTypeValues(requestType);
@@ -2389,10 +2407,17 @@ export async function POST(request: Request) {
       // matchesRegistryFilters/JSON.stringify. Returning these blobs for thousands of records at
       // once produced multi-megabyte JSON responses that could be truncated in transit, causing a
       // parse failure on the client and a silent fallback to a much smaller client-side query.
-      const LARGE_TEXT_FIELDS = ['searchCorpus', 'contentCorpus', 'minedServiceWording'];
+      const LARGE_TEXT_FIELDS = ['searchCorpus', 'contentCorpus', 'minedServiceWording', 'commercialProfile', 'serviceProfile', 'shopProfile', 'campaignAngles'];
       const pagedRecords = filteredRecords.slice(start, start + pageSize).map((record: any) => {
         const trimmed = { ...record };
-        for (const field of LARGE_TEXT_FIELDS) delete trimmed[field];
+        for (const field of LARGE_TEXT_FIELDS) {
+          if (trimmed[field] !== undefined && trimmed[field] !== null) {
+            // Keep a lightweight marker so list-view UI (e.g. "Profile on record" badges) still
+            // knows a profile exists, without shipping the full multi-KB payload for every row.
+            trimmed[`has_${field}`] = true;
+            delete trimmed[field];
+          }
+        }
         return trimmed;
       });
 

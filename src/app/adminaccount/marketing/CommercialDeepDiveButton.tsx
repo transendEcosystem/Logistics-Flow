@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sparkles, Loader2, ClipboardCheck, Save, Mail, MessageSquare, CalendarDays, AlertTriangle, Target, ExternalLink, Send } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -110,16 +110,35 @@ export function CommercialDeepDiveButton({ partner, onUpdate, onEngage }: { part
   const [isSaving, setIsSaving] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [findings, setFindings] = useState('');
+  const [fullPartner, setFullPartner] = useState<any>(null);
   const { toast } = useToast();
 
-  const companyName = partner.companyName || partner.name || partner.trading_name || 'Unnamed Entity';
+  // The bulk registry list strips large profile blobs to keep that response small; when this
+  // dialog opens for a record that has one (has_commercialProfile), fetch the full record so the
+  // saved profile can actually be displayed.
+  useEffect(() => {
+    if (!isOpen || fullPartner || !partner.has_commercialProfile || partner.commercialProfile) return;
+    (async () => {
+      try {
+        const token = await getClientSideAuthToken();
+        if (!token) return;
+        const res = await performAdminAction(token, 'getRecordDetail', { id: partner.id, collection: partner.sourceCollection });
+        if (res?.data) setFullPartner(res.data);
+      } catch (e) {
+        // Non-fatal — dialog still works for starting a fresh research pass.
+      }
+    })();
+  }, [isOpen, fullPartner, partner]);
 
-  const hasProfile = Boolean(partner.commercialProfile);
+  const activePartner = fullPartner || partner;
+  const companyName = activePartner.companyName || activePartner.name || activePartner.trading_name || 'Unnamed Entity';
+
+  const hasProfile = Boolean(activePartner.commercialProfile || activePartner.has_commercialProfile);
   const parsedFindings = (() => {
     if (!findings.trim()) return null;
     try { return parseDeepDiveJson(findings); } catch { return null; }
   })();
-  const profile = parsedFindings || partner.commercialProfile;
+  const profile = parsedFindings || activePartner.commercialProfile;
   const engagement = messagePack(profile, companyName);
 
   const engagementPartner = (() => {
@@ -127,14 +146,14 @@ export function CommercialDeepDiveButton({ partner, onUpdate, onEngage }: { part
     const researchedTarget = target && typeof target === 'object' ? target : {};
     const verifiedEmail = researchedTarget.email || profile?.contactability?.emailVerification?.email || '';
     const verifiedPhone = researchedTarget.mobile || profile?.contactability?.phoneVerification?.phone || '';
-    const researchedName = researchedTarget.name || partner.contactPerson || '';
-    if (!researchedName && !verifiedEmail && !verifiedPhone) return partner;
+    const researchedName = researchedTarget.name || activePartner.contactPerson || '';
+    if (!researchedName && !verifiedEmail && !verifiedPhone) return activePartner;
     const role = String(researchedTarget.role || '').toLowerCase();
     const primaryContactRole = /market|sales|brand/.test(role) ? 'marketingManager' : /operat|logistics|fleet/.test(role) ? 'operationsManager' : /technical|workshop|maintenance|engineer/.test(role) ? 'technicalManager' : 'ceo';
     return {
-      ...partner,
-      email: verifiedEmail || partner.email,
-      phone: verifiedPhone || partner.phone,
+      ...activePartner,
+      email: verifiedEmail || activePartner.email,
+      phone: verifiedPhone || activePartner.phone,
       ...(researchedName ? {
         primaryContactRole,
         [primaryContactRole]: { name: String(researchedName), role: String(researchedTarget.role || ''), email: String(verifiedEmail), mobile: String(verifiedPhone) },
@@ -149,31 +168,31 @@ export function CommercialDeepDiveButton({ partner, onUpdate, onEngage }: { part
 
   const getPrompt = () => {
     const stakeholders = [
-      contactLine('CEO/MD', partner.ceo),
-      contactLine('Marketing', partner.marketingManager),
-      contactLine('Operations', partner.operationsManager),
-      contactLine('Technical', partner.technicalManager),
+      contactLine('CEO/MD', activePartner.ceo),
+      contactLine('Marketing', activePartner.marketingManager),
+      contactLine('Operations', activePartner.operationsManager),
+      contactLine('Technical', activePartner.technicalManager),
     ].filter(Boolean).join('\n');
 
-    const harvested = partner.contentCorpus?.pages?.length
-      ? `\n\nHARVESTED WEBSITE EVIDENCE (already retrieved, use as orientation only; open the pages yourself before making claims):\n${partner.contentCorpus.pages.slice(0, 8).map((page: any) => `--- ${page.url}\nTitle: ${page.title || 'Untitled'}\nWords: ${page.wordCount || 0}\nSnippet: ${compactText(page.text)}`).join('\n\n')}`
+    const harvested = activePartner.contentCorpus?.pages?.length
+      ? `\n\nHARVESTED WEBSITE EVIDENCE (already retrieved, use as orientation only; open the pages yourself before making claims):\n${activePartner.contentCorpus.pages.slice(0, 8).map((page: any) => `--- ${page.url}\nTitle: ${page.title || 'Untitled'}\nWords: ${page.wordCount || 0}\nSnippet: ${compactText(page.text)}`).join('\n\n')}`
       : '';
 
-    const profile = partner.serviceProfile
-      ? `\nClassified services: ${(partner.serviceProfile.serviceTags || []).join(', ') || 'none'}. Coverage: ${(partner.serviceProfile.geographicCoverage || []).join(', ') || 'unknown'}.`
+    const profile = activePartner.serviceProfile
+      ? `\nClassified services: ${(activePartner.serviceProfile.serviceTags || []).join(', ') || 'none'}. Coverage: ${(activePartner.serviceProfile.geographicCoverage || []).join(', ') || 'unknown'}.`
       : '';
 
     return `Research this South African supplier for Logistics Flow. Open public pages yourself. Return only verified facts; use null when unverified.
 
 TARGET
 Company: ${companyName}
-Category: ${partner.industrial_category || partner.industry || 'Unclassified'}
-Website / Social: ${partner.website || 'n/a'}
-Address: ${partner.address || 'n/a'}
-General email: ${partner.email || 'n/a'}
-Phone: ${partner.phone || 'n/a'}
-Contactability evidence: ${partner.contactability ? JSON.stringify(partner.contactability).slice(0, 500) : 'n/a'}
-Email evidence: ${partner.emailVerification ? JSON.stringify(partner.emailVerification).slice(0, 500) : 'n/a'}
+Category: ${activePartner.industrial_category || activePartner.industry || 'Unclassified'}
+Website / Social: ${activePartner.website || 'n/a'}
+Address: ${activePartner.address || 'n/a'}
+General email: ${activePartner.email || 'n/a'}
+Phone: ${activePartner.phone || 'n/a'}
+Contactability evidence: ${activePartner.contactability ? JSON.stringify(activePartner.contactability).slice(0, 500) : 'n/a'}
+Email evidence: ${activePartner.emailVerification ? JSON.stringify(activePartner.emailVerification).slice(0, 500) : 'n/a'}
 ${stakeholders || 'Stakeholders: none captured'}${profile}${harvested}
 
 TASKS
@@ -184,7 +203,7 @@ TASKS
 5. Identify the owner, CEO, MD or a named decision-maker for engagementStrategy.targetContact. If no name surfaces from the website, socials or press, search South Africa's CIPC company registry data via aggregator sites such as b2bhint.com or opencorporates.com (or a direct "[company name] CIPC directors" search) as a required fallback, and use any director name found there, noting it is a registry filing rather than a confirmed day-to-day title.
 6. Create a proactive Logistics Flow engagement strategy and first-contact email/WhatsApp.
 
-Rules: no memory claims, no private contact hunting, no fabricated revenue/headcount, every non-null fact needs evidence. Missing website/social is a gap, not notFound. Return {"notFound":true,"record_id":"${partner.id}"} only if no credible match exists.
+Rules: no memory claims, no private contact hunting, no fabricated revenue/headcount, every non-null fact needs evidence. Missing website/social is a gap, not notFound. Return {"notFound":true,"record_id":"${activePartner.id}"} only if no credible match exists.
 
 OUTPUT SAFETY RULES:
 - Return valid JSON only. No markdown, no code fences, no commentary, no citations outside JSON.
@@ -201,7 +220,7 @@ OUTPUT SAFETY RULES:
 RETURN RAW JSON ONLY:
 
 {
-  "record_id": "${partner.id}",
+  "record_id": "${activePartner.id}",
   "onlinePresence": { "website": { "status": "active|broken|not_found|unverifiable", "url": null, "evidence": "" }, "socialProfiles": [], "presenceSummary": "" },
   "contactability": { "emailVerification": { "email": null, "domain": null, "domainStatus": "registered|domain_not_found|unverifiable", "mxStatus": "mx_found|no_mx_found|not_checked", "bounceRisk": "low|medium|high", "evidence": "" }, "phoneVerification": { "phone": null, "status": "published|imported_only|not_found|unverifiable", "evidence": "" }, "recommendedChannel": "email|phone|whatsapp|social|manual_verification", "reason": "" },
   "presenceGaps": [],
