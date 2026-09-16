@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, FieldPath, getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { getAdminApp, verifyAdmin } from '@/lib/firebase-admin';
 import sgMail from '@sendgrid/mail';
@@ -2331,29 +2331,43 @@ export async function POST(request: Request) {
 
       for (const candidateCollection of collectionCandidates) {
         try {
-          let queryRef: FirebaseFirestore.Query = db.collection(candidateCollection);
-          // Dedicated registries (e.g. `suppliers`, `transporters`) are already scoped to that
-          // type by definition — many records (especially AI-harvested ones) never had an
-          // explicit `type` field stamped on them, so filtering by `type` here silently hid them
-          // even though they belonged in the registry. Only apply the type filter to shared
-          // collections like `partners`/`leads`/`companies` where multiple types coexist.
           const isDedicatedCollection = DEDICATED_TYPE_COLLECTIONS.has(candidateCollection);
           const isFiltered = typeValues.length > 0 && candidateCollection !== 'companies' && !isDedicatedCollection;
-
-          if (isFiltered) {
-            queryRef = queryRef.where('type', 'in', typeValues);
-          }
 
           // Dedicated collections and type-filtered queries can both use the larger window;
           // only the unfiltered scan of a shared collection (e.g. `companies`) is kept modest.
           const maxQueryWindow = (isFiltered || isDedicatedCollection) ? filteredQueryWindow : unfilteredQueryWindow;
-          const snapshot = await queryRef.limit(maxQueryWindow).get();
-          for (const doc of snapshot.docs) {
-            const record = { id: doc.id, ...doc.data(), sourceCollection: candidateCollection };
-            const recordKey = `${candidateCollection}:${doc.id}`;
-            if (!collectedRecords.has(recordKey)) {
-              collectedRecords.set(recordKey, record);
+
+          // Firestore hard-caps limit() at 10,000, so a single query can never see beyond that —
+          // registries with more records than that (e.g. 20,000+ suppliers) need multiple pages
+          // to be fully scanned. Page through with startAfter cursors up to a safety ceiling.
+          const maxDocsToScan = Math.min(Math.max(maxQueryWindow, 10000), 60000);
+          let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+          let scanned = 0;
+
+          while (scanned < maxDocsToScan) {
+            let queryRef: FirebaseFirestore.Query = db.collection(candidateCollection).orderBy(FieldPath.documentId());
+            if (isFiltered) {
+              queryRef = queryRef.where('type', 'in', typeValues);
             }
+            if (lastDoc) {
+              queryRef = queryRef.startAfter(lastDoc);
+            }
+            const batchLimit = Math.min(10000, maxDocsToScan - scanned);
+            const snapshot = await queryRef.limit(batchLimit).get();
+            if (snapshot.empty) break;
+
+            for (const doc of snapshot.docs) {
+              const record = { id: doc.id, ...doc.data(), sourceCollection: candidateCollection };
+              const recordKey = `${candidateCollection}:${doc.id}`;
+              if (!collectedRecords.has(recordKey)) {
+                collectedRecords.set(recordKey, record);
+              }
+            }
+
+            scanned += snapshot.docs.length;
+            lastDoc = snapshot.docs[snapshot.docs.length - 1];
+            if (snapshot.docs.length < batchLimit) break; // reached the end of the collection
           }
         } catch (e) {
           // Ignore collections that are unavailable or not configured; other candidates may still work.
