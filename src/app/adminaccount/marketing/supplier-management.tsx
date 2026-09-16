@@ -332,11 +332,24 @@ export default function SupplierManagement() {
 
       if (token) {
         try {
-          const [res, staffRes] = await Promise.all([
-            performAdminAction(token, 'searchRegistry', { type: 'supplier', term: searchTerm, limit }).catch(() => ({ data: [] })),
-            performAdminAction(token, 'getPlatformStaff', {}).catch(() => ({ data: [] }))
-          ]);
-          records = res.data || [];
+          // Fetch in modest-sized pages rather than one huge request: requesting thousands of
+          // full records in a single response can exceed the platform's response size limit and
+          // get truncated mid-transfer, which silently breaks JSON parsing and used to fall back
+          // to a much smaller (and capped) client-side query.
+          const PAGE_SIZE = 500;
+          let page = 1;
+          let hasNextPage = true;
+          const allRecords: any[] = [];
+          while (hasNextPage && allRecords.length < limit) {
+            const res: any = await performAdminAction(token, 'searchRegistry', { type: 'supplier', term: searchTerm, page, pageSize: PAGE_SIZE });
+            const pageRecords = res.data || res.leads || [];
+            allRecords.push(...pageRecords);
+            hasNextPage = Boolean(res.hasNextPage) && pageRecords.length > 0;
+            page += 1;
+          }
+          records = allRecords;
+
+          const staffRes: any = await performAdminAction(token, 'getPlatformStaff', {}).catch(() => ({ data: [] }));
           staffList = staffRes.data || [];
         } catch (e) {
           console.warn('Admin API searchRegistry failed, trying client fallback:', e);
