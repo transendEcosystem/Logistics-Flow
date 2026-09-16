@@ -250,6 +250,10 @@ function getMatchingTypeValues(typeName?: string): string[] {
   return map[normalized] || [];
 }
 
+const DEDICATED_TYPE_COLLECTIONS = new Set([
+  'suppliers', 'transporters', 'finance_co', 'investors', 'isa_agents', 'digital_associates', 'strategic_partners',
+]);
+
 function getCollectionCandidates(requestUrl: string, bodyPayload?: any): string[] {
   const candidates: string[] = [];
   const seen = new Set<string>();
@@ -329,7 +333,7 @@ function matchesRegistryFilters(record: Record<string, any>, filters: Record<str
   const tag = String(filters.tag || '').trim();
   const assigneeId = String(filters.assigneeId || '').trim();
 
-  if (typeValues.length) {
+  if (typeValues.length && !DEDICATED_TYPE_COLLECTIONS.has(String(record.sourceCollection || ''))) {
     const recordTypeValue = String(record.type || record.role || record.declaredRole || record.category || record.industrial_category || '').toLowerCase();
     const normalizedTypes = [recordTypeValue, String(record.type || '').toLowerCase(), String(record.role || '').toLowerCase(), String(record.declaredRole || '').toLowerCase(), String(record.category || '').toLowerCase(), String(record.industrial_category || '').toLowerCase()];
     if (!normalizedTypes.some(value => typeValues.some(typeValue => value === typeValue.toLowerCase()))) {
@@ -1411,6 +1415,7 @@ export async function POST(request: Request) {
       }
 
       const targetCollection = resolveCollection(request.url, { type: importType });
+      const normalizedImportType = importType || (targetCollection === 'suppliers' ? 'supplier' : targetCollection === 'transporters' ? 'transporter' : '');
       const batch = db.batch();
       let count = 0;
 
@@ -1423,6 +1428,9 @@ export async function POST(request: Request) {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
+        if (!dataToSave.type && normalizedImportType) {
+          dataToSave.type = normalizedImportType;
+        }
         if (sourcePartnerId) {
           dataToSave.sourcePartnerId = sourcePartnerId;
           dataToSave.sourceType = 'existing-customer-import';
@@ -2324,13 +2332,21 @@ export async function POST(request: Request) {
       for (const candidateCollection of collectionCandidates) {
         try {
           let queryRef: FirebaseFirestore.Query = db.collection(candidateCollection);
-          const isFiltered = typeValues.length > 0 && candidateCollection !== 'companies';
+          // Dedicated registries (e.g. `suppliers`, `transporters`) are already scoped to that
+          // type by definition — many records (especially AI-harvested ones) never had an
+          // explicit `type` field stamped on them, so filtering by `type` here silently hid them
+          // even though they belonged in the registry. Only apply the type filter to shared
+          // collections like `partners`/`leads`/`companies` where multiple types coexist.
+          const isDedicatedCollection = DEDICATED_TYPE_COLLECTIONS.has(candidateCollection);
+          const isFiltered = typeValues.length > 0 && candidateCollection !== 'companies' && !isDedicatedCollection;
 
           if (isFiltered) {
             queryRef = queryRef.where('type', 'in', typeValues);
           }
 
-          const maxQueryWindow = isFiltered ? filteredQueryWindow : unfilteredQueryWindow;
+          // Dedicated collections and type-filtered queries can both use the larger window;
+          // only the unfiltered scan of a shared collection (e.g. `companies`) is kept modest.
+          const maxQueryWindow = (isFiltered || isDedicatedCollection) ? filteredQueryWindow : unfilteredQueryWindow;
           const snapshot = await queryRef.limit(maxQueryWindow).get();
           for (const doc of snapshot.docs) {
             const record = { id: doc.id, ...doc.data(), sourceCollection: candidateCollection };
