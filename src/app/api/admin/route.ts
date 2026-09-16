@@ -2313,7 +2313,10 @@ export async function POST(request: Request) {
 
       const collectionCandidates = getCollectionCandidates(request.url, resolvedPayload);
       const collectedRecords = new Map<string, Record<string, any>>();
-      const maxQueryWindow = Math.min(Math.max(pageSize * 3, 250), 5000);
+      // Previously capped at 5000 regardless of pageSize, which silently truncated large
+      // registries (e.g. 20000+ suppliers) so records beyond the cap were never searchable.
+      // Now the query window scales with the requested pageSize, up to a generous safety ceiling.
+      const maxQueryWindow = Math.min(Math.max(pageSize * 3, 250), 50000);
 
       for (const candidateCollection of collectionCandidates) {
         try {
