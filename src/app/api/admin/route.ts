@@ -4,6 +4,19 @@ import { getAuth } from 'firebase-admin/auth';
 import { getAdminApp, verifyAdmin } from '@/lib/firebase-admin';
 import sgMail from '@sendgrid/mail';
 import { validateAgreementAgainstPolicies } from '@/lib/lending/policy-engine';
+import {
+  buildRegistryFilterKey,
+  buildRegistryIndexRecord,
+  deleteRegistryIndexDocument,
+  getActiveRegistryIndexCollection,
+  getRegistryIndexWriteCollections,
+  normalizeRegistryIndexText,
+  REGISTRY_INDEX_COLLECTIONS,
+  REGISTRY_INDEX_META_COLLECTION,
+  REGISTRY_INDEX_META_DOCUMENT,
+  REGISTRY_SOURCE_COLLECTIONS,
+  syncRegistryIndexDocument,
+} from '@/lib/registry-index';
 
 function resolveCollection(requestUrl: string, bodyPayload?: any): string {
   try {
@@ -1049,6 +1062,7 @@ export async function POST(request: Request) {
         serviceProfileSavedBy: adminUid,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
+      await syncRegistryIndexDocument(adminDb, located.collection, recordId);
 
       return NextResponse.json({ success: true, id: recordId, collection: located.collection });
     }
@@ -1135,6 +1149,7 @@ export async function POST(request: Request) {
         forensicAppliedBy: adminUid,
         updatedAt: new Date().toISOString(),
       }, { merge: true });
+      await syncRegistryIndexDocument(adminDb, located.collection, recordId);
 
       return NextResponse.json({ success: true, applied, skipped, collection: located.collection });
     }
@@ -1246,6 +1261,7 @@ export async function POST(request: Request) {
       }
 
       await located.ref.set(update, { merge: true });
+      await syncRegistryIndexDocument(adminDb, located.collection, recordId);
       return NextResponse.json({ success: true, id: recordId, collection: located.collection });
     }
 
@@ -1276,6 +1292,8 @@ export async function POST(request: Request) {
         });
       }
       await batch.commit();
+      await deleteRegistryIndexDocument(db, 'companies', companyId);
+      if (leadId) await syncRegistryIndexDocument(db, sourceCollection, String(leadId));
       return NextResponse.json({ success: true, deletedId: companyId }, { status: 200 });
     }
 
@@ -1292,6 +1310,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: `Member ${companyId} was not found.` }, { status: 404 });
       }
       await companyRef.set({ status, updatedAt: new Date().toISOString() }, { merge: true });
+      await syncRegistryIndexDocument(db, 'companies', companyId);
       return NextResponse.json({ success: true, id: companyId, status }, { status: 200 });
     }
 
@@ -1306,6 +1325,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ success: false, error: `Record ${recordId} was not found in ${targetCollection}.` }, { status: 404 });
         }
         await targetRef.delete();
+        await deleteRegistryIndexDocument(db, targetCollection, String(recordId));
         return NextResponse.json({ success: true, deletedId: recordId, collection: targetCollection }, { status: 200 });
       }
       return NextResponse.json({ success: false, error: 'A record ID is required for deletion.' }, { status: 400 });
@@ -1337,6 +1357,7 @@ export async function POST(request: Request) {
 
       if (id) {
         await db.collection(targetCollection).doc(String(id)).set(dataToSave, { merge: true });
+        await syncRegistryIndexDocument(db, targetCollection, String(id));
         if (partner.type === 'isa' && linkedCompanyId) {
           await db.collection('companies').doc(linkedCompanyId).set({
             isaStatus: partner.status === 'active' ? 'active' : 'inactive',
@@ -1351,6 +1372,7 @@ export async function POST(request: Request) {
         ...dataToSave,
         createdAt: new Date().toISOString(),
       });
+      await syncRegistryIndexDocument(db, targetCollection, docRef.id);
       if (partner.type === 'isa' && linkedCompanyId) {
         await db.collection('companies').doc(linkedCompanyId).set({
           isaStatus: partner.status === 'active' ? 'active' : 'inactive',
@@ -1416,7 +1438,9 @@ export async function POST(request: Request) {
 
       const targetCollection = resolveCollection(request.url, { type: importType });
       const normalizedImportType = importType || (targetCollection === 'suppliers' ? 'supplier' : targetCollection === 'transporters' ? 'transporter' : '');
-      const batch = db.batch();
+      const indexCollections = await getRegistryIndexWriteCollections(db);
+      const writer = db.bulkWriter();
+      writer.onWriteError(error => error.failedAttempts < 3);
       let count = 0;
 
       for (const record of rawPartners) {
@@ -1437,11 +1461,18 @@ export async function POST(request: Request) {
           dataToSave.discountEligible = discountEligible;
           if (agreementId) dataToSave.discountAgreementId = agreementId;
         }
-        batch.set(docRef, dataToSave);
+        writer.set(docRef, dataToSave);
+        for (const indexCollection of indexCollections) {
+          writer.set(
+            db.collection(indexCollection).doc(`${targetCollection}__${docRef.id}`),
+            buildRegistryIndexRecord(targetCollection, docRef.id, dataToSave),
+            { merge: false }
+          );
+        }
         count += 1;
       }
 
-      await batch.commit();
+      await writer.close();
       return NextResponse.json({ success: true, count, collection: targetCollection, message: `Imported ${count} records into ${targetCollection}.` }, { status: 200 });
     }
 
@@ -1490,6 +1521,7 @@ export async function POST(request: Request) {
         updatedAt: now,
         engagementLogs: FieldValue.arrayUnion(logEntry)
       }, { merge: true });
+      await syncRegistryIndexDocument(db, targetCollection, partnerId);
 
       return NextResponse.json({ success: true, message: 'Engagement email dispatched successfully.' }, { status: 200 });
     }
@@ -1560,6 +1592,7 @@ export async function POST(request: Request) {
           ? db.collection('platformTasks').doc(openTaskId).set({ status: 'completed', completedAt: now, completedBy: adminUid, updatedAt: now }, { merge: true })
           : Promise.resolve(),
       ]);
+      await syncRegistryIndexDocument(db, located.collection, partnerId);
 
       let followUpTask: any = null;
       if (!stopSequence) {
@@ -2321,6 +2354,217 @@ export async function POST(request: Request) {
       }, { status: 200 });
     }
 
+    if (action === 'rebuildRegistryIndexBatch') {
+      const requestedBatchSize = Number(resolvedPayload?.batchSize || 1000);
+      const batchSize = Math.min(Math.max(requestedBatchSize, 100), 2500);
+      let collectionIndex = Math.max(0, Number(resolvedPayload?.collectionIndex || 0));
+      let afterId = String(resolvedPayload?.afterId || '').trim();
+      const buildId = String(resolvedPayload?.buildId || Date.now());
+      let phase = String(resolvedPayload?.phase || 'clear');
+      const activeIndexCollection = await getActiveRegistryIndexCollection(db);
+      const requestedTarget = String(resolvedPayload?.targetIndexCollection || '');
+      const targetIndexCollection = REGISTRY_INDEX_COLLECTIONS.includes(requestedTarget as typeof REGISTRY_INDEX_COLLECTIONS[number])
+        ? requestedTarget
+        : activeIndexCollection === REGISTRY_INDEX_COLLECTIONS[0]
+          ? REGISTRY_INDEX_COLLECTIONS[1]
+          : REGISTRY_INDEX_COLLECTIONS[0];
+
+      if (phase === 'clear') {
+        await db.collection(REGISTRY_INDEX_META_COLLECTION).doc(REGISTRY_INDEX_META_DOCUMENT).set({
+          rebuildStatus: 'building',
+          rebuildingCollection: targetIndexCollection,
+          rebuildId: buildId,
+          rebuildStartedAt: new Date().toISOString(),
+        }, { merge: true });
+        const staleSnapshot = await db.collection(targetIndexCollection)
+          .orderBy(FieldPath.documentId())
+          .limit(batchSize)
+          .get();
+        if (!staleSnapshot.empty) {
+          const writer = db.bulkWriter();
+          writer.onWriteError(error => error.failedAttempts < 3);
+          staleSnapshot.docs.forEach(indexDoc => writer.delete(indexDoc.ref));
+          await writer.close();
+          return NextResponse.json({
+            success: true,
+            processed: staleSnapshot.size,
+            operation: 'cleared',
+            done: false,
+            cursor: { phase: 'clear', collectionIndex: 0, afterId: '', buildId, targetIndexCollection },
+          }, { status: 200 });
+        }
+        const facetTypes = ['supplier', 'transporter', 'finance', 'investor', 'isa', 'associate', 'partner', 'unclassified'];
+        await Promise.all(facetTypes.map(registryType =>
+          db.collection(REGISTRY_INDEX_META_COLLECTION).doc(`${targetIndexCollection}__${registryType}`).delete()
+        ));
+        phase = 'build';
+      }
+
+      while (collectionIndex < REGISTRY_SOURCE_COLLECTIONS.length) {
+        const sourceCollection = REGISTRY_SOURCE_COLLECTIONS[collectionIndex];
+        let queryRef: FirebaseFirestore.Query = db
+          .collection(sourceCollection)
+          .orderBy(FieldPath.documentId());
+        if (afterId) queryRef = queryRef.startAfter(afterId);
+
+        const snapshot = await queryRef.limit(batchSize).get();
+        if (snapshot.empty) {
+          collectionIndex += 1;
+          afterId = '';
+          continue;
+        }
+
+        const writer = db.bulkWriter();
+        writer.onWriteError(error => error.failedAttempts < 3);
+        const facets = new Map<string, { categories: Set<string>; tags: Set<string> }>();
+        for (const sourceDoc of snapshot.docs) {
+          const indexId = `${sourceCollection}__${sourceDoc.id}`;
+          const indexRecord = buildRegistryIndexRecord(sourceCollection, sourceDoc.id, sourceDoc.data());
+          writer.set(
+            db.collection(targetIndexCollection).doc(indexId),
+            { ...indexRecord, buildId },
+            { merge: false }
+          );
+          const registryType = String(indexRecord.registryType || 'unclassified');
+          const registryFacets = facets.get(registryType) || { categories: new Set<string>(), tags: new Set<string>() };
+          if (indexRecord.categoryKey && indexRecord.categoryKey !== 'uncategorized') {
+            registryFacets.categories.add(String(indexRecord.industrial_category || indexRecord.category || indexRecord.categoryKey));
+          }
+          for (const tag of indexRecord.tagKeys || []) registryFacets.tags.add(String(tag));
+          facets.set(registryType, registryFacets);
+        }
+        await writer.close();
+        await Promise.all(Array.from(facets.entries()).map(([registryType, values]) => {
+          const facetUpdate: Record<string, any> = { updatedAt: new Date().toISOString() };
+          if (values.categories.size > 0) {
+            facetUpdate.categories = FieldValue.arrayUnion(...Array.from(values.categories));
+          }
+          if (values.tags.size > 0) {
+            facetUpdate.tags = FieldValue.arrayUnion(...Array.from(values.tags));
+          }
+          return db.collection(REGISTRY_INDEX_META_COLLECTION).doc(`${targetIndexCollection}__${registryType}`).set(facetUpdate, { merge: true });
+        }));
+
+        const reachedCollectionEnd = snapshot.size < batchSize;
+        const nextCollectionIndex = reachedCollectionEnd ? collectionIndex + 1 : collectionIndex;
+        const nextAfterId = reachedCollectionEnd ? '' : snapshot.docs[snapshot.docs.length - 1].id;
+        const done = nextCollectionIndex >= REGISTRY_SOURCE_COLLECTIONS.length;
+
+        if (done) {
+          await db.collection(REGISTRY_INDEX_META_COLLECTION).doc(REGISTRY_INDEX_META_DOCUMENT).set({
+            activeCollection: targetIndexCollection,
+            buildId,
+            status: 'ready',
+            rebuildStatus: FieldValue.delete(),
+            rebuildingCollection: FieldValue.delete(),
+            rebuildId: FieldValue.delete(),
+            completedAt: new Date().toISOString(),
+          }, { merge: true });
+        }
+
+        return NextResponse.json({
+          success: true,
+          processed: snapshot.size,
+          operation: 'indexed',
+          sourceCollection,
+          done,
+          cursor: done ? null : { phase: 'build', collectionIndex: nextCollectionIndex, afterId: nextAfterId, buildId, targetIndexCollection },
+        }, { status: 200 });
+      }
+
+      await db.collection(REGISTRY_INDEX_META_COLLECTION).doc(REGISTRY_INDEX_META_DOCUMENT).set({
+        activeCollection: targetIndexCollection,
+        buildId,
+        status: 'ready',
+        rebuildStatus: FieldValue.delete(),
+        rebuildingCollection: FieldValue.delete(),
+        rebuildId: FieldValue.delete(),
+        completedAt: new Date().toISOString(),
+      }, { merge: true });
+      return NextResponse.json({ success: true, processed: 0, operation: 'indexed', done: true, cursor: null }, { status: 200 });
+    }
+
+    if (action === 'getRegistryIndexPage') {
+      const registryType = normalizeRegistryType(resolvedPayload?.type || 'all');
+      const requestedPageSize = Number(resolvedPayload?.pageSize || 100);
+      const pageSize = Math.min(Math.max(requestedPageSize, 25), 250);
+      const page = Math.max(1, Number(resolvedPayload?.page || 1));
+      const term = normalizeRegistryIndexText(resolvedPayload?.term);
+      const statusKey = normalizeRegistryIndexText(resolvedPayload?.status);
+      const categoryKey = normalizeRegistryIndexText(resolvedPayload?.category);
+      const assigneeKey = normalizeRegistryIndexText(resolvedPayload?.assigneeId);
+      const tagKey = normalizeRegistryIndexText(resolvedPayload?.tag);
+      const cursor = resolvedPayload?.cursor && typeof resolvedPayload.cursor === 'object'
+        ? resolvedPayload.cursor
+        : null;
+      const activeIndexCollection = await getActiveRegistryIndexCollection(db);
+
+      let indexQuery: FirebaseFirestore.Query = db.collection(activeIndexCollection);
+      if (registryType !== 'all') indexQuery = indexQuery.where('registryType', '==', registryType);
+      const filterKey = buildRegistryFilterKey({
+        status: statusKey && statusKey !== 'all' ? statusKey : undefined,
+        category: categoryKey && categoryKey !== 'all' ? categoryKey : undefined,
+        assignee: assigneeKey === 'none' ? 'unassigned' : assigneeKey && assigneeKey !== 'all' ? assigneeKey : undefined,
+        tag: tagKey && tagKey !== 'all' ? tagKey : undefined,
+      });
+      if (filterKey) indexQuery = indexQuery.where('filterKeys', 'array-contains', filterKey);
+      indexQuery = indexQuery
+        .orderBy('normalizedCompanyName')
+        .orderBy(FieldPath.documentId());
+
+      const countQuery = term
+        ? indexQuery.startAt(term).endAt(`${term}\uf8ff`)
+        : indexQuery;
+      const countSnapshot = await countQuery.count().get();
+      const totalCount = countSnapshot.data().count;
+
+      let pageQuery = indexQuery;
+      if (cursor?.normalizedCompanyName && cursor?.indexId) {
+        pageQuery = pageQuery.startAfter(
+          String(cursor.normalizedCompanyName),
+          String(cursor.indexId)
+        );
+        if (term) pageQuery = pageQuery.endAt(`${term}\uf8ff`);
+      } else if (page > 1) {
+        if (term) pageQuery = pageQuery.startAt(term).endAt(`${term}\uf8ff`);
+        pageQuery = pageQuery.offset((page - 1) * pageSize);
+      } else if (term) {
+        pageQuery = pageQuery.startAt(term).endAt(`${term}\uf8ff`);
+      }
+
+      const snapshot = await pageQuery.limit(pageSize).get();
+      const records = snapshot.docs.map(indexDoc => {
+        const data = indexDoc.data();
+        const { sourceId, ...record } = data;
+        return { ...record, id: sourceId, indexId: indexDoc.id };
+      });
+      const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+      const nextCursor = lastDoc && page * pageSize < totalCount
+        ? {
+            normalizedCompanyName: String(lastDoc.data().normalizedCompanyName || ''),
+            indexId: lastDoc.id,
+          }
+        : null;
+      const metaSnapshot = await db.collection(REGISTRY_INDEX_META_COLLECTION).doc(REGISTRY_INDEX_META_DOCUMENT).get();
+      const facetSnapshot = await db.collection(REGISTRY_INDEX_META_COLLECTION).doc(`${activeIndexCollection}__${registryType}`).get();
+      const facets = facetSnapshot.data() || {};
+
+      return NextResponse.json({
+        success: true,
+        data: records,
+        totalCount,
+        page,
+        pageSize,
+        hasNextPage: Boolean(nextCursor),
+        nextCursor,
+        indexReady: metaSnapshot.data()?.status === 'ready',
+        facets: {
+          categories: Array.isArray(facets.categories) ? facets.categories : [],
+          tags: Array.isArray(facets.tags) ? facets.tags : [],
+        },
+      }, { status: 200 });
+    }
+
     if (action === 'getRegistryClassificationGaps') {
       // Diagnoses why records exist in the raw registry but don't show up under a specific
       // type tab (Suppliers, Transporters, etc.): they were harvested/handshaken into `leads`/
@@ -2373,54 +2617,10 @@ export async function POST(request: Request) {
     }
 
     if (action === 'classifyUnclassifiedRecords') {
-      // Bulk-tags records that have no type/role/category with a default type (e.g. 'supplier')
-      // so they become visible under the matching registry tab. Scoped to leads/partners/companies
-      // since those are the collections handshake/harvest tools write into without a fixed type.
-      const defaultType = String(resolvedPayload?.defaultType || 'supplier').trim();
-      const scanCollections = ['leads', 'partners', 'companies'];
-      const maxDocsToScan = 60000;
-      let updatedCount = 0;
-
-      for (const collectionName of scanCollections) {
-        try {
-          let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
-          let scanned = 0;
-          while (scanned < maxDocsToScan) {
-            let queryRef: FirebaseFirestore.Query = db.collection(collectionName).orderBy(FieldPath.documentId());
-            if (lastDoc) queryRef = queryRef.startAfter(lastDoc);
-            const batchLimit = Math.min(500, maxDocsToScan - scanned);
-            const snapshot = await queryRef.limit(batchLimit).get();
-            if (snapshot.empty) break;
-
-            const batch = db.batch();
-            let batchCount = 0;
-            for (const doc of snapshot.docs) {
-              const data = doc.data();
-              const hasClassification = Boolean(data.type || data.role || data.declaredRole || data.category || data.industrial_category);
-              if (!hasClassification) {
-                batch.update(doc.ref, { type: defaultType, classifiedAt: new Date().toISOString(), classifiedBy: 'gapAnalysis' });
-                batchCount += 1;
-              }
-            }
-            if (batchCount > 0) {
-              await batch.commit();
-              updatedCount += batchCount;
-            }
-
-            scanned += snapshot.docs.length;
-            lastDoc = snapshot.docs[snapshot.docs.length - 1];
-            if (snapshot.docs.length < batchLimit) break;
-          }
-        } catch (e: any) {
-          console.error(`classifyUnclassifiedRecords: error scanning "${collectionName}":`, e?.message || e);
-        }
-      }
-
       return NextResponse.json({
-        success: true,
-        updatedCount,
-        message: `Classified ${updatedCount} previously untagged records as "${defaultType}".`
-      }, { status: 200 });
+        success: false,
+        error: 'Bulk classification is disabled. Unclassified records must be reviewed so non-suppliers are not mislabeled.'
+      }, { status: 409 });
     }
 
     if (action === 'searchRegistry') {

@@ -38,6 +38,12 @@ export function useDataTable<TData>(data: TData[], columns: ColumnDef<TData>[], 
     }
   }, [data.length, globalFilter, options.serverMode]);
 
+  useEffect(() => {
+    if (options.serverMode) {
+      setRowSelection({});
+    }
+  }, [data, effectivePageIndex, options.serverMode]);
+
   const getNestedValue = (obj: any, path?: string): any => {
     if (!path || obj === null || obj === undefined) return undefined;
     return path.split('.').reduce((acc, part) => acc && acc[part], obj as any);
@@ -80,9 +86,12 @@ export function useDataTable<TData>(data: TData[], columns: ColumnDef<TData>[], 
   }, [data, columns, globalFilter, sorting]);
 
   const pagedRows = useMemo(() => {
+    if (options.serverMode) {
+      return filteredRows.map(original => ({ original }));
+    }
     const start = effectivePageIndex * pageSize;
     return filteredRows.slice(start, start + pageSize).map(original => ({ original }));
-  }, [filteredRows, effectivePageIndex, pageSize]);
+  }, [filteredRows, effectivePageIndex, pageSize, options.serverMode]);
 
   const toggleAll = (checked: boolean) => {
       const newSelection: Record<string, boolean> = {};

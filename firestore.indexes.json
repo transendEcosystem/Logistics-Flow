@@ -40,6 +40,40 @@
         { "fieldPath": "type", "order": "ASCENDING" },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionId": "registry_index_a",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "registryType", "order": "ASCENDING" },
+        { "fieldPath": "normalizedCompanyName", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionId": "registry_index_a",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "registryType", "order": "ASCENDING" },
+        { "fieldPath": "filterKeys", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "normalizedCompanyName", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionId": "registry_index_b",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "registryType", "order": "ASCENDING" },
+        { "fieldPath": "normalizedCompanyName", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionId": "registry_index_b",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "registryType", "order": "ASCENDING" },
+        { "fieldPath": "filterKeys", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "normalizedCompanyName", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
