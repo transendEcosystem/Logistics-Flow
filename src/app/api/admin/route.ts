@@ -2321,6 +2321,8 @@ export async function POST(request: Request) {
 
       const collectionCandidates = getCollectionCandidates(request.url, resolvedPayload);
       const collectedRecords = new Map<string, Record<string, any>>();
+      const debugErrors: Array<{ collection: string; message: string }> = [];
+      const debugCounts: Array<{ collection: string; scanned: number }> = [];
       // Previously capped at 5000 regardless of pageSize, which silently truncated large
       // registries (e.g. 20000+ suppliers) so records beyond the cap were never searchable.
       // Scaled this up, but keep it bounded enough to avoid request timeouts — collections that
@@ -2370,8 +2372,11 @@ export async function POST(request: Request) {
             lastDoc = snapshot.docs[snapshot.docs.length - 1];
             if (snapshot.docs.length < batchLimit) break; // reached the end of the collection
           }
-        } catch (e) {
+          debugCounts.push({ collection: candidateCollection, scanned });
+        } catch (e: any) {
           // Ignore collections that are unavailable or not configured; other candidates may still work.
+          console.error(`searchRegistry: error scanning collection "${candidateCollection}":`, e?.message || e);
+          debugErrors.push({ collection: candidateCollection, message: e?.message || String(e) });
         }
       }
 
@@ -2390,7 +2395,8 @@ export async function POST(request: Request) {
         totalCount,
         page,
         pageSize,
-        hasNextPage: page * pageSize < totalCount
+        hasNextPage: page * pageSize < totalCount,
+        debug: { errors: debugErrors, counts: debugCounts }
       }, { status: 200 });
     }
 
