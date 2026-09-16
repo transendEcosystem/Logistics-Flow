@@ -2384,7 +2384,17 @@ export async function POST(request: Request) {
       const filteredRecords = allRecords.filter((record: any) => matchesRegistryFilters(record, filters, typeValues));
       const totalCount = filteredRecords.length;
       const start = (page - 1) * pageSize;
-      const pagedRecords = filteredRecords.slice(start, start + pageSize);
+      // Strip large text-blob fields (AI-harvested search/content corpora can be tens of KB per
+      // record) from the returned page only — filtering above still uses the full record via
+      // matchesRegistryFilters/JSON.stringify. Returning these blobs for thousands of records at
+      // once produced multi-megabyte JSON responses that could be truncated in transit, causing a
+      // parse failure on the client and a silent fallback to a much smaller client-side query.
+      const LARGE_TEXT_FIELDS = ['searchCorpus', 'contentCorpus', 'minedServiceWording'];
+      const pagedRecords = filteredRecords.slice(start, start + pageSize).map((record: any) => {
+        const trimmed = { ...record };
+        for (const field of LARGE_TEXT_FIELDS) delete trimmed[field];
+        return trimmed;
+      });
 
       return NextResponse.json({
         success: true,
