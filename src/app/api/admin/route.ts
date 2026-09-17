@@ -1314,7 +1314,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, id: companyId, status }, { status: 200 });
     }
 
-    if (action?.startsWith('delete')) {
+    if (action?.startsWith('delete') && action !== 'deleteRegistryDuplicates') {
       const recordId = payload?.id || payload?.partnerId || payload?.leadId || (body as any)?.id || (body as any)?.partnerId || (body as any)?.leadId;
       if (recordId) {
         const requestedCollection = String(payload?.collection || payload?.sourceCollection || '').trim();
@@ -2567,6 +2567,237 @@ export async function POST(request: Request) {
           categories: Array.isArray(facets.categories) ? facets.categories : [],
           tags: Array.isArray(facets.tags) ? facets.tags : [],
         },
+      }, { status: 200 });
+    }
+
+    if (action === 'findRegistryDuplicates') {
+      const activeIndexCollection = await getActiveRegistryIndexCollection(db);
+      const maxGroups = Math.min(Math.max(Number(resolvedPayload?.maxGroups || 500), 25), 500);
+      const duplicateGroups: any[] = [];
+      let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+      let pendingGroup: any[] = [];
+      let scanned = 0;
+
+      const duplicateIdentity = (record: Record<string, any>) => {
+        let domain = '';
+        try {
+          const rawWebsite = String(record.website || '').trim();
+          if (rawWebsite) {
+            const parsed = new URL(/^https?:\/\//i.test(rawWebsite) ? rawWebsite : `https://${rawWebsite}`);
+            domain = parsed.hostname.toLowerCase().replace(/^www\./, '');
+          }
+        } catch {
+          domain = '';
+        }
+        return {
+          sourceId: String(record.sourceId || '').trim(),
+          domain,
+          email: String(record.email || record.marketingManager?.email || '').trim().toLowerCase(),
+          phone: String(record.phone || record.mobile || '').replace(/\D/g, ''),
+        };
+      };
+      const hasStrongDuplicateEvidence = (left: Record<string, any>, right: Record<string, any>) => {
+        const a = duplicateIdentity(left);
+        const b = duplicateIdentity(right);
+        return (
+          Boolean(a.sourceId && a.sourceId === b.sourceId) ||
+          Boolean(a.domain && a.domain === b.domain) ||
+          Boolean(a.email && a.email === b.email) ||
+          Boolean(a.phone.length >= 7 && a.phone === b.phone)
+        );
+      };
+      const duplicateScore = (record: Record<string, any>) => {
+        let score = record.sourceCollection === 'partners' ? 50 : 0;
+        if (record.companyId) score += 100;
+        if (record.lastOutreachAt) score += 30;
+        if (record.lastOpenedAt || record.lastAccessedAt) score += 20;
+        if (record.has_commercialProfile || record.has_serviceProfile || record.has_contentCorpus) score += 20;
+        if (record.email) score += 8;
+        if (record.phone || record.mobile) score += 5;
+        if (record.website) score += 3;
+        return score;
+      };
+
+      const addPendingGroup = () => {
+        if (pendingGroup.length < 2 || duplicateGroups.length >= maxGroups) {
+          pendingGroup = [];
+          return;
+        }
+        const clusters: any[][] = [];
+        for (const record of pendingGroup) {
+          const matchingCluster = clusters.find(cluster =>
+            cluster.some(existing => hasStrongDuplicateEvidence(existing, record))
+          );
+          if (matchingCluster) matchingCluster.push(record);
+          else clusters.push([record]);
+        }
+        for (const cluster of clusters) {
+          if (cluster.length < 2 || duplicateGroups.length >= maxGroups) continue;
+          const sorted = [...cluster].sort((a, b) => {
+            const scoreDifference = duplicateScore(b) - duplicateScore(a);
+            if (scoreDifference !== 0) return scoreDifference;
+            return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''));
+          });
+          const keeper = sorted[0];
+          duplicateGroups.push({
+            key: `${keeper.normalizedCompanyName}__${keeper.indexId}`,
+            companyName: keeper.companyName,
+            keepIndexId: keeper.indexId,
+            records: sorted.map((record, index) => ({
+              indexId: record.indexId,
+              id: record.sourceId,
+              sourceCollection: record.sourceCollection,
+              companyName: record.companyName,
+              contactPerson: record.contactPerson || `${record.firstName || ''} ${record.lastName || ''}`.trim(),
+              email: record.email || record.marketingManager?.email || '',
+              phone: record.phone || record.mobile || '',
+              website: record.website || '',
+              lastOutreachAt: record.lastOutreachAt || null,
+              researchStage: record.researchStage || '',
+              recommendedKeep: index === 0,
+            })),
+          });
+        }
+        pendingGroup = [];
+      };
+
+      while (duplicateGroups.length < maxGroups) {
+        let queryRef: FirebaseFirestore.Query = db
+          .collection(activeIndexCollection)
+          .orderBy('normalizedCompanyName')
+          .orderBy(FieldPath.documentId());
+        if (lastDoc) queryRef = queryRef.startAfter(lastDoc);
+        const snapshot = await queryRef.limit(2500).get();
+        if (snapshot.empty) break;
+
+        for (const indexDoc of snapshot.docs) {
+          const record = indexDoc.data();
+          if (!['leads', 'partners'].includes(String(record.sourceCollection || ''))) continue;
+          const normalizedCompanyName = String(record.normalizedCompanyName || '').trim();
+          if (!normalizedCompanyName) continue;
+          const indexedRecord = { ...record, indexId: indexDoc.id };
+          if (pendingGroup.length === 0 || pendingGroup[0].normalizedCompanyName === normalizedCompanyName) {
+            pendingGroup.push(indexedRecord);
+          } else {
+            addPendingGroup();
+            if (duplicateGroups.length >= maxGroups) break;
+            pendingGroup = [indexedRecord];
+          }
+        }
+
+        scanned += snapshot.size;
+        lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        if (snapshot.size < 2500 || duplicateGroups.length >= maxGroups) break;
+      }
+      if (duplicateGroups.length < maxGroups) addPendingGroup();
+
+      const recommendedDeleteCount = duplicateGroups.reduce(
+        (count, group) => count + Math.max(0, group.records.length - 1),
+        0
+      );
+      return NextResponse.json({
+        success: true,
+        data: duplicateGroups,
+        scanned,
+        recommendedDeleteCount,
+        truncated: duplicateGroups.length >= maxGroups,
+      }, { status: 200 });
+    }
+
+    if (action === 'deleteRegistryDuplicates') {
+      const groups = Array.isArray(resolvedPayload?.groups) ? resolvedPayload.groups.slice(0, 500) : [];
+      if (groups.length === 0) {
+        return NextResponse.json({ success: false, error: 'No duplicate groups were selected.' }, { status: 400 });
+      }
+
+      const activeIndexCollection = await getActiveRegistryIndexCollection(db);
+      const indexWriteCollections = await getRegistryIndexWriteCollections(db);
+      const writer = db.bulkWriter();
+      writer.onWriteError(error => error.failedAttempts < 3);
+      let deletedCount = 0;
+      let skippedCount = 0;
+      const duplicateIdentity = (record: Record<string, any>) => {
+        let domain = '';
+        try {
+          const rawWebsite = String(record.website || '').trim();
+          if (rawWebsite) {
+            const parsed = new URL(/^https?:\/\//i.test(rawWebsite) ? rawWebsite : `https://${rawWebsite}`);
+            domain = parsed.hostname.toLowerCase().replace(/^www\./, '');
+          }
+        } catch {
+          domain = '';
+        }
+        return {
+          sourceId: String(record.sourceId || '').trim(),
+          domain,
+          email: String(record.email || record.marketingManager?.email || '').trim().toLowerCase(),
+          phone: String(record.phone || record.mobile || '').replace(/\D/g, ''),
+        };
+      };
+      const hasStrongDuplicateEvidence = (left: Record<string, any>, right: Record<string, any>) => {
+        const a = duplicateIdentity(left);
+        const b = duplicateIdentity(right);
+        return (
+          Boolean(a.sourceId && a.sourceId === b.sourceId) ||
+          Boolean(a.domain && a.domain === b.domain) ||
+          Boolean(a.email && a.email === b.email) ||
+          Boolean(a.phone.length >= 7 && a.phone === b.phone)
+        );
+      };
+
+      for (const group of groups) {
+        const keepIndexId = String(group?.keepIndexId || '').trim();
+        const deleteIndexIds = Array.isArray(group?.deleteIndexIds)
+          ? group.deleteIndexIds.map((value: any) => String(value || '').trim()).filter(Boolean)
+          : [];
+        if (!keepIndexId || deleteIndexIds.length === 0 || deleteIndexIds.includes(keepIndexId)) {
+          skippedCount += deleteIndexIds.length;
+          continue;
+        }
+
+        const refs = [keepIndexId, ...deleteIndexIds].map(indexId =>
+          db.collection(activeIndexCollection).doc(indexId)
+        );
+        const snapshots = await db.getAll(...refs);
+        const keeper = snapshots[0];
+        if (!keeper.exists) {
+          skippedCount += deleteIndexIds.length;
+          continue;
+        }
+        const keeperData = keeper.data() || {};
+        const groupKey = String(keeperData.normalizedCompanyName || '');
+
+        for (let index = 1; index < snapshots.length; index += 1) {
+          const candidate = snapshots[index];
+          const candidateData = candidate.data() || {};
+          const sourceCollection = String(candidateData.sourceCollection || '');
+          const sourceId = String(candidateData.sourceId || '');
+          const isSafeDuplicate =
+            candidate.exists &&
+            groupKey &&
+            candidateData.normalizedCompanyName === groupKey &&
+            hasStrongDuplicateEvidence(keeperData, candidateData) &&
+            ['leads', 'partners'].includes(sourceCollection) &&
+            sourceId;
+          if (!isSafeDuplicate) {
+            skippedCount += 1;
+            continue;
+          }
+
+          writer.delete(db.collection(sourceCollection).doc(sourceId));
+          for (const indexCollection of indexWriteCollections) {
+            writer.delete(db.collection(indexCollection).doc(candidate.id));
+          }
+          deletedCount += 1;
+        }
+      }
+
+      await writer.close();
+      return NextResponse.json({
+        success: true,
+        deletedCount,
+        skippedCount,
+        message: `Deleted ${deletedCount} redundant registry record${deletedCount === 1 ? '' : 's'}.`,
       }, { status: 200 });
     }
 

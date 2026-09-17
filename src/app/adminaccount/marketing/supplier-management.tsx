@@ -317,11 +317,17 @@ export default function SupplierManagement() {
   const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
   const [totalCount, setTotalCount] = useState(0);
   const [pageIndex, setPageIndex] = useState(0);
-  const [pageSize, setPageSize] = useState(100);
+  const [pageSize, setPageSize] = useState(25);
   const [indexReady, setIndexReady] = useState(false);
   const [indexFacets, setIndexFacets] = useState<{ categories: string[]; tags: string[] }>({ categories: [], tags: [] });
   const [isRebuildingIndex, setIsRebuildingIndex] = useState(false);
   const [rebuildProgress, setRebuildProgress] = useState(0);
+  const [duplicateGroups, setDuplicateGroups] = useState<any[]>([]);
+  const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
+  const [isScanningDuplicates, setIsScanningDuplicates] = useState(false);
+  const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
+  const [selectRecommendedDuplicates, setSelectRecommendedDuplicates] = useState(true);
+  const [duplicateScanTruncated, setDuplicateScanTruncated] = useState(false);
   const pageCursorsRef = useRef<Record<number, any>>({ 0: null });
   const requestIdRef = useRef(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -639,6 +645,61 @@ export default function SupplierManagement() {
     }
   }
 
+  async function handleFindDuplicates() {
+    setIsScanningDuplicates(true);
+    try {
+      const token = await getClientSideAuthToken();
+      if (!token) throw new Error('Authentication failed.');
+      const result: any = await performAdminAction(token, 'findRegistryDuplicates', { maxGroups: 50 });
+      const groups = result.data || [];
+      setDuplicateGroups(groups);
+      setDuplicateScanTruncated(Boolean(result.truncated));
+      setSelectRecommendedDuplicates(true);
+      if (groups.length === 0) {
+        toast({ title: 'No exact duplicates found' });
+        return;
+      }
+      setIsDuplicateDialogOpen(true);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Duplicate scan failed', description: e.message });
+    } finally {
+      setIsScanningDuplicates(false);
+    }
+  }
+
+  async function handleDeleteRecommendedDuplicates() {
+    if (!selectRecommendedDuplicates) {
+      toast({ title: 'Select the recommended duplicates before deleting.' });
+      return;
+    }
+    const deletionGroups = duplicateGroups.map(group => ({
+      keepIndexId: group.keepIndexId,
+      deleteIndexIds: group.records
+        .filter((record: any) => !record.recommendedKeep)
+        .map((record: any) => record.indexId),
+    }));
+    const deleteCount = deletionGroups.reduce((count, group) => count + group.deleteIndexIds.length, 0);
+    if (deleteCount === 0) return;
+    if (!window.confirm(`Permanently delete ${deleteCount.toLocaleString()} automatically selected duplicate record(s)? The recommended keeper in each group will remain.`)) {
+      return;
+    }
+
+    setIsDeletingDuplicates(true);
+    try {
+      const token = await getClientSideAuthToken();
+      if (!token) throw new Error('Authentication failed.');
+      const result: any = await performAdminAction(token, 'deleteRegistryDuplicates', { groups: deletionGroups });
+      toast({ title: 'Duplicates deleted', description: result.message });
+      setIsDuplicateDialogOpen(false);
+      setDuplicateGroups([]);
+      refreshRegistry();
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Duplicate deletion failed', description: e.message });
+    } finally {
+      setIsDeletingDuplicates(false);
+    }
+  }
+
   return (
     <div className="space-y-6 text-left text-foreground">
       <EngageDialog open={dialog.type === 'engage'} onOpenChange={(o) => !o && setDialog({ type: null })} partners={dialog.data || []} initialIndex={dialog.initialIndex} audience="suppliers" onEngageSuccess={refreshRegistry} />
@@ -652,6 +713,65 @@ export default function SupplierManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <Dialog open={isDuplicateDialogOpen} onOpenChange={setIsDuplicateDialogOpen}>
+        <DialogContent className="max-w-5xl text-left text-foreground">
+          <DialogHeader>
+            <DialogTitle>Supplier Registry Duplicate Cleaner</DialogTitle>
+            <DialogDescription>
+              Found {duplicateGroups.length.toLocaleString()} exact company-name duplicate group(s).
+              The strongest record in each group is marked to keep; redundant copies can be selected together.
+              {duplicateScanTruncated ? ' This review is limited to 50 groups; run the scan again after deletion for the next batch.' : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border bg-muted/30 p-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <Checkbox
+                checked={selectRecommendedDuplicates}
+                onCheckedChange={(checked) => setSelectRecommendedDuplicates(Boolean(checked))}
+              />
+              <span>
+                <span className="block font-bold">Select all recommended duplicate copies</span>
+                <span className="text-sm text-muted-foreground">
+                  {duplicateGroups.reduce((count, group) => count + Math.max(0, group.records.length - 1), 0).toLocaleString()} redundant record(s) will be selected without scrolling through the registry.
+                </span>
+              </span>
+            </label>
+          </div>
+          <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-2">
+            {duplicateGroups.map(group => (
+              <Card key={group.key}>
+                <CardHeader className="py-3">
+                  <CardTitle className="text-base">{group.companyName || group.key}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 pb-3">
+                  {group.records.map((record: any) => (
+                    <div key={record.indexId} className="flex items-start gap-3 rounded border p-2 text-sm">
+                      {record.recommendedKeep
+                        ? <ShieldCheck className="h-4 w-4 mt-0.5 text-green-600" />
+                        : <Checkbox checked={selectRecommendedDuplicates} disabled />}
+                      <div className="min-w-0">
+                        <div className="font-semibold">
+                          {record.recommendedKeep ? 'KEEP' : 'DELETE'} · {record.sourceCollection} · {record.id}
+                        </div>
+                        <div className="text-muted-foreground truncate">
+                          {record.contactPerson || 'No contact'} · {record.email || 'No email'} · {record.website || 'No website'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDuplicateDialogOpen(false)} disabled={isDeletingDuplicates}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteRecommendedDuplicates} disabled={!selectRecommendedDuplicates || isDeletingDuplicates}>
+              {isDeletingDuplicates ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Delete Selected Duplicates
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="space-y-6 text-left text-foreground">
           <CardHeader className="px-0 pt-0 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-left">
@@ -670,6 +790,10 @@ export default function SupplierManagement() {
                   <Button variant="outline" size="sm" onClick={handleRebuildIndex} disabled={isRebuildingIndex} className="text-foreground">
                     {isRebuildingIndex ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Database className="h-4 w-4 mr-2" />}
                     {isRebuildingIndex ? `Indexing ${rebuildProgress.toLocaleString()}...` : 'Rebuild Index'}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleFindDuplicates} disabled={isScanningDuplicates} className="text-foreground">
+                    {isScanningDuplicates ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
+                    {isScanningDuplicates ? 'Scanning...' : 'Find Duplicates'}
                   </Button>
                   <Button variant="outline" size="sm" onClick={handleClassifyGaps} disabled={isClassifying} className="text-foreground"><Wrench className="h-4 w-4 mr-2" /> {isClassifying ? 'Checking...' : 'Review Classification Gaps'}</Button>
                   <Popover>
