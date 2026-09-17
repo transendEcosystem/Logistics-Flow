@@ -326,6 +326,7 @@ export default function SupplierManagement() {
   const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
   const [isScanningDuplicates, setIsScanningDuplicates] = useState(false);
   const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
+  const [duplicateCleanupProgress, setDuplicateCleanupProgress] = useState({ deleted: 0, batches: 0 });
   const [selectRecommendedDuplicates, setSelectRecommendedDuplicates] = useState(true);
   const [duplicateScanTruncated, setDuplicateScanTruncated] = useState(false);
   const [duplicateScanScope, setDuplicateScanScope] = useState<{ registryType: string; searchTerm: string }>({
@@ -654,9 +655,7 @@ export default function SupplierManagement() {
     try {
       const token = await getClientSideAuthToken();
       if (!token) throw new Error('Authentication failed.');
-      const searchType = appliedSearchTerm && registryTypeFilter === 'supplier'
-        ? 'all'
-        : registryTypeFilter;
+      const searchType = 'all';
       const result: any = await performAdminAction(token, 'findRegistryDuplicates', {
         maxGroups: 50,
         type: searchType,
@@ -687,29 +686,78 @@ export default function SupplierManagement() {
       toast({ title: 'Select the recommended duplicates before deleting.' });
       return;
     }
-    const deletionGroups = duplicateGroups.map(group => ({
-      keepIndexId: group.keepIndexId,
-      deleteIndexIds: group.records
-        .filter((record: any) => !record.recommendedKeep)
-        .map((record: any) => record.indexId),
-    }));
-    const deleteCount = deletionGroups.reduce((count, group) => count + group.deleteIndexIds.length, 0);
-    if (deleteCount === 0) return;
-    if (!window.confirm(`Permanently delete ${deleteCount.toLocaleString()} automatically selected duplicate record(s)? The recommended keeper in each group will remain.`)) {
+    const isFullRegistryCleanup = duplicateScanScope.registryType === 'all' && !duplicateScanScope.searchTerm;
+    const initialDeleteCount = duplicateGroups.reduce(
+      (count, group) => count + group.records.filter((record: any) => record.recommendedDelete).length,
+      0
+    );
+    if (initialDeleteCount === 0) return;
+    const confirmationMessage = isFullRegistryCleanup
+      ? 'Clean the entire registry now? This will repeatedly scan every registry classification and permanently delete every safely verified duplicate in automatic batches. The strongest record in each group will remain.'
+      : `Permanently delete all safely verified duplicates matching this review scope? The recommended keeper in each group will remain.`;
+    if (!window.confirm(confirmationMessage)) {
       return;
     }
 
     setIsDeletingDuplicates(true);
+    setDuplicateCleanupProgress({ deleted: 0, batches: 0 });
+    let deletedCount = 0;
+    let skippedCount = 0;
+    let batchCount = 0;
     try {
       const token = await getClientSideAuthToken();
       if (!token) throw new Error('Authentication failed.');
-      const result: any = await performAdminAction(token, 'deleteRegistryDuplicates', { groups: deletionGroups });
-      toast({ title: 'Duplicates deleted', description: result.message });
+      let groups = duplicateGroups;
+
+      while (groups.length > 0) {
+        if (batchCount >= 200) {
+          throw new Error(`Cleanup stopped after 200 batches and ${deletedCount.toLocaleString()} deletions to prevent an endless process.`);
+        }
+        const deletionGroups = groups.map(group => ({
+          keepIndexId: group.keepIndexId,
+          evidenceIndexIds: group.records.map((record: any) => record.indexId),
+          deleteIndexIds: group.records
+            .filter((record: any) => record.recommendedDelete)
+            .map((record: any) => record.indexId),
+        })).filter(group => group.deleteIndexIds.length > 0);
+        if (deletionGroups.length === 0) break;
+
+        const deleteResult: any = await performAdminAction(token, 'deleteRegistryDuplicates', { groups: deletionGroups });
+        const batchDeleted = Number(deleteResult.deletedCount || 0);
+        const batchSkipped = Number(deleteResult.skippedCount || 0);
+        deletedCount += batchDeleted;
+        skippedCount += batchSkipped;
+        batchCount += 1;
+        setDuplicateCleanupProgress({ deleted: deletedCount, batches: batchCount });
+
+        if (batchDeleted === 0) {
+          throw new Error(`Cleanup stopped safely because a batch could not delete any records. ${skippedCount.toLocaleString()} record(s) were skipped because their duplicate evidence changed.`);
+        }
+
+        const scanResult: any = await performAdminAction(token, 'findRegistryDuplicates', {
+          maxGroups: 500,
+          type: duplicateScanScope.registryType,
+          term: duplicateScanScope.searchTerm,
+        });
+        groups = Array.isArray(scanResult.data) ? scanResult.data : [];
+      }
+
+      toast({
+        title: isFullRegistryCleanup ? 'Entire registry cleaned' : 'Duplicates deleted',
+        description: `Deleted ${deletedCount.toLocaleString()} safely verified duplicate record(s) across ${batchCount.toLocaleString()} batch(es).${skippedCount > 0 ? ` Skipped ${skippedCount.toLocaleString()} changed record(s).` : ''}`,
+      });
       setIsDuplicateDialogOpen(false);
       setDuplicateGroups([]);
       refreshRegistry();
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Duplicate deletion failed', description: e.message });
+      toast({
+        variant: 'destructive',
+        title: 'Registry cleanup stopped',
+        description: `${e.message}${deletedCount > 0 ? ` ${deletedCount.toLocaleString()} duplicate record(s) were deleted before the interruption.` : ''}`,
+      });
+      setIsDuplicateDialogOpen(false);
+      setDuplicateGroups([]);
+      refreshRegistry();
     } finally {
       setIsDeletingDuplicates(false);
     }
@@ -728,7 +776,12 @@ export default function SupplierManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <Dialog open={isDuplicateDialogOpen} onOpenChange={setIsDuplicateDialogOpen}>
+      <Dialog
+        open={isDuplicateDialogOpen}
+        onOpenChange={(open) => {
+          if (!isDeletingDuplicates) setIsDuplicateDialogOpen(open);
+        }}
+      >
         <DialogContent className="max-w-5xl text-left text-foreground">
           <DialogHeader>
             <DialogTitle>Registry Duplicate Cleaner</DialogTitle>
@@ -738,7 +791,7 @@ export default function SupplierManagement() {
                 ? ` matching "${duplicateScanScope.searchTerm}" ${duplicateScanScope.registryType === 'all' ? 'across all registry classifications' : `in the ${duplicateScanScope.registryType} registry`}`
                 : ` in the ${duplicateScanScope.registryType} registry`}.
               The strongest record in each group is marked to keep; redundant copies can be selected together.
-              {duplicateScanTruncated ? ' This is only the first batch of 50 groups, not the complete registry. Delete this batch and scan again to continue.' : ''}
+              {duplicateScanTruncated ? ' The preview shows the first 50 groups. One cleanup action will continue automatically through the complete registry.' : ''}
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border bg-muted/30 p-4">
@@ -750,7 +803,7 @@ export default function SupplierManagement() {
               <span>
                 <span className="block font-bold">Select all recommended duplicate copies</span>
                 <span className="text-sm text-muted-foreground">
-                  {duplicateGroups.reduce((count, group) => count + Math.max(0, group.records.length - 1), 0).toLocaleString()} redundant record(s) will be selected without scrolling through the registry.
+                  {duplicateGroups.reduce((count, group) => count + group.records.filter((record: any) => record.recommendedDelete).length, 0).toLocaleString()} redundant record(s) will be selected without scrolling through the registry.
                 </span>
               </span>
             </label>
@@ -764,12 +817,12 @@ export default function SupplierManagement() {
                 <CardContent className="space-y-2 pb-3">
                   {group.records.map((record: any) => (
                     <div key={record.indexId} className="flex items-start gap-3 rounded border p-2 text-sm">
-                      {record.recommendedKeep
-                        ? <ShieldCheck className="h-4 w-4 mt-0.5 text-green-600" />
-                        : <Checkbox checked={selectRecommendedDuplicates} disabled />}
+                      {record.recommendedDelete
+                        ? <Checkbox checked={selectRecommendedDuplicates} disabled />
+                        : <ShieldCheck className="h-4 w-4 mt-0.5 text-green-600" />}
                       <div className="min-w-0">
                         <div className="font-semibold">
-                          {record.recommendedKeep ? 'KEEP' : 'DELETE'} · {record.registryType} · {record.sourceCollection} · {record.id}
+                          {record.recommendedDelete ? 'DELETE' : 'KEEP'} · {record.registryType} · {record.sourceCollection} · {record.id}
                         </div>
                         <div className="text-muted-foreground truncate">
                           {record.contactPerson || 'No contact'} · {record.email || 'No email'} · {record.website || 'No website'}
@@ -785,7 +838,11 @@ export default function SupplierManagement() {
             <Button variant="outline" onClick={() => setIsDuplicateDialogOpen(false)} disabled={isDeletingDuplicates}>Cancel</Button>
             <Button variant="destructive" onClick={handleDeleteRecommendedDuplicates} disabled={!selectRecommendedDuplicates || isDeletingDuplicates}>
               {isDeletingDuplicates ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-              Delete Selected Duplicates
+              {isDeletingDuplicates
+                ? `Cleaning batch ${duplicateCleanupProgress.batches + 1} · ${duplicateCleanupProgress.deleted.toLocaleString()} deleted`
+                : duplicateScanScope.registryType === 'all' && !duplicateScanScope.searchTerm
+                  ? 'Clean Entire Registry'
+                  : 'Delete All Matching Duplicates'}
             </Button>
           </DialogFooter>
         </DialogContent>
