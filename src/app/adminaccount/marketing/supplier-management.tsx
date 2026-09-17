@@ -348,9 +348,12 @@ export default function SupplierManagement() {
     try {
       const token = await getClientSideAuthToken();
       if (!token) throw new Error('Authentication failed.');
+      const searchType = appliedSearchTerm && registryTypeFilter === 'supplier'
+        ? 'all'
+        : registryTypeFilter;
 
       const res: any = await performAdminAction(token, 'getRegistryIndexPage', {
-        type: registryTypeFilter,
+        type: searchType,
         term: appliedSearchTerm,
         status: statusFilter,
         category: categoryFilter,
@@ -656,7 +659,9 @@ export default function SupplierManagement() {
                 <CardTitle className="flex items-center gap-2 text-2xl font-black font-headline text-left text-foreground"><Building className="h-6 w-6" /> Supplier Registry</CardTitle>
                 <CardDescription className="text-left text-muted-foreground">
                   {indexReady
-                    ? `${registryTypeFilter === 'supplier' ? 'Supplier' : 'Unclassified'} index (${totalCount.toLocaleString()} records).`
+                    ? appliedSearchTerm && registryTypeFilter === 'supplier'
+                      ? `All-register search (${totalCount.toLocaleString()} results).`
+                      : `${registryTypeFilter === 'supplier' ? 'Supplier' : 'Unclassified'} index (${totalCount.toLocaleString()} records).`
                     : 'Registry index setup is required. Use Rebuild Index to populate it.'}
                 </CardDescription>
               </div>
@@ -751,7 +756,7 @@ export default function SupplierManagement() {
                         <div className="flex-1 space-y-1 text-left text-foreground">
                             <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5 text-left"><Search className="h-3 w-3"/> Search Registry</Label>
                             <Input
-                              placeholder="Search company name..."
+                              placeholder="Search all company records..."
                               value={searchTerm}
                               onChange={e => setSearchTerm(e.target.value)}
                               onKeyDown={e => {
