@@ -328,6 +328,10 @@ export default function SupplierManagement() {
   const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
   const [selectRecommendedDuplicates, setSelectRecommendedDuplicates] = useState(true);
   const [duplicateScanTruncated, setDuplicateScanTruncated] = useState(false);
+  const [duplicateScanScope, setDuplicateScanScope] = useState<{ registryType: string; searchTerm: string }>({
+    registryType: 'supplier',
+    searchTerm: '',
+  });
   const pageCursorsRef = useRef<Record<number, any>>({ 0: null });
   const requestIdRef = useRef(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -650,10 +654,21 @@ export default function SupplierManagement() {
     try {
       const token = await getClientSideAuthToken();
       if (!token) throw new Error('Authentication failed.');
-      const result: any = await performAdminAction(token, 'findRegistryDuplicates', { maxGroups: 50 });
+      const searchType = appliedSearchTerm && registryTypeFilter === 'supplier'
+        ? 'all'
+        : registryTypeFilter;
+      const result: any = await performAdminAction(token, 'findRegistryDuplicates', {
+        maxGroups: 50,
+        type: searchType,
+        term: appliedSearchTerm,
+      });
       const groups = result.data || [];
       setDuplicateGroups(groups);
       setDuplicateScanTruncated(Boolean(result.truncated));
+      setDuplicateScanScope({
+        registryType: String(result.scope?.registryType || searchType),
+        searchTerm: String(result.scope?.searchTerm || appliedSearchTerm),
+      });
       setSelectRecommendedDuplicates(true);
       if (groups.length === 0) {
         toast({ title: 'No exact duplicates found' });
@@ -716,11 +731,14 @@ export default function SupplierManagement() {
       <Dialog open={isDuplicateDialogOpen} onOpenChange={setIsDuplicateDialogOpen}>
         <DialogContent className="max-w-5xl text-left text-foreground">
           <DialogHeader>
-            <DialogTitle>Supplier Registry Duplicate Cleaner</DialogTitle>
+            <DialogTitle>Registry Duplicate Cleaner</DialogTitle>
             <DialogDescription>
-              Found {duplicateGroups.length.toLocaleString()} exact company-name duplicate group(s).
+              Found {duplicateGroups.length.toLocaleString()} exact company-name duplicate group(s)
+              {duplicateScanScope.searchTerm
+                ? ` matching "${duplicateScanScope.searchTerm}" ${duplicateScanScope.registryType === 'all' ? 'across all registry classifications' : `in the ${duplicateScanScope.registryType} registry`}`
+                : ` in the ${duplicateScanScope.registryType} registry`}.
               The strongest record in each group is marked to keep; redundant copies can be selected together.
-              {duplicateScanTruncated ? ' This review is limited to 50 groups; run the scan again after deletion for the next batch.' : ''}
+              {duplicateScanTruncated ? ' This is only the first batch of 50 groups, not the complete registry. Delete this batch and scan again to continue.' : ''}
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border bg-muted/30 p-4">
@@ -751,7 +769,7 @@ export default function SupplierManagement() {
                         : <Checkbox checked={selectRecommendedDuplicates} disabled />}
                       <div className="min-w-0">
                         <div className="font-semibold">
-                          {record.recommendedKeep ? 'KEEP' : 'DELETE'} · {record.sourceCollection} · {record.id}
+                          {record.recommendedKeep ? 'KEEP' : 'DELETE'} · {record.registryType} · {record.sourceCollection} · {record.id}
                         </div>
                         <div className="text-muted-foreground truncate">
                           {record.contactPerson || 'No contact'} · {record.email || 'No email'} · {record.website || 'No website'}
@@ -793,7 +811,7 @@ export default function SupplierManagement() {
                   </Button>
                   <Button variant="outline" size="sm" onClick={handleFindDuplicates} disabled={isScanningDuplicates} className="text-foreground">
                     {isScanningDuplicates ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
-                    {isScanningDuplicates ? 'Scanning...' : 'Find Duplicates'}
+                    {isScanningDuplicates ? 'Scanning...' : appliedSearchTerm ? 'Find Duplicates in Search' : 'Find Duplicates'}
                   </Button>
                   <Button variant="outline" size="sm" onClick={handleClassifyGaps} disabled={isClassifying} className="text-foreground"><Wrench className="h-4 w-4 mr-2" /> {isClassifying ? 'Checking...' : 'Review Classification Gaps'}</Button>
                   <Popover>

@@ -2573,6 +2573,8 @@ export async function POST(request: Request) {
     if (action === 'findRegistryDuplicates') {
       const activeIndexCollection = await getActiveRegistryIndexCollection(db);
       const maxGroups = Math.min(Math.max(Number(resolvedPayload?.maxGroups || 500), 25), 500);
+      const registryType = String(resolvedPayload?.type || 'all').trim().toLowerCase();
+      const searchTerm = normalizeRegistryIndexText(resolvedPayload?.term);
       const duplicateGroups: any[] = [];
       let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
       let pendingGroup: any[] = [];
@@ -2647,6 +2649,7 @@ export async function POST(request: Request) {
               indexId: record.indexId,
               id: record.sourceId,
               sourceCollection: record.sourceCollection,
+              registryType: record.registryType || 'unclassified',
               companyName: record.companyName,
               contactPerson: record.contactPerson || `${record.firstName || ''} ${record.lastName || ''}`.trim(),
               email: record.email || record.marketingManager?.email || '',
@@ -2662,11 +2665,21 @@ export async function POST(request: Request) {
       };
 
       while (duplicateGroups.length < maxGroups) {
-        let queryRef: FirebaseFirestore.Query = db
-          .collection(activeIndexCollection)
+        let queryRef: FirebaseFirestore.Query = db.collection(activeIndexCollection);
+        if (registryType !== 'all') {
+          queryRef = queryRef.where('registryType', '==', registryType);
+        }
+        queryRef = queryRef
           .orderBy('normalizedCompanyName')
           .orderBy(FieldPath.documentId());
-        if (lastDoc) queryRef = queryRef.startAfter(lastDoc);
+        if (lastDoc) {
+          queryRef = queryRef.startAfter(lastDoc);
+        } else if (searchTerm) {
+          queryRef = queryRef.startAt(searchTerm);
+        }
+        if (searchTerm) {
+          queryRef = queryRef.endAt(`${searchTerm}\uf8ff`);
+        }
         const snapshot = await queryRef.limit(2500).get();
         if (snapshot.empty) break;
 
@@ -2701,6 +2714,10 @@ export async function POST(request: Request) {
         scanned,
         recommendedDeleteCount,
         truncated: duplicateGroups.length >= maxGroups,
+        scope: {
+          registryType,
+          searchTerm,
+        },
       }, { status: 200 });
     }
 
@@ -2797,7 +2814,10 @@ export async function POST(request: Request) {
         success: true,
         deletedCount,
         skippedCount,
-        message: `Deleted ${deletedCount} redundant registry record${deletedCount === 1 ? '' : 's'}.`,
+        message: [
+          `Deleted ${deletedCount} redundant registry record${deletedCount === 1 ? '' : 's'}.`,
+          skippedCount > 0 ? `${skippedCount} record${skippedCount === 1 ? ' was' : 's were'} skipped because the duplicate evidence changed.` : '',
+        ].filter(Boolean).join(' '),
       }, { status: 200 });
     }
 
