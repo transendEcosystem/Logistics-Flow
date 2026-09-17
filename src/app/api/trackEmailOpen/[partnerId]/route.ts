@@ -3,6 +3,8 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminApp } from '@/lib/firebase-admin';
 import { APP_BASE_URL } from '@/lib/app-url';
+import { normalizeEngagementContentType } from '@/lib/engagement-content';
+import { syncRegistryIndexDocument } from '@/lib/registry-index';
 
 /**
  * Behind App Hosting the request URL is the container's internal address
@@ -30,6 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: { partnerId: s
   const campaignId = searchParams.get('campaignId');
   const advertiserId = searchParams.get('advertiserId');
   const dest = searchParams.get('dest'); // Support for redirect after tracking
+  const contentType = normalizeEngagementContentType(searchParams.get('contentType'));
   
   const { app } = getAdminApp();
 
@@ -37,6 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: { partnerId: s
     try {
         const db = getFirestore(app);
         const batch = db.batch();
+        let indexSyncTargets: Array<{ collection: string; id: string }> = [];
 
         let entityName = 'Anonymous Entity';
         
@@ -93,7 +97,15 @@ export async function GET(req: NextRequest, { params }: { params: { partnerId: s
             const fieldToUpdate = source === 'app' ? 'lastAccessedAt' : 'lastOpenedAt';
             const actionLabel = source === 'app' ? 'landing_page_accessed' : 'email_opened';
             
-            const update = { [fieldToUpdate]: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() };
+            const update = {
+                [fieldToUpdate]: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+                ...(contentType
+                    ? {
+                        [source === 'app' ? 'clickedContentTypes' : 'openedContentTypes']: FieldValue.arrayUnion(contentType),
+                    }
+                    : {}),
+            };
 
             const trackedCollections = [
                 'partners',
@@ -114,6 +126,7 @@ export async function GET(req: NextRequest, { params }: { params: { partnerId: s
             snapshots.forEach((snapshot, index) => {
                 if (snapshot.exists) {
                     batch.set(refs[index], update, { merge: true });
+                    indexSyncTargets.push({ collection: trackedCollections[index], id: viewerId });
                 }
             });
 
@@ -124,11 +137,14 @@ export async function GET(req: NextRequest, { params }: { params: { partnerId: s
                 companyId: viewerId,
                 companyName: entityName,
                 timestamp: FieldValue.serverTimestamp(),
-                metadata: { source, partnerId: viewerId }
+                metadata: { source, partnerId: viewerId, contentType: contentType || null }
             });
         }
 
         await batch.commit();
+        await Promise.all(indexSyncTargets.map(target =>
+            syncRegistryIndexDocument(db, target.collection, target.id)
+        ));
         
     } catch (e) {
         console.error("Tracking failure:", e);

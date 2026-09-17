@@ -1,8 +1,13 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
+import {
+  CORE_OUTREACH_CONTENT_TYPES,
+  normalizeEngagementContentType,
+} from '@/lib/engagement-content';
 
 export const REGISTRY_INDEX_COLLECTIONS = ['registry_index_a', 'registry_index_b'] as const;
 export const REGISTRY_INDEX_META_COLLECTION = 'registry_index_meta';
 export const REGISTRY_INDEX_META_DOCUMENT = 'current';
+export const REGISTRY_INDEX_SCHEMA_VERSION = 2;
 
 export const REGISTRY_SOURCE_COLLECTIONS = [
   'suppliers',
@@ -95,6 +100,13 @@ const INDEX_FIELDS = [
   'lastOutreachSubject',
   'lastOutreachAt',
   'lastOutreachChannel',
+  'lastEngagementType',
+  'lastEngagementLabel',
+  'lastEngagementAt',
+  'lastEngagementChannel',
+  'sentContentTypes',
+  'openedContentTypes',
+  'clickedContentTypes',
   'lastOpenedAt',
   'lastAccessedAt',
   'lastOutcome',
@@ -176,17 +188,30 @@ function normalizedTags(data: Record<string, any>): string[] {
   return Array.from(new Set(values.map(normalizeRegistryIndexText).filter(Boolean))).slice(0, 20);
 }
 
+function registryTimestampMillis(value: any): number {
+  if (!value) return 0;
+  if (typeof value?.toMillis === 'function') return value.toMillis();
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function buildRegistryFilterKey(filters: {
   status?: unknown;
   category?: unknown;
   assignee?: unknown;
   tag?: unknown;
+  engagement?: unknown;
+  content?: unknown;
+  result?: unknown;
 }): string {
   const parts = [
     filters.status ? `s:${normalizeRegistryIndexText(filters.status)}` : '',
     filters.category ? `c:${normalizeRegistryIndexText(filters.category)}` : '',
     filters.assignee ? `a:${normalizeRegistryIndexText(filters.assignee)}` : '',
     filters.tag ? `t:${normalizeRegistryIndexText(filters.tag)}` : '',
+    filters.engagement ? `e:${normalizeRegistryIndexText(filters.engagement)}` : '',
+    filters.content ? `d:${normalizeRegistryIndexText(filters.content)}` : '',
+    filters.result ? `r:${normalizeRegistryIndexText(filters.result)}` : '',
   ].filter(Boolean);
   return parts.join('|');
 }
@@ -195,31 +220,40 @@ function buildRegistryFilterKeys(
   statusKey: string,
   categoryKey: string,
   assigneeKey: string,
-  tagKeys: string[]
+  tagKeys: string[],
+  engagementKey: string,
+  contentKeys: string[],
+  resultKey: string
 ): string[] {
   const keys = new Set<string>();
-  const dimensions = [
+  const baseDimensions = [
     { name: 'status', value: statusKey },
     { name: 'category', value: categoryKey },
     { name: 'assignee', value: assigneeKey },
+    { name: 'engagement', value: engagementKey },
+    { name: 'result', value: resultKey },
   ];
 
-  for (let mask = 1; mask < (1 << dimensions.length); mask += 1) {
-    const filters: Record<string, string> = {};
-    dimensions.forEach((dimension, index) => {
-      if (mask & (1 << index)) filters[dimension.name] = dimension.value;
-    });
-    keys.add(buildRegistryFilterKey(filters));
-  }
-
-  for (const tag of tagKeys) {
-    keys.add(buildRegistryFilterKey({ tag }));
+  const contentValues = Array.from(new Set(['', ...contentKeys]));
+  for (const content of contentValues) {
+    const dimensions = [...baseDimensions, ...(content ? [{ name: 'content', value: content }] : [])];
     for (let mask = 1; mask < (1 << dimensions.length); mask += 1) {
-      const filters: Record<string, string> = { tag };
+      const filters: Record<string, string> = {};
       dimensions.forEach((dimension, index) => {
         if (mask & (1 << index)) filters[dimension.name] = dimension.value;
       });
       keys.add(buildRegistryFilterKey(filters));
+    }
+
+    for (const tag of tagKeys) {
+      keys.add(buildRegistryFilterKey({ tag, ...(content ? { content } : {}) }));
+      for (let mask = 1; mask < (1 << baseDimensions.length); mask += 1) {
+        const filters: Record<string, string> = { tag, ...(content ? { content } : {}) };
+        baseDimensions.forEach((dimension, index) => {
+          if (mask & (1 << index)) filters[dimension.name] = dimension.value;
+        });
+        keys.add(buildRegistryFilterKey(filters));
+      }
     }
   }
 
@@ -250,12 +284,57 @@ export function buildRegistryIndexRecord(
   const statusKey = normalizeRegistryIndexText(data.status || 'unknown');
   const categoryKey = normalizeRegistryIndexText(category || 'uncategorized');
   const assigneeKey = normalizeRegistryIndexText(data.assigneeId || 'unassigned');
+  const engagementLogs = Array.isArray(data.engagementLogs) ? data.engagementLogs : [];
+  const lastLog = engagementLogs[engagementLogs.length - 1] || {};
+  const deepDiveSubject = normalizeRegistryIndexText(data.commercialProfile?.engagementPack?.emailSubject);
+  const inferLoggedContentType = (log: Record<string, any>) => {
+    const logSubject = normalizeRegistryIndexText(log.subject);
+    return normalizeEngagementContentType(
+      log.contentType || (deepDiveSubject && logSubject === deepDiveSubject ? 'deep-dive-strategy' : ''),
+      log.subject,
+      log.channel
+    );
+  };
+  const lastEngagementType = normalizeEngagementContentType(
+    data.lastEngagementType ||
+      lastLog.contentType ||
+      (deepDiveSubject && normalizeRegistryIndexText(data.lastOutreachSubject) === deepDiveSubject
+        ? 'deep-dive-strategy'
+        : ''),
+    data.lastOutreachSubject || lastLog.subject,
+    data.lastEngagementChannel || data.lastOutreachChannel || lastLog.channel
+  );
+  const sentContentTypes = Array.from(new Set([
+    ...(Array.isArray(data.sentContentTypes) ? data.sentContentTypes : []),
+    ...engagementLogs.map(inferLoggedContentType),
+    lastEngagementType,
+  ].map(type => normalizeEngagementContentType(type)).filter(Boolean)));
+  const coreContentTypes = sentContentTypes.filter(type =>
+    CORE_OUTREACH_CONTENT_TYPES.includes(type as typeof CORE_OUTREACH_CONTENT_TYPES[number])
+  );
+  const coreComplete = CORE_OUTREACH_CONTENT_TYPES.every(type => coreContentTypes.includes(type));
+  const contentKeys = coreContentTypes.length > 0
+    ? [...coreContentTypes, ...(coreComplete ? ['core-complete'] : [])]
+    : ['none'];
+  const engagementKey = lastEngagementType || 'none';
+  const lastEngagementAt = data.lastEngagementAt || data.lastOutreachAt || lastLog.timestamp || null;
+  const engagementAtMillis = registryTimestampMillis(lastEngagementAt);
+  const resultKey = registryTimestampMillis(data.lastOutcomeAt) >= engagementAtMillis && data.lastOutcome
+    ? 'responded'
+    : registryTimestampMillis(data.lastAccessedAt) >= engagementAtMillis && data.lastAccessedAt
+      ? 'clicked'
+      : registryTimestampMillis(data.lastOpenedAt) >= engagementAtMillis && data.lastOpenedAt
+        ? 'opened'
+        : lastEngagementType
+          ? 'sent'
+          : 'none';
 
   return {
     ...projection,
     companyName,
     sourceId,
     sourceCollection,
+    indexSchemaVersion: REGISTRY_INDEX_SCHEMA_VERSION,
     collection: sourceCollection,
     collectionName: sourceCollection,
     registryType: inferRegistryType(sourceCollection, data),
@@ -263,8 +342,22 @@ export function buildRegistryIndexRecord(
     statusKey,
     categoryKey,
     assigneeKey,
+    lastEngagementType: engagementKey,
+    lastEngagementAt,
+    lastEngagementChannel: data.lastEngagementChannel || data.lastOutreachChannel || lastLog.channel || '',
+    sentContentTypes,
+    contentMilestoneKeys: contentKeys,
+    engagementResultKey: resultKey,
     tagKeys: tags,
-    filterKeys: buildRegistryFilterKeys(statusKey, categoryKey, assigneeKey, tags),
+    filterKeys: buildRegistryFilterKeys(
+      statusKey,
+      categoryKey,
+      assigneeKey,
+      tags,
+      engagementKey,
+      contentKeys,
+      resultKey
+    ),
     has_commercialProfile: Boolean(data.commercialProfile),
     has_serviceProfile: Boolean(data.serviceProfile),
     has_contentCorpus: Boolean(data.contentCorpus),

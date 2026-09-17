@@ -203,6 +203,7 @@ function NewEventDialog({ onLogged }: { onLogged: () => void }) {
                 type: channel,
                 subject: outcome,
                 notes,
+                contentType: channel.toLowerCase().includes('call') ? 'call' : channel.toLowerCase().includes('whatsapp') ? 'whatsapp' : 'follow-up',
                 followUpDate: followUpDate || null,
                 stopSequence,
             });
@@ -495,13 +496,19 @@ export default function FollowUpRegister() {
             if (!token) throw new Error('Authentication failed.');
             const prepared = await performAdminAction(token, 'prepareFollowUpMessage', { taskId: task.id });
             const { mailtoLink, whatsappLink } = prepared.data || {};
-            const link = task.contactPhone ? (whatsappLink || mailtoLink) : mailtoLink;
+            const intendedChannel = String(task.actionType || task.lastChannel || 'email').toLowerCase();
+            const useWhatsApp = intendedChannel.includes('whatsapp');
+            const link = useWhatsApp ? whatsappLink : mailtoLink;
             if (!link) {
-                toast({ variant: 'destructive', title: 'No contact channel available', description: 'This record has no email or phone number.' });
+                toast({
+                    variant: 'destructive',
+                    title: `No ${useWhatsApp ? 'WhatsApp number' : 'email address'} available`,
+                    description: 'Update the record or change the follow-up channel before sending.',
+                });
                 return;
             }
             window.open(link, '_blank');
-            await performAdminAction(token, 'updateFollowUpTask', { taskId: task.id, mode: 'sent', channel: task.contactPhone ? 'WhatsApp' : 'Email' });
+            await performAdminAction(token, 'updateFollowUpTask', { taskId: task.id, mode: 'sent', channel: useWhatsApp ? 'WhatsApp' : 'Email' });
             setTasks(prev => prev.filter(t => t.id !== task.id));
             toast({ title: 'Follow-up prepared and sent', description: 'The next follow-up has been scheduled automatically.' });
         } catch (e: any) {
@@ -562,14 +569,19 @@ export default function FollowUpRegister() {
             } else {
                 const prepared = await performAdminAction(token, 'prepareFollowUpMessage', { taskId: task.id });
                 const { mailtoLink, whatsappLink } = prepared.data || {};
-                const link = task.contactPhone ? (whatsappLink || mailtoLink) : mailtoLink;
+                const useWhatsApp = String(task.actionType || task.lastChannel || '').toLowerCase().includes('whatsapp');
+                const link = useWhatsApp ? whatsappLink : mailtoLink;
                 if (!link) {
-                    toast({ variant: 'destructive', title: 'No contact channel available', description: 'Skipping this record.' });
+                    toast({
+                        variant: 'destructive',
+                        title: `No ${useWhatsApp ? 'WhatsApp number' : 'email address'} available`,
+                        description: 'Skipping this record.',
+                    });
                     advanceBatch();
                     return;
                 }
                 window.open(link, '_blank');
-                await performAdminAction(token, 'updateFollowUpTask', { taskId: task.id, mode: 'sent', channel: task.contactPhone ? 'WhatsApp' : 'Email' });
+                await performAdminAction(token, 'updateFollowUpTask', { taskId: task.id, mode: 'sent', channel: useWhatsApp ? 'WhatsApp' : 'Email' });
             }
             setTasks(prev => prev.filter(t => t.id !== task.id));
             advanceBatch();

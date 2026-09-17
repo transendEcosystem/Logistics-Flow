@@ -35,6 +35,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Checkbox } from '@/components/ui/checkbox';
 import { getRegistryCategoryOptions } from '@/lib/registry-category-options';
+import {
+  CORE_OUTREACH_CONTENT_TYPES,
+  ENGAGEMENT_CONTENT_TYPES,
+  engagementContentLabel,
+  normalizeEngagementContentType,
+} from '@/lib/engagement-content';
 
 async function performAdminAction(token: string, action: string, payload: any) {
   const response = await fetch('/api/admin', {
@@ -342,6 +348,9 @@ export default function SupplierManagement() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
+  const [lastEngagementFilter, setLastEngagementFilter] = useState('all');
+  const [contentReceivedFilter, setContentReceivedFilter] = useState('all');
+  const [engagementResultFilter, setEngagementResultFilter] = useState('all');
   const [registryTypeFilter, setRegistryTypeFilter] = useState<'supplier' | 'unclassified'>('supplier');
   const type = 'supplier';
 
@@ -370,6 +379,9 @@ export default function SupplierManagement() {
         category: categoryFilter,
         assigneeId: assigneeFilter,
         tag: tagFilter,
+        engagement: lastEngagementFilter,
+        content: contentReceivedFilter,
+        result: engagementResultFilter,
         page: targetPage + 1,
         pageSize,
         cursor: pageCursorsRef.current[targetPage] || null,
@@ -393,14 +405,14 @@ export default function SupplierManagement() {
     } finally {
       if (requestId === requestIdRef.current) setIsLoading(false);
     }
-  }, [appliedSearchTerm, assigneeFilter, categoryFilter, pageSize, registryTypeFilter, statusFilter, tagFilter, toast]);
+  }, [appliedSearchTerm, assigneeFilter, categoryFilter, contentReceivedFilter, engagementResultFilter, lastEngagementFilter, pageSize, registryTypeFilter, statusFilter, tagFilter, toast]);
 
   useEffect(() => { fetchData(pageIndex); }, [fetchData, pageIndex]);
 
   useEffect(() => {
     pageCursorsRef.current = { 0: null };
     setPageIndex(0);
-  }, [appliedSearchTerm, statusFilter, categoryFilter, assigneeFilter, tagFilter, pageSize, registryTypeFilter]);
+  }, [appliedSearchTerm, statusFilter, categoryFilter, assigneeFilter, tagFilter, lastEngagementFilter, contentReceivedFilter, engagementResultFilter, pageSize, registryTypeFilter]);
 
   useEffect(() => {
     const loadStaff = async () => {
@@ -488,11 +500,48 @@ export default function SupplierManagement() {
           accessorKey: 'lastOutreachSubject', 
           header: 'Outreach Stage', 
           cell: ({ row }: { row: { original: any } }) => {
-              if (!row.original.lastOutreachSubject) return <span className="text-[10px] text-muted-foreground italic text-left">None</span>;
-              const cleanSubject = row.original.lastOutreachSubject.replace('Logistics Flow: ', '').split('(')[0].trim();
+              const lastEngagementType = normalizeEngagementContentType(
+                row.original.lastEngagementType,
+                row.original.lastOutreachSubject,
+                row.original.lastEngagementChannel || row.original.lastOutreachChannel
+              );
+              const sentContentTypes = new Set(
+                (Array.isArray(row.original.sentContentTypes) ? row.original.sentContentTypes : [])
+                  .map((contentType: string) => normalizeEngagementContentType(contentType))
+                  .filter(Boolean)
+              );
+              if (lastEngagementType) sentContentTypes.add(lastEngagementType);
+              if (!lastEngagementType) return <span className="text-[10px] text-muted-foreground italic text-left">No engagement</span>;
               return (
-                  <div className="flex flex-col text-left text-foreground text-left">
-                      <Badge variant="outline" className="text-[9px] h-4 border-primary/20 text-primary uppercase font-bold truncate max-w-[100px] text-left">{cleanSubject}</Badge>
+                  <div className="flex flex-col gap-1 text-left text-foreground">
+                      <Badge variant="outline" className="text-[9px] h-4 border-primary/20 text-primary uppercase font-bold truncate max-w-[130px] text-left">
+                        {row.original.lastEngagementLabel || engagementContentLabel(lastEngagementType)}
+                      </Badge>
+                      <span className="text-[9px] text-muted-foreground">
+                        {row.original.lastEngagementChannel || row.original.lastOutreachChannel || 'Manual'}
+                        {(row.original.lastEngagementAt || row.original.lastOutreachAt)
+                          ? ` · ${formatDateSafe(row.original.lastEngagementAt || row.original.lastOutreachAt, 'dd/MM/yy')}`
+                          : ''}
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {CORE_OUTREACH_CONTENT_TYPES.map(contentType => {
+                          const content = ENGAGEMENT_CONTENT_TYPES.find(option => option.id === contentType);
+                          return (
+                            <Badge
+                              key={contentType}
+                              variant="outline"
+                              className={cn(
+                                'text-[8px] h-4 px-1',
+                                sentContentTypes.has(contentType)
+                                  ? 'border-green-300 bg-green-50 text-green-700'
+                                  : 'border-muted text-muted-foreground opacity-40'
+                              )}
+                            >
+                              {content?.shortLabel}
+                            </Badge>
+                          );
+                        })}
+                      </div>
                       <TooltipProvider>
                         <div className="flex items-center gap-1 mt-1 text-left text-foreground">
                             {row.original.lastOpenedAt && (
@@ -893,7 +942,7 @@ export default function SupplierManagement() {
           </CardHeader>
           <Card className="text-left text-foreground">
               <CardContent className="pt-6 text-left">
-                  <div className="grid grid-cols-1 md:grid-cols-7 gap-4 mb-6 p-4 bg-muted/30 rounded-lg text-left text-foreground">
+                  <div className="grid grid-cols-1 md:grid-cols-10 gap-4 mb-6 p-4 bg-muted/30 rounded-lg text-left text-foreground">
                     <div className="space-y-1 text-left">
                         <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5 text-left">Registry View</Label>
                         <Select value={registryTypeFilter} onValueChange={(value: 'supplier' | 'unclassified') => setRegistryTypeFilter(value)}>
@@ -911,9 +960,14 @@ export default function SupplierManagement() {
                             <SelectContent>
                                 <SelectItem value="all">All Statuses</SelectItem>
                                 <SelectItem value="new">New</SelectItem>
-                                <SelectItem value="contacted">Researching</SelectItem>
+                                <SelectItem value="contacted">Researching (Legacy)</SelectItem>
+                                <SelectItem value="researching">Researching</SelectItem>
                                 <SelectItem value="qualified">Qualified</SelectItem>
+                                <SelectItem value="engaged">Engaged</SelectItem>
+                                <SelectItem value="converted">Converted</SelectItem>
                                 <SelectItem value="active">Active Participant</SelectItem>
+                                <SelectItem value="not_interested">Not Interested</SelectItem>
+                                <SelectItem value="unqualified">Unqualified</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -926,6 +980,47 @@ export default function SupplierManagement() {
                                 {availableCategories.map(category => <SelectItem key={category} value={category}>{category}</SelectItem>)}
                             </SelectContent>
                         </Select>
+                    </div>
+                    <div className="space-y-1 text-left">
+                       <Label className="text-xs font-bold uppercase text-muted-foreground">Last Engagement</Label>
+                       <Select value={lastEngagementFilter} onValueChange={setLastEngagementFilter}>
+                           <SelectTrigger className="h-9 bg-white text-xs"><SelectValue /></SelectTrigger>
+                           <SelectContent>
+                               <SelectItem value="all">Any Engagement</SelectItem>
+                               <SelectItem value="none">No Engagement</SelectItem>
+                               {ENGAGEMENT_CONTENT_TYPES.map(option => (
+                                 <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
+                               ))}
+                           </SelectContent>
+                       </Select>
+                    </div>
+                    <div className="space-y-1 text-left">
+                       <Label className="text-xs font-bold uppercase text-muted-foreground">Content Received</Label>
+                       <Select value={contentReceivedFilter} onValueChange={setContentReceivedFilter}>
+                           <SelectTrigger className="h-9 bg-white text-xs"><SelectValue /></SelectTrigger>
+                           <SelectContent>
+                               <SelectItem value="all">Any Content</SelectItem>
+                               <SelectItem value="none">No Content Sent</SelectItem>
+                               <SelectItem value="deep-dive-strategy">Deep Dive Sent</SelectItem>
+                               <SelectItem value="company-profile">Company Profile Sent</SelectItem>
+                               <SelectItem value="pitch">Pitch Sent</SelectItem>
+                               <SelectItem value="core-complete">Deep Dive + Profile + Pitch</SelectItem>
+                           </SelectContent>
+                       </Select>
+                    </div>
+                    <div className="space-y-1 text-left">
+                       <Label className="text-xs font-bold uppercase text-muted-foreground">Engagement Result</Label>
+                       <Select value={engagementResultFilter} onValueChange={setEngagementResultFilter}>
+                           <SelectTrigger className="h-9 bg-white text-xs"><SelectValue /></SelectTrigger>
+                           <SelectContent>
+                               <SelectItem value="all">Any Result</SelectItem>
+                               <SelectItem value="none">No Engagement</SelectItem>
+                               <SelectItem value="sent">Sent, Not Opened</SelectItem>
+                               <SelectItem value="opened">Opened</SelectItem>
+                               <SelectItem value="clicked">Link Clicked</SelectItem>
+                               <SelectItem value="responded">Response Logged</SelectItem>
+                           </SelectContent>
+                       </Select>
                     </div>
                     <div className="space-y-1 text-left">
                         <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5 text-left"><Users className="h-3 w-3"/> Assignee</Label>

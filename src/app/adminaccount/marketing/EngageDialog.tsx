@@ -12,6 +12,7 @@ import {
 import { getClientSideAuthToken, useUser, useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { copyHtmlToClipboard, cn } from '@/lib/utils';
 import { APP_BASE_URL } from '@/lib/app-url';
+import { engagementContentLabel } from '@/lib/engagement-content';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { collection, query, where, limit } from 'firebase/firestore';
@@ -180,15 +181,36 @@ function deepDiveEmailHtml(partner: any) {
     const baseUrl = APP_BASE_URL;
     const partnerId = partner?.id || 'PROSPECT';
     const optInPath = `/opt-in/${partnerId}`;
-    const optInLink = `${baseUrl}/api/trackEmailOpen/${partnerId}?source=app&dest=${encodeURIComponent(optInPath)}`;
+    const contentType = 'deep-dive-strategy';
+    const optInLink = `${baseUrl}/api/trackEmailOpen/${partnerId}?source=app&contentType=${contentType}&dest=${encodeURIComponent(optInPath)}`;
     const displayOptInLink = `${baseUrl}${optInPath}`;
-    const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partnerId}`;
+    const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partnerId}?contentType=${contentType}`;
     const paragraphs = text
         .split(/\n{2,}/)
         .map(paragraph => `<p style="margin: 0 0 12pt 0;">${escapeHtml(paragraph).replace(/\n/g, '<br />')}</p>`)
         .join('');
 
     return `<div style="font-family: Calibri, sans-serif; font-size: 12pt; color: #000000; line-height: 1.45;">${paragraphs}<p style="margin: 16pt 0; padding: 12pt; border: 2px dashed #228B22; border-radius: 8pt; background-color: #f9fff9; text-align: center;"><strong>Review your free supplier profile here:</strong><br /><a href="${optInLink}" target="_blank" style="color: #228B22; font-weight: bold; text-decoration: underline;">${displayOptInLink}</a></p><img src="${pixelUrl}" width="1" height="1" style="display:none" alt="" /></div>`;
+}
+
+function addContentTypeToTrackingUrls(html: string, contentType: string, partnerId: string): string {
+    const withContentType = html.replace(
+        /(\/api\/trackEmailOpen\/[^"'?\s<]+)(\?[^"'<\s]*)?/g,
+        (url, path, query = '') => {
+            if (String(query).includes('contentType=')) return url;
+            return `${path}${query ? `${query}&` : '?'}contentType=${encodeURIComponent(contentType)}`;
+        }
+    );
+    const withTrackedLinks = withContentType.replace(
+        /href=(["'])(https?:\/\/[^/"']+)?(\/(?:join|opt-in)\/?[^"']*)\1/gi,
+        (_match, quote, _origin, destination) => {
+            const trackingUrl = `${APP_BASE_URL}/api/trackEmailOpen/${partnerId}?source=app&contentType=${encodeURIComponent(contentType)}&dest=${encodeURIComponent(destination)}`;
+            return `href=${quote}${trackingUrl}${quote}`;
+        }
+    );
+    if (/<img[^>]+\/api\/trackEmailOpen\//i.test(withTrackedLinks)) return withTrackedLinks;
+    const pixelUrl = `${APP_BASE_URL}/api/trackEmailOpen/${partnerId}?contentType=${encodeURIComponent(contentType)}`;
+    return `${withTrackedLinks}<img src="${pixelUrl}" width="1" height="1" style="display:none" alt="" />`;
 }
 
 export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, audience, onEngageSuccess }: EngageDialogProps) {
@@ -276,6 +298,8 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
             type: channel === 'whatsapp' ? 'WhatsApp' : (channel === 'social-dm' ? 'Social DM' : 'Email'),
             subject: subjectToLog,
             notes: `Manual engagement launched via ${channel}.`,
+            contentType: activeTab,
+            contentLabel: engagementContentLabel(activeTab),
             collection: targetCollection
         });
 
@@ -290,7 +314,11 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
         } else {
             const wrappedHtml = activeTab === 'deep-dive-strategy'
                     ? deepDiveEmailHtml(currentPartner)
-                : `<div style="font-family: Calibri, sans-serif; font-size: 12pt;">${contentElement.innerHTML}</div>`;
+                : addContentTypeToTrackingUrls(
+                    `<div style="font-family: Calibri, sans-serif; font-size: 12pt;">${contentElement.innerHTML}</div>`,
+                    activeTab,
+                    currentPartner.id
+                );
             await copyHtmlToClipboard(wrappedHtml);
             window.location.href = `mailto:${contact.email}?subject=${encodeURIComponent(subjectToLog)}`;
         }
@@ -318,13 +346,15 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
 
         const deepDiveHtml = activeTab === 'deep-dive-strategy'
                 ? deepDiveEmailHtml(currentPartner)
-            : contentElement.innerHTML;
+            : addContentTypeToTrackingUrls(contentElement.innerHTML, activeTab, currentPartner.id);
 
         await performAdminAction(token, 'dispatchEngagement', {
             partnerId: currentPartner.id,
             email: contact.email,
             subject,
             html: deepDiveHtml,
+            contentType: activeTab,
+            contentLabel: engagementContentLabel(activeTab),
             collection: targetCollection
         });
 

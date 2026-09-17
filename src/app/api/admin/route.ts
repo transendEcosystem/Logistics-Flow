@@ -5,6 +5,10 @@ import { getAdminApp, verifyAdmin } from '@/lib/firebase-admin';
 import sgMail from '@sendgrid/mail';
 import { validateAgreementAgainstPolicies } from '@/lib/lending/policy-engine';
 import {
+  engagementContentLabel,
+  normalizeEngagementContentType,
+} from '@/lib/engagement-content';
+import {
   buildRegistryFilterKey,
   buildRegistryIndexRecord,
   deleteRegistryIndexDocument,
@@ -14,6 +18,7 @@ import {
   REGISTRY_INDEX_COLLECTIONS,
   REGISTRY_INDEX_META_COLLECTION,
   REGISTRY_INDEX_META_DOCUMENT,
+  REGISTRY_INDEX_SCHEMA_VERSION,
   REGISTRY_SOURCE_COLLECTIONS,
   syncRegistryIndexDocument,
 } from '@/lib/registry-index';
@@ -181,7 +186,12 @@ async function scheduleFollowUpTask(db: any, opts: {
 
   const escalateToCall = policy.escalateToCallAfterFollowUps > 0
     && followUpNumber > policy.escalateToCallAfterFollowUps;
-  const actionType = escalateToCall ? 'call' : 'email';
+  const normalizedChannel = String(opts.channel || '').toLowerCase();
+  const actionType = escalateToCall
+    ? 'call'
+    : normalizedChannel.includes('whatsapp')
+      ? 'whatsapp'
+      : 'email';
   const hours = escalateToCall
     ? policy.callFollowUpHours
     : hoursForChannel(policy, opts.channel);
@@ -1534,6 +1544,8 @@ export async function POST(request: Request) {
       const email = String(resolvedPayload?.email || '').trim();
       const subject = String(resolvedPayload?.subject || '').trim();
       const html = String(resolvedPayload?.html || '').trim();
+      const contentType = normalizeEngagementContentType(resolvedPayload?.contentType, subject, 'Email');
+      const contentLabel = String(resolvedPayload?.contentLabel || engagementContentLabel(contentType)).trim();
       const targetCollection = String(resolvedPayload?.collection || 'partners').trim();
       const allowedCollections = ['partners', 'leads', 'strategic_partners', 'suppliers', 'transporters', 'finance_co', 'investors', 'isa_agents', 'digital_associates'];
 
@@ -1561,13 +1573,20 @@ export async function POST(request: Request) {
         action: 'direct_engagement_dispatched',
         subject,
         channel: 'Email',
-        recipient: email
+        recipient: email,
+        contentType,
+        contentLabel,
       };
 
       await db.collection(targetCollection).doc(partnerId).set({
         lastOutreachSubject: subject,
         lastOutreachAt: now,
         lastOutreachChannel: 'Email',
+        lastEngagementType: contentType,
+        lastEngagementLabel: contentLabel,
+        lastEngagementAt: now,
+        lastEngagementChannel: 'Email',
+        sentContentTypes: FieldValue.arrayUnion(contentType),
         engagementStage: 'Contacted',
         engagementScore: FieldValue.increment(20),
         outreachCount: FieldValue.increment(1),
@@ -1587,6 +1606,14 @@ export async function POST(request: Request) {
       const channel = String(communication?.type || communication?.communicationType || communication?.channel || 'Manual').trim();
       const subject = String(communication?.subject || 'Manual engagement').trim();
       const notes = String(communication?.notes || '').trim();
+      const contentType = normalizeEngagementContentType(
+        communication?.contentType,
+        subject,
+        channel
+      );
+      const contentLabel = String(
+        communication?.contentLabel || engagementContentLabel(contentType)
+      ).trim();
       const stopSequence = resolvedPayload?.stopSequence === true;
       const overrideDueAt = resolvedPayload?.followUpDate
         ? new Date(String(resolvedPayload.followUpDate)).toISOString()
@@ -1610,6 +1637,8 @@ export async function POST(request: Request) {
         notes,
         recipient: String(communication?.recipient || '').trim() || null,
         loggedBy: adminUid,
+        contentType,
+        contentLabel,
       };
       const communicationRef = located.ref.collection('communications').doc();
       const communicationRecord = {
@@ -1618,6 +1647,8 @@ export async function POST(request: Request) {
         type: channel,
         subject,
         notes,
+        contentType,
+        contentLabel,
         createdAt: FieldValue.serverTimestamp(),
         createdBy: adminUid,
       };
@@ -1634,6 +1665,11 @@ export async function POST(request: Request) {
           lastOutreachSubject: subject,
           lastOutreachAt: now,
           lastOutreachChannel: channel,
+          lastEngagementType: contentType,
+          lastEngagementLabel: contentLabel,
+          lastEngagementAt: now,
+          lastEngagementChannel: channel,
+          sentContentTypes: FieldValue.arrayUnion(contentType),
           engagementStage: 'Contacted',
           engagementScore: FieldValue.increment(10),
           outreachCount: FieldValue.increment(1),
@@ -1842,14 +1878,18 @@ export async function POST(request: Request) {
 
         let nextTask: any = null;
         if (located) {
+          const channel = task.actionType === 'call' ? 'Call' : String(resolvedPayload?.channel || task.lastChannel || 'Email');
+          const subject = task.lastSubject || task.title || 'Follow-up';
+          const contentType = task.actionType === 'call' ? 'call' : 'follow-up';
+          const contentLabel = engagementContentLabel(contentType);
           try {
             nextTask = await scheduleFollowUpTask(db, {
               recordRef: located.ref,
               collection: located.collection,
               recordId: task.recordId,
               recordData: located.data,
-              channel: task.actionType === 'call' ? 'Call' : (String(resolvedPayload?.channel || task.lastChannel || 'Email')),
-              subject: task.lastSubject || task.title,
+              channel,
+              subject,
               sentAt: nowIso,
               actorUid: adminUid,
             });
@@ -1858,16 +1898,24 @@ export async function POST(request: Request) {
           }
 
           await located.ref.set({
+            lastOutreachSubject: subject,
             lastOutreachAt: nowIso,
-            lastOutreachChannel: task.actionType === 'call' ? 'Call' : 'Email',
+            lastOutreachChannel: channel,
+            lastEngagementType: contentType,
+            lastEngagementLabel: contentLabel,
+            lastEngagementAt: nowIso,
+            lastEngagementChannel: channel,
+            sentContentTypes: FieldValue.arrayUnion(contentType),
             engagementStage: 'Contacted',
             engagementScore: FieldValue.increment(10),
             outreachCount: FieldValue.increment(1),
             engagementLogs: FieldValue.arrayUnion({
               timestamp: nowIso,
               action: 'follow_up_sent',
-              subject: task.lastSubject || task.title,
-              channel: task.actionType === 'call' ? 'Call' : 'Email',
+              subject,
+              channel,
+              contentType,
+              contentLabel,
               notes: 'Sent from the Follow-Up Register one-click queue.',
               loggedBy: adminUid,
             }),
@@ -2513,6 +2561,7 @@ export async function POST(request: Request) {
             activeCollection: targetIndexCollection,
             buildId,
             status: 'ready',
+            schemaVersion: REGISTRY_INDEX_SCHEMA_VERSION,
             rebuildStatus: FieldValue.delete(),
             rebuildingCollection: FieldValue.delete(),
             rebuildId: FieldValue.delete(),
@@ -2534,6 +2583,7 @@ export async function POST(request: Request) {
         activeCollection: targetIndexCollection,
         buildId,
         status: 'ready',
+        schemaVersion: REGISTRY_INDEX_SCHEMA_VERSION,
         rebuildStatus: FieldValue.delete(),
         rebuildingCollection: FieldValue.delete(),
         rebuildId: FieldValue.delete(),
@@ -2552,6 +2602,9 @@ export async function POST(request: Request) {
       const categoryKey = normalizeRegistryIndexText(resolvedPayload?.category);
       const assigneeKey = normalizeRegistryIndexText(resolvedPayload?.assigneeId);
       const tagKey = normalizeRegistryIndexText(resolvedPayload?.tag);
+      const engagementKey = normalizeRegistryIndexText(resolvedPayload?.engagement);
+      const contentKey = normalizeRegistryIndexText(resolvedPayload?.content);
+      const resultKey = normalizeRegistryIndexText(resolvedPayload?.result);
       const cursor = resolvedPayload?.cursor && typeof resolvedPayload.cursor === 'object'
         ? resolvedPayload.cursor
         : null;
@@ -2564,6 +2617,9 @@ export async function POST(request: Request) {
         category: categoryKey && categoryKey !== 'all' ? categoryKey : undefined,
         assignee: assigneeKey === 'none' ? 'unassigned' : assigneeKey && assigneeKey !== 'all' ? assigneeKey : undefined,
         tag: tagKey && tagKey !== 'all' ? tagKey : undefined,
+        engagement: engagementKey && engagementKey !== 'all' ? engagementKey : undefined,
+        content: contentKey && contentKey !== 'all' ? contentKey : undefined,
+        result: resultKey && resultKey !== 'all' ? resultKey : undefined,
       });
       if (filterKey) indexQuery = indexQuery.where('filterKeys', 'array-contains', filterKey);
       indexQuery = indexQuery
@@ -2615,7 +2671,11 @@ export async function POST(request: Request) {
         pageSize,
         hasNextPage: Boolean(nextCursor),
         nextCursor,
-        indexReady: metaSnapshot.data()?.status === 'ready',
+        indexReady:
+          metaSnapshot.data()?.status === 'ready' &&
+          metaSnapshot.data()?.schemaVersion === REGISTRY_INDEX_SCHEMA_VERSION,
+        indexSchemaVersion: metaSnapshot.data()?.schemaVersion || 0,
+        requiredIndexSchemaVersion: REGISTRY_INDEX_SCHEMA_VERSION,
         facets: {
           categories: Array.isArray(facets.categories) ? facets.categories : [],
           tags: Array.isArray(facets.tags) ? facets.tags : [],
