@@ -22,7 +22,7 @@ export default function InvestorOffer() {
                 <Badge className="bg-primary/10 text-primary border-primary/20 py-1.5 px-4 font-black uppercase tracking-widest text-[10px]">Strategic Opportunity</Badge>
                 <h1 className="text-4xl md:text-6xl font-black font-headline tracking-tighter uppercase leading-[0.9]">The Triple Engine <br/>of <span className="text-primary">Logistics Flow</span>.</h1>
                 <p className="text-xl text-muted-foreground max-w-3xl leading-relaxed">
-                    We are not just a marketplace. We are a **Data-as-a-Service (DaaS)** ecosystem built on three interconnected value layers that transform industrial constraints into proprietary IP.
+                    We are not just a marketplace. We collect and structure real operational data on suppliers, transporters, and finance companies, then turn that data into three interconnected revenue engines.
                 </p>
             </div>
             
