@@ -478,7 +478,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                                         STRATEGIC INTRO: {currentPartner?.companyName?.toUpperCase() || 'INDUSTRIAL NODE'} X LOGISTICS FLOW
                                     </p>
                                     <p>Good day {contact.name.split(' ')[0]},</p>
-                                    <p>My name is Michael Koton, owner of Logistics Flow. We have established your operational node in our industrial grid and identified a data gap that is currently preventing matched deal-flow from reaching your desk.</p>
+                                    <p>As the owner of Logistics Flow, I have been financing transporters for the past 25 years. During this time, we have seen first-hand the challenges transporters face. This is why we built the app — our objective was to help by providing resources, information, and access to funding to transporters in a way that is affordable and structured, and that assists all parties (buyers and sellers) to generate more revenue, while giving transporters a proactive way to gain access to funding.</p>
                                     <p style={{ margin: '15pt 0' }}>We are a South African Data-as-a-Service ecosystem that maps over 22,000 suppliers and hauliers to automate sourcing and finance. We have identified a strategic fit for <strong>{currentPartner?.companyName || 'your business'}</strong> within our current expansion cycle.</p>
                                     <p style={{ marginTop: '15pt', fontWeight: 'bold' }}>Establish your digital standing for free to unlock:</p>
                                     <ul style={{ paddingLeft: '20pt' }}>
