@@ -19,12 +19,17 @@ export function formatCurrency(amount: number | string | null | undefined): stri
 export function formatDateSafe(dateValue: any, formatString: string = "dd MMM yyyy"): string {
     if (!dateValue) return 'N/A';
     let date;
-    if (dateValue && typeof dateValue.toDate === 'function') {
+    if (typeof dateValue.toDate === 'function') {
         date = dateValue.toDate();
+    } else if (typeof dateValue === 'object' && (typeof dateValue.seconds === 'number' || typeof dateValue._seconds === 'number')) {
+        // Serialized Firestore Timestamp (lost its toDate() method in transit, e.g. {seconds, nanoseconds} or {_seconds, _nanoseconds}).
+        const seconds = typeof dateValue.seconds === 'number' ? dateValue.seconds : dateValue._seconds;
+        const nanoseconds = typeof dateValue.nanoseconds === 'number' ? dateValue.nanoseconds : (dateValue._nanoseconds || 0);
+        date = new Date(seconds * 1000 + Math.round(nanoseconds / 1e6));
     } else {
         date = new Date(dateValue);
     }
-    if (isNaN(date.getTime())) return 'Invalid Date';
+    if (!date || isNaN(date.getTime())) return 'N/A';
     return formatDateFns(date, formatString);
 }
 
