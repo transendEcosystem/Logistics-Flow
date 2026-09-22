@@ -1824,6 +1824,12 @@ export async function POST(request: Request) {
       const taskRef = db.collection('platformTasks').doc(taskId);
       const nowIso = new Date().toISOString();
 
+      if (mode === 'notes') {
+        const description = String(resolvedPayload?.description ?? '').trim();
+        await taskRef.set({ description, updatedAt: nowIso }, { merge: true });
+        return NextResponse.json({ success: true }, { status: 200 });
+      }
+
       if (mode === 'dismiss') {
         await taskRef.delete();
         return NextResponse.json({ success: true, deleted: true }, { status: 200 });

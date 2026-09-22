@@ -342,13 +342,20 @@ function NewEventDialog({ onLogged }: { onLogged: () => void }) {
 }
 
 // Shows the full notes/description saved against a task (e.g. a drafted reply)
-// in a readable dialog, with a one-click copy so it's easy to paste into an
-// email or edit before sending.
-function ViewDraftDialog({ task }: { task: any }) {
+// in an editable dialog, with save, copy, and a one-click mailto so it's easy
+// to refine and send without leaving the register.
+function ViewDraftDialog({ task, onSaved }: { task: any; onSaved: (taskId: string, description: string) => void }) {
     const [open, setOpen] = useState(false);
+    const [draft, setDraft] = useState(String(task.description || ''));
+    const [isSaving, setIsSaving] = useState(false);
     const { toast } = useToast();
-    const draft = String(task.description || '').trim();
-    if (!draft) return null;
+    const originalDraft = String(task.description || '').trim();
+    if (!originalDraft) return null;
+
+    const handleOpenChange = (next: boolean) => {
+        setOpen(next);
+        if (next) setDraft(String(task.description || ''));
+    };
 
     const handleCopy = async () => {
         try {
@@ -359,10 +366,25 @@ function ViewDraftDialog({ task }: { task: any }) {
         }
     };
 
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            await performAdminAction(token, 'updateFollowUpTask', { taskId: task.id, mode: 'notes', description: draft });
+            onSaved(task.id, draft);
+            toast({ title: 'Draft saved' });
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Save failed', description: e.message });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogTrigger asChild>
-                <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+                <Button size="sm" variant="outline" onClick={() => handleOpenChange(true)}>
                     <FileText className="mr-1 h-3.5 w-3.5" /> View Draft
                 </Button>
             </DialogTrigger>
@@ -371,10 +393,13 @@ function ViewDraftDialog({ task }: { task: any }) {
                     <DialogTitle>{task.title || 'Task notes'}</DialogTitle>
                     <DialogDescription>{task.companyName ? `For ${task.companyName}` : 'Review before sending.'}</DialogDescription>
                 </DialogHeader>
-                <Textarea readOnly value={draft} className="min-h-[320px] whitespace-pre-wrap text-sm" />
+                <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} className="min-h-[320px] whitespace-pre-wrap text-sm" />
                 <div className="flex justify-end gap-2 pt-2">
                     <Button variant="outline" onClick={handleCopy}>
                         <Copy className="mr-2 h-4 w-4" /> Copy Text
+                    </Button>
+                    <Button variant="secondary" disabled={isSaving || draft === originalDraft} onClick={handleSave}>
+                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save
                     </Button>
                     {task.contactEmail ? (
                         <Button asChild>
@@ -389,7 +414,7 @@ function ViewDraftDialog({ task }: { task: any }) {
     );
 }
 
-function TaskRow({ task, onAction, onSend, onAssign, staff, busyId }: { task: any; onAction: (task: any, mode: string, extra?: any) => void; onSend: (task: any) => void; onAssign: (task: any, staffId: string) => void; staff: any[]; busyId: string | null }) {
+function TaskRow({ task, onAction, onSend, onAssign, onNotesSaved, staff, busyId }: { task: any; onAction: (task: any, mode: string, extra?: any) => void; onSend: (task: any) => void; onAssign: (task: any, staffId: string) => void; onNotesSaved: (taskId: string, description: string) => void; staff: any[]; busyId: string | null }) {
     const meta = BUCKET_META[task.bucket] || BUCKET_META.upcoming;
     const Icon = meta.icon;
     const isCall = task.actionType === 'call';
@@ -444,7 +469,7 @@ function TaskRow({ task, onAction, onSend, onAssign, staff, busyId }: { task: an
                 </div>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
-                <ViewDraftDialog task={task} />
+                <ViewDraftDialog task={task} onSaved={onNotesSaved} />
                 {!isCall && (task.contactEmail || task.contactPhone) ? (
                     <Button size="sm" disabled={busy} onClick={() => onSend(task)}>
                         {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Mail className="mr-1 h-3.5 w-3.5" />} Send Follow-Up
@@ -506,6 +531,10 @@ export default function FollowUpRegister() {
     }, [toast]);
 
     useEffect(() => { load(); }, [load]);
+
+    const handleNotesSaved = useCallback((taskId: string, description: string) => {
+        setTasks(prev => prev.map(t => t.id === taskId ? { ...t, description } : t));
+    }, []);
 
     const handleAssign = useCallback(async (task: any, staffId: string) => {
         const assigneeId = staffId === 'none' ? null : staffId;
@@ -695,7 +724,7 @@ export default function FollowUpRegister() {
                     <CardContent>
                         {currentBatchTask ? (
                             <div className="space-y-3">
-                                <TaskRow task={currentBatchTask} onAction={handleAction} onSend={handleBatchSend} onAssign={handleAssign} staff={staff} busyId={busyId} />
+                                <TaskRow task={currentBatchTask} onAction={handleAction} onSend={handleBatchSend} onAssign={handleAssign} onNotesSaved={handleNotesSaved} staff={staff} busyId={busyId} />
                                 <div className="flex justify-end">
                                     <Button size="sm" variant="outline" onClick={handleBatchSkip} disabled={busyId === currentBatchTask.id}>
                                         <SkipForward className="mr-1 h-3.5 w-3.5" /> Skip for now
@@ -737,7 +766,7 @@ export default function FollowUpRegister() {
                             <AlertDescription>No follow-ups are due. New tasks appear automatically once the policy interval elapses after an outreach.</AlertDescription>
                         </Alert>
                     ) : actionable.map(task => (
-                        <TaskRow key={task.id} task={task} onAction={handleAction} onSend={handleSend} onAssign={handleAssign} staff={staff} busyId={busyId} />
+                        <TaskRow key={task.id} task={task} onAction={handleAction} onSend={handleSend} onAssign={handleAssign} onNotesSaved={handleNotesSaved} staff={staff} busyId={busyId} />
                     ))}
                 </TabsContent>
 
@@ -745,7 +774,7 @@ export default function FollowUpRegister() {
                     {grouped.upcoming.length === 0 ? (
                         <p className="py-8 text-center text-sm text-muted-foreground">No scheduled follow-ups yet.</p>
                     ) : grouped.upcoming.map(task => (
-                        <TaskRow key={task.id} task={task} onAction={handleAction} onSend={handleSend} onAssign={handleAssign} staff={staff} busyId={busyId} />
+                        <TaskRow key={task.id} task={task} onAction={handleAction} onSend={handleSend} onAssign={handleAssign} onNotesSaved={handleNotesSaved} staff={staff} busyId={busyId} />
                     ))}
                 </TabsContent>
 
