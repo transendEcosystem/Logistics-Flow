@@ -20,7 +20,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
-import { Users, MessageSquarePlus, Search, PlusCircle, Building2 } from 'lucide-react';
+import { Users, MessageSquarePlus, Search, PlusCircle, Building2, FileText, Copy } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 async function performAdminAction(token: string, action: string, payload?: any) {
@@ -341,6 +341,54 @@ function NewEventDialog({ onLogged }: { onLogged: () => void }) {
     );
 }
 
+// Shows the full notes/description saved against a task (e.g. a drafted reply)
+// in a readable dialog, with a one-click copy so it's easy to paste into an
+// email or edit before sending.
+function ViewDraftDialog({ task }: { task: any }) {
+    const [open, setOpen] = useState(false);
+    const { toast } = useToast();
+    const draft = String(task.description || '').trim();
+    if (!draft) return null;
+
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(draft);
+            toast({ title: 'Copied to clipboard' });
+        } catch {
+            toast({ variant: 'destructive', title: 'Copy failed', description: 'Select and copy the text manually.' });
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+                    <FileText className="mr-1 h-3.5 w-3.5" /> View Draft
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-xl text-left">
+                <DialogHeader>
+                    <DialogTitle>{task.title || 'Task notes'}</DialogTitle>
+                    <DialogDescription>{task.companyName ? `For ${task.companyName}` : 'Review before sending.'}</DialogDescription>
+                </DialogHeader>
+                <Textarea readOnly value={draft} className="min-h-[320px] whitespace-pre-wrap text-sm" />
+                <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" onClick={handleCopy}>
+                        <Copy className="mr-2 h-4 w-4" /> Copy Text
+                    </Button>
+                    {task.contactEmail ? (
+                        <Button asChild>
+                            <a href={`mailto:${task.contactEmail}?subject=${encodeURIComponent(task.title || '')}&body=${encodeURIComponent(draft)}`}>
+                                <Mail className="mr-2 h-4 w-4" /> Open in Email
+                            </a>
+                        </Button>
+                    ) : null}
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 function TaskRow({ task, onAction, onSend, onAssign, staff, busyId }: { task: any; onAction: (task: any, mode: string, extra?: any) => void; onSend: (task: any) => void; onAssign: (task: any, staffId: string) => void; staff: any[]; busyId: string | null }) {
     const meta = BUCKET_META[task.bucket] || BUCKET_META.upcoming;
     const Icon = meta.icon;
@@ -365,6 +413,11 @@ function TaskRow({ task, onAction, onSend, onAssign, staff, busyId }: { task: an
                     {task.source === 'manual' ? <Badge variant="outline">Manual</Badge> : null}
                 </div>
                 <p className="text-sm text-muted-foreground">{task.title}</p>
+                {task.description ? (
+                    <p className="text-xs text-muted-foreground italic line-clamp-2">
+                        {task.description}
+                    </p>
+                ) : null}
                 <p className="text-xs text-muted-foreground">
                     Due {formatDateSafe(task.dueAt || task.dueDate, 'dd MMM yyyy HH:mm')}
                     {task.lastOutreachAt ? ` · last contacted ${formatDateSafe(task.lastOutreachAt, 'dd MMM yyyy')}` : ''}
@@ -391,6 +444,7 @@ function TaskRow({ task, onAction, onSend, onAssign, staff, busyId }: { task: an
                 </div>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
+                <ViewDraftDialog task={task} />
                 {!isCall && (task.contactEmail || task.contactPhone) ? (
                     <Button size="sm" disabled={busy} onClick={() => onSend(task)}>
                         {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Mail className="mr-1 h-3.5 w-3.5" />} Send Follow-Up
