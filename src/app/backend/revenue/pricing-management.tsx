@@ -75,6 +75,7 @@ function PlanDialog({ plan, onSave }: { plan?: any; onSave: () => void }) {
             ...plan,
             price: Number(plan.price || 0),
             annualDiscount: Number(plan.annualDiscount || 0),
+            type: plan.type === 'data_silo' ? 'data_silo' : 'access',
             intelligenceQueries: Number(plan.intelligenceQueries || 0),
             shopProducts: Number(plan.shopProducts || 0),
             loadsLimit: Number(plan.loadsLimit || 0),
