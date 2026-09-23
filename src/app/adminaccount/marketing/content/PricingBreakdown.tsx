@@ -25,13 +25,13 @@ export default function PricingBreakdown({ partner }: { partner?: any }) {
     const tiers = [
         {
             name: 'Free',
-            price: 'R 0 / month',
-            description: 'Your entry point into the ecosystem. Create your verified digital profile, get listed in the registry, and start being found by transporters, suppliers, and finance companies searching for a partner like you — at no cost, with no card required.',
+            price: 'R 0 / month + R10 once-off to own your record',
+            description: 'Your entry point into the ecosystem. Get listed in the registry at no cost. For a once-off R10, you can claim and own your record — this activates the vouch and review mechanism, turning your listing into a verified, review-ready profile that transporters, suppliers, and finance companies can trust when they find you.',
         },
         {
             name: 'Intelligence',
             price: 'R 100 / month',
-            description: 'Unlocks the data layer: unlimited registry search across 22,000+ verified records, direct MD/CEO contact reveals, and access to matched leads so you can see who to call and why — before you pay a cent to reach them.',
+            description: 'Unlocks the data layer: unlimited registry search across 22,000+ verified records, direct MD/CEO contact reveals, and access to matched leads so you can see who to call and why — before you pay a cent to reach them. It also switches on your sales visibility — you receive verified leads directly, and you can see exactly who has clicked on and viewed your record in the registry, so you know who is interested before you even make contact.',
         },
         {
             name: 'Transaction',
