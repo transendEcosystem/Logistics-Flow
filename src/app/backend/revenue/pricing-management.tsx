@@ -211,7 +211,11 @@ function PlanDialog({ plan, onSave }: { plan?: any; onSave: () => void }) {
             </div>
           </form>
         </FormProvider>
-        <DialogFooter className="p-6 border-t"><Button type="button" onClick={methods.handleSubmit(onSubmit)} disabled={isLoading} className="w-full h-12 font-black uppercase text-white shadow-lg">{isLoading ? <Loader2 className="animate-spin h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />} Save Protocol</Button></DialogFooter>
+        <DialogFooter className="p-6 border-t"><Button type="button" onClick={methods.handleSubmit(onSubmit, (errors) => {
+            console.error('PlanDialog validation errors', errors);
+            const fieldNames = Object.keys(errors);
+            toast({ variant: 'destructive', title: 'Validation error', description: fieldNames.length ? `Please check: ${fieldNames.join(', ')}` : 'Form is invalid.' });
+        })} disabled={isLoading} className="w-full h-12 font-black uppercase text-white shadow-lg">{isLoading ? <Loader2 className="animate-spin h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />} Save Protocol</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
