@@ -71,7 +71,16 @@ function PlanDialog({ plan, onSave }: { plan?: any; onSave: () => void }) {
 
   useEffect(() => {
     if (isOpen) {
-        if (plan) methods.reset({ ...plan, annualDiscount: Number(plan.annualDiscount || 0), isActive: plan.isActive !== false });
+        if (plan) methods.reset({
+            ...plan,
+            price: Number(plan.price || 0),
+            annualDiscount: Number(plan.annualDiscount || 0),
+            intelligenceQueries: Number(plan.intelligenceQueries || 0),
+            shopProducts: Number(plan.shopProducts || 0),
+            loadsLimit: Number(plan.loadsLimit || 0),
+            features: plan.features || [],
+            isActive: plan.isActive !== false,
+        });
         else methods.reset({ id: '', name: '', description: '', price: 0, annualDiscount: 0, type: 'access', intelligenceQueries: 0, shopProducts: 0, loadsLimit: 0, features: [], isPopular: false, isActive: true });
     }
   }, [isOpen, plan, methods]);
