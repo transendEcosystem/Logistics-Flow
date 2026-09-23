@@ -28,6 +28,10 @@ export const CORE_OUTREACH_CONTENT_TYPES = ['deep-dive-strategy', 'company-profi
 
 export function normalizeEngagementContentType(value: unknown, subject?: unknown, channel?: unknown): string {
   const normalized = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+  const noEngagementSentinels = ['none', 'no-engagement', 'no-outreach', 'not-contacted'];
+  const hasFallbackSignal = Boolean(String(subject || '').trim() || String(channel || '').trim());
+  if (noEngagementSentinels.includes(normalized) && !hasFallbackSignal) return '';
+
   const aliases: Record<string, string> = {
     'deep-dive': 'deep-dive-strategy',
     deepdive: 'deep-dive-strategy',
@@ -39,7 +43,8 @@ export function normalizeEngagementContentType(value: unknown, subject?: unknown
   const direct = aliases[normalized] || normalized;
   if (ENGAGEMENT_CONTENT_TYPES.some(type => type.id === direct)) return direct;
 
-  const searchable = `${String(subject || '')} ${String(value || '')}`.toLowerCase();
+  const searchableValue = noEngagementSentinels.includes(normalized) ? '' : String(value || '');
+  const searchable = `${String(subject || '')} ${searchableValue}`.toLowerCase();
   if (searchable.includes('deep dive') || searchable.includes('deep-dive')) return 'deep-dive-strategy';
   if (searchable.includes('company profile')) return 'company-profile';
   if (searchable.includes('the pitch') || /\bpitch\b/.test(searchable)) return 'pitch';
