@@ -33,6 +33,7 @@ import TheWedge from './content/TheWedge';
 import TheSignal from './content/TheSignal';
 import TheEliteFilter from './content/TheEliteFilter';
 import TheBreakUp from './content/TheBreakUp';
+import PricingBreakdown from './content/PricingBreakdown';
 
 // The Offer is audience-specific. This mirrors the AUDIENCE_CONFIG mapping used by
 // the Marketing & Pitch Library so the engagement hub sends the identical document.
@@ -91,6 +92,7 @@ const ALL_ENGAGEMENT_TABS = [
     { id: 'incentive-handshake', label: 'Welcome Incentive', icon: Gift },
     { id: 'tech-architecture', label: 'Tech Architecture', icon: Zap },
     { id: 'revenue-model', label: 'Revenue Model', icon: DollarSign },
+    { id: 'pricing-breakdown', label: 'Pricing Breakdown', icon: DollarSign },
     { id: 'offer', label: 'The Offer', icon: FileText },
     { id: 'pitch', label: 'The Pitch', icon: Presentation },
     { id: 'framework', label: 'The Framework', icon: Layers },
@@ -506,6 +508,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                             {activeTab === 'incentive-handshake' && <IncentiveHandshake partner={currentPartner} incentive={activeIncentive} />}
                             {activeTab === 'tech-architecture' && <TechArchitecture partner={currentPartner} />}
                             {activeTab === 'revenue-model' && <RevenueModel partner={currentPartner} />}
+                            {activeTab === 'pricing-breakdown' && <PricingBreakdown partner={currentPartner} />}
                             {activeTab === 'sales-intelligence' && <SalesIntelligence partner={currentPartner} />}
                             {activeTab === 'offer' && <OfferForAudience partner={currentPartner} />}
                             {activeTab === 'pitch' && <PitchDeck partner={currentPartner} />}
