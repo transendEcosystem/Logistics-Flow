@@ -20,6 +20,7 @@ export default function PricingBreakdown({ partner }: { partner?: any }) {
     const firstName = resolvedName.split(' ')[0];
     const companyName = partner?.companyName || 'your business';
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://logisticsflow.co.za';
+    const signupLink = `${baseUrl}/join?email=${encodeURIComponent(partner?.email || '')}&firstName=${encodeURIComponent(firstName)}&ref=${partner?.id || 'SYSTEM'}`;
     const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partner?.id || 'anonymous'}`;
 
     const tiers = [
@@ -66,6 +67,11 @@ export default function PricingBreakdown({ partner }: { partner?: any }) {
 
             <p style={{ fontWeight: 'bold', marginTop: '15pt' }}>No cancellation fees:</p>
             <p>There are no lock-in contracts and no cancellation fees on any tier. If a membership no longer suits {companyName}, you can downgrade or cancel at any time — you only ever pay for the period you've used.</p>
+
+            <p style={{ marginTop: '20pt' }}>You can access the Logistics Flow app and create your free account using the link below:</p>
+            <p style={{ marginTop: '10pt', padding: '10pt', backgroundColor: '#f0f0f0', borderRadius: '5pt' }}>
+                <a href={signupLink} target="_blank" rel="noopener noreferrer" style={{ color: '#228B22', fontWeight: 'bold', textDecoration: 'none' }}>{signupLink}</a>
+            </p>
 
             <p style={{ marginTop: '20pt' }}>Happy to answer any follow-up questions on this by email.</p>
             <p style={{ marginTop: '20pt' }}>Regards,</p>
