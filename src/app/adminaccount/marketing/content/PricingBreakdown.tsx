@@ -36,7 +36,7 @@ export default function PricingBreakdown({ partner }: { partner?: any }) {
         {
             name: 'Transaction',
             price: 'From R 275 / month',
-            description: 'Unlocks your commercial profile and the transaction tools: receive direct RFQs, publish your shop or branch, apply for verified funding introductions, and sell directly into our transporter and finance registries — this is where deal-flow turns into revenue.',
+            description: 'Unlocks your commercial profile and the transaction tools: receive direct requests for quotes from buyers ready to purchase, publish your shop or branch, apply for verified funding introductions, and sell directly into our transporter and finance registries — this is where deal-flow turns into revenue.',
         },
         {
             name: 'Loyalty & Reward',

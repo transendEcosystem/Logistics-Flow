@@ -166,7 +166,7 @@ export default function DigitalHandshake({ partner, audience }: { partner?: any,
 
             <p>Good day {firstName},</p>
             
-            <p>We are currently establishing a secure communication bridge between our industrial matching engine and the market leadership. Before we can deliver verified matches, RFQs, or community savings to your dashboard, we require a formal digital handshake.</p>
+            <p>We are currently establishing a secure communication bridge between our industrial matching engine and the market leadership. Before we can deliver verified matches, buyer quote requests, or community savings to your dashboard, we require a formal digital handshake.</p>
             
             <p style={{ margin: '20pt 0', padding: '15pt', border: '2px dashed #228B22', borderRadius: '10pt', backgroundColor: '#f9fff9', textAlign: 'center' }}>
                 <strong>Establish your FREE standing in the industrial brain here:</strong><br />
