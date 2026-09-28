@@ -1304,7 +1304,7 @@ export async function POST(request: Request) {
           : '';
         const verifiedPhone = String(targetContact?.mobile || profile.contactability?.phoneVerification?.phone || '').trim();
         const targetRoleLower = targetRole.toLowerCase();
-        const contactField = /market|sales|brand/.test(targetRoleLower) ? 'marketingManager' : /operat|logistics|fleet/.test(targetRoleLower) ? 'operationsManager' : /technical|workshop|maintenance|engineer/.test(targetRoleLower) ? 'technicalManager' : 'ceo';
+        const contactField = /director|owner|founder|ceo|chief|managing|\bmd\b|principal|partner|proprietor/.test(targetRoleLower) ? 'ceo' : /market|sales|brand/.test(targetRoleLower) ? 'marketingManager' : /operat|logistics|fleet/.test(targetRoleLower) ? 'operationsManager' : /technical|workshop|maintenance|engineer/.test(targetRoleLower) ? 'technicalManager' : 'ceo';
         const researchedContact = targetName ? {
           name: targetName,
           role: targetRole,
