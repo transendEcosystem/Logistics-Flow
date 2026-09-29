@@ -133,7 +133,7 @@ function QuoteCalculator({ product, onOpenChange }: { product: { id: string; tit
     
     const handleRoute = (origination: 'direct' | 'market') => {
         onOpenChange(false);
-        router.push(`/funding/apply?type=${product.id}&amount=${amount}&origination=${origination}`);
+        router.push(`/funding/agreement-application?type=${product.id}&amount=${amount}&origination=${origination}`);
     };
 
     if (view === 'conversion') {
@@ -261,7 +261,7 @@ function ProductTypesContent() {
                                         </Button>
                                     </DialogTrigger>
                                     <Button asChild className="flex-1 h-12 font-bold gap-2 shadow-md">
-                                        <Link href={`/funding/apply?type=${product.id}`}>
+                                        <Link href={`/funding/agreement-application?type=${product.id}`}>
                                             Apply Now <ArrowRight className="h-4 w-4" />
                                         </Link>
                                     </Button>

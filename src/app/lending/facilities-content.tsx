@@ -30,6 +30,7 @@ import { Separator } from '@/components/ui/separator';
 import { InitializeSubFacilityModal } from './InitializeSubFacilityModal';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { LENDING_ONBOARDING_WORKFLOW, getOnboardingProgress, getOnboardingStageDefinition } from '@/lib/lending/onboarding-workflow';
 
 interface FacilitiesContentProps {
     mode?: 'client-global' | 'debtor' | 'facilities-suppliers';
@@ -54,6 +55,7 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
     const [selectedFacility, setSelectedFacility] = useState<any | null>(null);
     const [facilityToDelete, setFacilityToDelete] = useState<any | null>(null);
     const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
+    const [stageFilter, setStageFilter] = useState('all');
 
     const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c.name])), [clients]);
     const debtorMap = useMemo(() => new Map(debtors.map(d => [d.id, d.name])), [debtors]);
@@ -127,11 +129,15 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
             if (mode === 'debtor') return isGlobal && f.ownerType === 'debtor';
             if (mode === 'facilities-suppliers') return isGlobal && f.ownerType === 'supplier';
             return isGlobal;
+        }).filter(f => {
+            if (stageFilter === 'all') return true;
+            if ((f.onboardingStage || 'lead') === stageFilter) return true;
+            return facilities.some(sub => sub.parentId === f.id && (sub.onboardingStage || 'lead') === stageFilter);
         }).map(f => ({
             ...f,
             ownerName: f.ownerType === 'client' ? clientMap.get(f.clientId) : (f.ownerType === 'supplier' ? supplierMap.get(f.sourceDealerId) : debtorMap.get(f.debtorId))
         })).sort((a,b) => (b.limit || 0) - (a.limit || 0));
-    }, [facilities, mode, clientMap, debtorMap, supplierMap]);
+    }, [facilities, mode, clientMap, debtorMap, supplierMap, stageFilter]);
 
     const selectedMaster = useMemo(() => {
         return filteredGlobals.find(f => f.id === selectedMasterId);
@@ -191,17 +197,28 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                         variant="outline" 
                         size="sm" 
                         onClick={() => setIsSubModalOpen(true)} 
-                        disabled={!selectedMasterId}
+                        disabled={!selectedMasterId || !['approved', 'active'].includes(String(selectedMaster?.status || ''))}
                         className={cn("gap-2 font-bold h-10 px-6", selectedMasterId && "border-primary text-primary bg-primary/5")}
                     >
                         {mode === 'debtor' ? <UserPlus className="h-4 w-4" /> : <FileSignature className="h-4 w-4" />}
-                        {mode === 'debtor' ? 'Client Allocation' : 'Agreement Facility'}
+                        {mode === 'debtor' ? 'Client Allocation' : 'Internal Agreement Facility'}
                     </Button>
                     <Button onClick={() => { setSelectedFacility(null); setView('wizard'); }} className="gap-2 font-bold shadow-lg h-10 px-6 text-white text-left">
                         <PlusCircle className="h-4 w-4" /> New Master Facility
                     </Button>
                 </div>
             </div>
+
+            <Card className="border-none bg-white shadow-md">
+                <CardContent className="flex flex-wrap gap-2 p-4">
+                    <Button size="sm" variant={stageFilter === 'all' ? 'default' : 'outline'} className={cn("h-8 text-[10px] font-black uppercase", stageFilter === 'all' && "text-white")} onClick={() => setStageFilter('all')}>All</Button>
+                    {LENDING_ONBOARDING_WORKFLOW.map(stage => (
+                        <Button key={stage.id} size="sm" variant={stageFilter === stage.id ? 'default' : 'outline'} className={cn("h-8 text-[10px] font-black uppercase", stageFilter === stage.id && "text-white")} onClick={() => setStageFilter(stage.id)}>
+                            {stage.label}
+                        </Button>
+                    ))}
+                </CardContent>
+            </Card>
 
             <Card className="border-none shadow-xl bg-white overflow-hidden text-left text-foreground text-left">
                 <Table>
@@ -211,17 +228,20 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                             <TableHead className="w-10"></TableHead>
                             <TableHead className="text-white font-black uppercase text-[10px] tracking-widest py-4 text-left">Fiduciary Entity</TableHead>
                             <TableHead className="text-white font-black uppercase text-[10px] tracking-widest py-4 text-right">Limit Ceiling</TableHead>
+                            <TableHead className="text-white font-black uppercase text-[10px] tracking-widest py-4 text-center">Onboarding Step</TableHead>
                             <TableHead className="text-white font-black uppercase text-[10px] tracking-widest py-4 text-center">Status</TableHead>
                             <TableHead className="text-white font-black uppercase text-[10px] tracking-widest py-4 text-right">Audit</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {isLoading ? (
-                            <TableRow><TableCell colSpan={6} className="h-64 text-center"><Loader2 className="animate-spin h-10 w-10 text-primary mx-auto" /></TableCell></TableRow>
+                            <TableRow><TableCell colSpan={7} className="h-64 text-center"><Loader2 className="animate-spin h-10 w-10 text-primary mx-auto" /></TableCell></TableRow>
                         ) : filteredGlobals.length > 0 ? filteredGlobals.map((global) => {
                             const isExpanded = expandedIds.has(global.id);
                             const isChecked = selectedMasterId === global.id;
                             const subs = facilities.filter(f => f.parentId === global.id);
+                            const globalStage = getOnboardingStageDefinition(global.onboardingStage);
+                            const globalProgress = getOnboardingProgress(global.onboardingStage);
                             
                             const totalPartitioned = subs.reduce((sum, s) => sum + (s.limit || 0), 0);
                             const availableBalance = (global.limit || 0) - totalPartitioned;
@@ -255,6 +275,12 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                                             {formatCurrency(global.limit)}
                                         </TableCell>
                                         <TableCell className="text-center">
+                                            <div className="flex flex-col items-center gap-1">
+                                                <Badge variant="outline" className="capitalize text-[9px] font-black text-primary border-primary/20">{globalStage.label}</Badge>
+                                                <span className="text-[9px] font-bold text-muted-foreground">{globalProgress}%</span>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center">
                                             <Badge className={cn("capitalize text-[9px] font-black border-none text-white", global.status === 'active' ? 'bg-green-600' : 'bg-slate-400')}>
                                                 {global.status || 'Active'}
                                             </Badge>
@@ -265,7 +291,7 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                                                     <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="text-left">
-                                                    <DropdownMenuItem onClick={() => { setSelectedFacility(global); setView('wizard'); }}><Edit className="h-4 w-4 mr-2" /> Adjust Ceiling</DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => { setSelectedFacility(global); setView('wizard'); }}><Edit className="h-4 w-4 mr-2" /> Continue Onboarding</DropdownMenuItem>
                                                     <DropdownMenuSeparator />
                                                     <DropdownMenuItem onClick={() => handleStatusUpdate(global, global.status === 'inactive' ? 'active' : 'inactive')}>
                                                         {global.status === 'inactive' ? <><CheckCircle className="h-4 w-4 mr-2 text-green-600" /> Reactivate</> : <><XCircle className="h-4 w-4 mr-2 text-amber-600" /> Suspend</>}
@@ -294,7 +320,7 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                                     
                                     {isExpanded && (
                                         <TableRow className="bg-slate-50 border-y-2 border-primary/10 text-left">
-                                            <TableCell colSpan={6} className="p-0">
+                                            <TableCell colSpan={7} className="p-0">
                                                 <div className="p-8 space-y-6 text-left animate-in slide-in-from-top-2 duration-300">
                                                     <div className="flex justify-between items-center text-left">
                                                         <div className="text-left text-foreground">
@@ -303,6 +329,13 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                                                             </h4>
                                                             <p className="text-[10px] text-muted-foreground mt-1 text-left text-foreground">Specific sub-partitions approved under this ceiling.</p>
                                                         </div>
+                                                        <Button
+                                                            size="sm"
+                                                            className="gap-2 font-bold text-white"
+                                                            onClick={() => { setSelectedMasterId(global.id); setIsSubModalOpen(true); }}
+                                                        >
+                                                            <FileSignature className="h-4 w-4" /> Internal Agreement Facility
+                                                        </Button>
                                                     </div>
 
                                                     {subs.length > 0 ? (
@@ -312,12 +345,14 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                                                                     <TableRow>
                                                                         <TableHead className="text-[9px] font-black uppercase py-2 text-left text-foreground">Agreement Node & Audit Trail</TableHead>
                                                                         <TableHead className="text-[9px] font-black uppercase py-2 text-right text-foreground">Sub-Limit</TableHead>
+                                                                        <TableHead className="text-[9px] font-black uppercase py-2 text-center text-foreground">Onboarding Step</TableHead>
                                                                         <TableHead className="text-[9px] font-black uppercase py-2 text-right text-foreground">Actions</TableHead>
                                                                     </TableRow>
                                                                 </TableHeader>
                                                                 <TableBody>
-                                                                    {subs.map(sub => (
-                                                                        <TableRow key={sub.id} className="hover:bg-slate-50 transition-colors text-left">
+                                                                    {subs.filter(sub => stageFilter === 'all' || (sub.onboardingStage || 'lead') === stageFilter).map(sub => {
+                                                                        const subStage = getOnboardingStageDefinition(sub.onboardingStage);
+                                                                        return <TableRow key={sub.id} className="hover:bg-slate-50 transition-colors text-left">
                                                                             <TableCell>
                                                                                 <div className="flex flex-col text-left text-foreground">
                                                                                     <Badge variant="outline" className="capitalize text-[10px] font-black border-slate-300 w-fit text-left">
@@ -333,23 +368,30 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                                                                             <TableCell className="text-right font-black text-sm text-foreground text-left">
                                                                                 {formatCurrency(sub.limit)}
                                                                             </TableCell>
+                                                                            <TableCell className="text-center">
+                                                                                <div className="flex flex-col items-center gap-1">
+                                                                                    <Badge variant="outline" className="capitalize text-[9px] font-black text-primary border-primary/20">{subStage.label}</Badge>
+                                                                                    <span className="text-[9px] font-bold text-muted-foreground">{getOnboardingProgress(sub.onboardingStage)}%</span>
+                                                                                </div>
+                                                                            </TableCell>
                                                                             <TableCell className="text-right text-foreground">
                                                                                 <div className="flex justify-end gap-1 text-left text-foreground">
-                                                                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={() => { setSelectedFacility(sub); setView('wizard'); }}><Edit className="h-3.5 w-3.5" /></Button>
+                                                                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" title="Continue Onboarding" onClick={() => { setSelectedFacility(sub); setView('wizard'); }}><Edit className="h-3.5 w-3.5" /></Button>
                                                                                     <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { setFacilityToDelete(sub); setIsDeleteAlertOpen(true); }}><Trash2 className="h-3.5 w-3.5" /></Button>
                                                                                 </div>
                                                                             </TableCell>
                                                                         </TableRow>
-                                                                    ))}
+                                                                    })}
                                                                 </TableBody>
                                                                 <TableFooter className="bg-slate-50 border-t">
                                                                     <TableRow>
                                                                         <TableCell className="text-[10px] font-black uppercase text-muted-foreground tracking-widest text-right">
-                                                                            Remaining Available Ceiling
+                                                                            Remaining Master Facility Capacity
                                                                         </TableCell>
                                                                         <TableCell className="text-right font-black text-sm text-primary">
                                                                             {formatCurrency(availableBalance)}
                                                                         </TableCell>
+                                                                        <TableCell />
                                                                         <TableCell />
                                                                     </TableRow>
                                                                 </TableFooter>
@@ -368,7 +410,7 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                             );
                         }) : (
                             <TableRow>
-                                <TableCell colSpan={6} className="py-32 text-center text-muted-foreground text-left text-foreground">
+                                <TableCell colSpan={7} className="py-32 text-center text-muted-foreground text-left text-foreground">
                                     <div className="flex flex-col items-center gap-4 opacity-20 text-center text-foreground">
                                         <Landmark className="h-16 w-16" />
                                         <p className="text-sm font-bold uppercase tracking-widest text-center">No facilities matched.</p>

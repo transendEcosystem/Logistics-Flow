@@ -3,7 +3,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, PlusCircle, FileSignature, Edit, Eye, Trash2 } from "lucide-react";
+import { Loader2, PlusCircle, FileSignature, Edit, Eye, Trash2, Unlock } from "lucide-react";
 import { DataTable } from '@/components/ui/data-table';
 import { type ColumnDef } from '@/hooks/use-data-table';
 import { Badge } from '@/components/ui/badge';
@@ -40,6 +40,8 @@ async function performAdminAction(token: string, action: string, payload: any) {
 }
 
 const statusColors: { [key: string]: 'default' | 'secondary' | 'destructive' | 'outline' } = {
+    booking: 'secondary',
+    live: 'default',
     pending: 'secondary',
     credit: 'outline',
     payout: 'outline',
@@ -133,6 +135,20 @@ export default function AgreementsContent() {
         }
     };
 
+    const handleRelease = async (agreement: any) => {
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication failed.');
+            const response = await fetch('/api/admin/lending/agreements/release', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ agreementId: agreement.id }) });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || `Missing preconditions: ${(result.missing || []).join(', ')}`);
+            toast({ title: 'Agreement released to live' });
+            await forceRefresh();
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Release blocked', description: e.message });
+        }
+    };
+
 
     const columns: ColumnDef<any>[] = useMemo(() => [
         { 
@@ -154,6 +170,7 @@ export default function AgreementsContent() {
                 <Button variant="ghost" size="icon" onClick={() => handleEdit(row.original)}>
                     <Edit className="h-4 w-4" />
                 </Button>
+                {row.original.status === 'booking' && <Button variant="ghost" size="icon" title="Release booking to live" onClick={() => handleRelease(row.original)}><Unlock className="h-4 w-4 text-primary" /></Button>}
                 <Button variant="ghost" size="icon" onClick={() => { setAgreementToDelete(row.original); setIsDeleteAlertOpen(true); }}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>

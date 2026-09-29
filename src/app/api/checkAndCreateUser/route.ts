@@ -2,14 +2,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import { getAdminApp } from '@/lib/firebase-admin';
-
-function resolvePrimaryBusinessDomain(role: string | null): 'supplier' | 'transporter' | 'lender' | null {
-  const normalized = String(role || '').toLowerCase();
-  if (normalized === 'supplier' || normalized === 'vendor') return 'supplier';
-  if (normalized === 'transporter') return 'transporter';
-  if (normalized === 'lender' || normalized === 'finance') return 'lender';
-  return null;
-}
+import { getPrimaryBusinessDomain } from '@/lib/business-domain';
 
 /**
  * STRATEGIC REGISTRATION API
@@ -152,25 +145,32 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true, message: 'User already exists.' });
       }
       
-      // 2. FORENSIC LOOKUP: Check Leads AND Partners registries
+      // 2. FORENSIC LOOKUP: Check ALL research collections for pre-existing harvested lead records
       const emailLower = firebaseUser.email.toLowerCase();
-      const [leadsSnap, partnersSnap] = await Promise.all([
-          db.collection('leads').where('email', '==', emailLower).limit(1).get().catch(() => ({ empty: true, docs: [] } as any)),
-          db.collection('partners').where('email', '==', emailLower).limit(1).get().catch(() => ({ empty: true, docs: [] } as any))
-      ]);
-          
-      let existingRecord = null;
-      let recordSource = '';
-      let registryRef = null;
+      const researchCollections = [
+        'leads', 'partners', 'suppliers', 'transporters', 
+        'strategic_partners', 'isa_agents', 'digital_associates', 
+        'investors', 'finance_co', 'developers', 'drivers'
+      ];
 
-      if (!partnersSnap.empty) {
-          existingRecord = partnersSnap.docs[0].data();
-          recordSource = 'partner';
-          registryRef = partnersSnap.docs[0].ref;
-      } else if (!leadsSnap.empty) {
-          existingRecord = leadsSnap.docs[0].data();
-          recordSource = 'lead';
-          registryRef = leadsSnap.docs[0].ref;
+      const registrySnaps = await Promise.all(
+        researchCollections.map(col => 
+          db.collection(col).where('email', '==', emailLower).limit(1).get().catch(() => ({ empty: true, docs: [] } as any))
+        )
+      );
+          
+      let existingRecord: any = null;
+      let recordSource = '';
+      let registryRef: any = null;
+
+      for (let i = 0; i < researchCollections.length; i++) {
+        const snap = registrySnaps[i];
+        if (!snap.empty && snap.docs && snap.docs.length > 0) {
+          existingRecord = snap.docs[0].data();
+          recordSource = researchCollections[i];
+          registryRef = snap.docs[0].ref;
+          break;
+        }
       }
 
       const batch = db.batch();
@@ -179,7 +179,12 @@ export async function POST(req: NextRequest) {
       let companyIdToUse: string;
       let companyRef;
       
-      if (existingRecord?.id && recordSource === 'partner') {
+      if (existingRecord?.companyId) {
+          // Admin already manually converted this lead into a pending ("invited") member via
+          // /adminaccount. Reuse that same companies doc rather than creating a duplicate.
+          companyIdToUse = existingRecord.companyId;
+          companyRef = db.collection('companies').doc(companyIdToUse);
+      } else if (existingRecord?.id && recordSource === 'partner') {
           companyIdToUse = existingRecord.id;
           companyRef = db.collection('companies').doc(companyIdToUse);
       } else {
@@ -187,27 +192,40 @@ export async function POST(req: NextRequest) {
           companyIdToUse = companyRef.id;
       }
 
-      // 4. BIND THE REGISTRY RECORD (The Handshake)
+      // 4. BIND THE REGISTRY RECORD (The Handshake: Lead -> Free Member Conversion)
       if (registryRef) {
           batch.update(registryRef, {
-              status: 'active',
+              status: 'converted',
               companyId: companyIdToUse,
               invitationStatus: 'registered',
               convertedAt: FieldValue.serverTimestamp(),
+              convertedUserUid: firebaseUser.uid,
               updatedAt: FieldValue.serverTimestamp()
           });
       }
 
       const displayName = firebaseUser.displayName.trim();
-      const companyName = existingRecord?.companyName || (displayName ? `${displayName}'s Company` : 'My Company');
+      const companyName = existingRecord?.companyName || existingRecord?.tradingName || (displayName ? `${displayName}'s Company` : 'My Company');
       const isAssociate = declaredPosition === 'associate';
-      const primaryBusinessDomain = resolvePrimaryBusinessDomain(declaredPosition);
+      const primaryBusinessDomain = getPrimaryBusinessDomain({ declaredRole: declaredPosition });
       const shopType = primaryBusinessDomain === 'transporter' ? 'transporter' : 'vendor';
 
       const newCompanyData: any = {
           id: companyIdToUse,
           ownerId: firebaseUser.uid,
           companyName: companyName,
+          tradingName: existingRecord?.tradingName || companyName,
+          cipcRegNumber: existingRecord?.cipcRegNumber || null,
+          address: existingRecord?.address || null,
+          city: existingRecord?.city || null,
+          province: existingRecord?.province || null,
+          phone: existingRecord?.phone || existingRecord?.whatsappNumber || null,
+          minedServiceWording: existingRecord?.minedServiceWording || null,
+          ceo: existingRecord?.ceo || null,
+          operationsManager: existingRecord?.operationsManager || null,
+          technicalManager: existingRecord?.technicalManager || null,
+          marketingManager: existingRecord?.marketingManager || null,
+          socialProfiles: existingRecord?.socialProfiles || null,
           membershipId: 'free',
           isBillable: !isAssociate,
           walletBalance: 0,
@@ -218,7 +236,8 @@ export async function POST(req: NextRequest) {
           shopType: shopType, 
           declaredRole: declaredPosition,
           primaryBusinessDomain,
-          leadId: existingRecord?.id || null,
+          leadId: existingRecord?.id || existingRecord?.record_id || null,
+          conversionSource: recordSource ? `AI_Harvest_${recordSource}` : 'Direct_Signup',
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
       };

@@ -242,7 +242,7 @@ function SignInFormComponent() {
         </Form>
         <div className="mt-4 text-center text-sm">
           Don&apos;t have an account?{' '}
-          <Link href="/join" className="underline">
+          <Link href={`/join${typeof window !== 'undefined' ? window.location.search : ''}`} className="underline">
             Join Now
           </Link>
         </div>

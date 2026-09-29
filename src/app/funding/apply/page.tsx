@@ -534,10 +534,18 @@ function ApplicationForm() {
   );
 }
 
+function LegacyApplicationRedirect() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
+
+    useEffect(() => {
+        const query = searchParams.toString();
+        router.replace(`/funding/client-application${query ? `?${query}` : ''}`);
+    }, [router, searchParams]);
+
+    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+}
+
 export default function ApplyPage() {
-    return (
-        <div className="container mx-auto flex min-h-screen items-center justify-center px-4 py-20 bg-slate-50 text-left text-foreground">
-            <Suspense fallback={<Loader2 className="animate-spin h-12 w-12 text-primary" />}><ApplicationForm /></Suspense>
-        </div>
-    )
+    return <Suspense fallback={<Loader2 className="animate-spin h-12 w-12 text-primary" />}><LegacyApplicationRedirect /></Suspense>;
 }

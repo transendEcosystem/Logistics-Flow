@@ -40,9 +40,13 @@ export async function POST(req: NextRequest) {
 
         const normalizedNodeType = String(nodeType).toLowerCase();
         const requiredRoleByNodeType: Record<string, string> = {
-            supplier: 'supplier', warehouse: 'supplier', 'buy-sell': 'supplier',
-            transport: 'transporter', loads: 'transporter',
-            finance: 'finance',
+            supplier: 'supplier',
+            transport: 'transporter',
+            loads: 'broker',
+            warehouse: 'warehouseManager',
+            finance: 'lender',
+            'buy-sell': 'dealer',
+            distribution: 'distributor',
         };
         const requiredRole = requiredRoleByNodeType[normalizedNodeType];
         const activeRoles = new Set([
@@ -50,13 +54,21 @@ export async function POST(req: NextRequest) {
             userData?.primaryBusinessDomain, userData?.declaredRole, userData?.declaredPosition,
             ...(companyData?.activeBusinessRoles || []),
         ].filter(Boolean).map((role: string) => role.toLowerCase()));
-        const hasActiveMembershipRole = requiredRole && companyData?.roleMemberships?.[requiredRole]?.status === 'active';
-        const roleAliases: Record<string, string[]> = { supplier: ['supplier', 'vendor'], transporter: ['transporter'], finance: ['finance', 'lender'] };
+        const hasActiveMembershipRole = requiredRole && (companyData?.roleMemberships?.[requiredRole]?.status === 'active' || (requiredRole === 'lender' && companyData?.roleMemberships?.finance?.status === 'active'));
+        const roleAliases: Record<string, string[]> = {
+            supplier: ['supplier', 'vendor'],
+            transporter: ['transporter'],
+            broker: ['broker'],
+            warehouseManager: ['warehousemanager'],
+            lender: ['lender', 'finance'],
+            dealer: ['dealer'],
+            distributor: ['distributor'],
+        };
         if (requiredRole && !hasActiveMembershipRole && !roleAliases[requiredRole].some(role => activeRoles.has(role))) {
             return NextResponse.json({ success: false, error: `An active ${requiredRole} business role is required before opening this Shop.` }, { status: 403 });
         }
 
-        const isTransporter = requiredRole === 'transporter';
+        const isServiceProfile = requiredRole ? !['supplier', 'dealer'].includes(requiredRole) : false;
 
         // Fetch loyalty settings
         const [transactionPlanDoc, loyaltyConfigDoc] = await Promise.all([
@@ -69,20 +81,26 @@ export async function POST(req: NextRequest) {
         const loyaltyConfig = loyaltyConfigDoc.data();
         
         // Differentiate points based on role
-        const pointsToAward = isTransporter 
+        const pointsToAward = isServiceProfile 
             ? (loyaltyConfig?.serviceProfileCreationPoints || 100)
             : (loyaltyConfig?.shopCreationPoints || 100);
 
         const shopCollectionRef = companyRef.collection('shops');
         const newShopRef = shopCollectionRef.doc();
+        const rootShopRef = db.collection('shops').doc(newShopRef.id);
+
+        const shopTypeByRole: Record<string, string> = { supplier: 'vendor', transporter: 'transporter', broker: 'broker', warehouseManager: 'warehouseManager', lender: 'finance', dealer: 'dealer', distributor: 'distributor' };
+        const shopLabelByRole: Record<string, string> = { supplier: 'Shop', transporter: 'Transport Shop', broker: 'Load Shop', warehouseManager: 'Warehouse Shop', lender: 'Finance Shop', dealer: 'Buy & Sell Shop', distributor: 'Distribution Shop' };
+        const shopType = requiredRole ? (shopTypeByRole[requiredRole] || 'vendor') : 'vendor';
+        const shopLabel = requiredRole ? (shopLabelByRole[requiredRole] || 'Shop') : 'Shop';
 
         const newShopData = {
           ownerId: uid,
           companyId: companyId,
           status: 'draft',
           nodeType: normalizedNodeType,
-          shopType: isTransporter ? 'transporter' : requiredRole === 'finance' ? 'finance' : 'vendor',
-          shopName: `${decodedToken.name || 'My'}'s New ${isTransporter ? 'Transport Shop' : requiredRole === 'finance' ? 'Finance Shop' : 'Shop'}`,
+          shopType,
+          shopName: `${decodedToken.name || 'My'}'s New ${shopLabel}`,
           category: '',
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
@@ -91,6 +109,7 @@ export async function POST(req: NextRequest) {
         
         const batch = db.batch();
         batch.set(newShopRef, newShopData);
+        batch.set(rootShopRef, newShopData);
         batch.update(companyRef, { 
             shopId: newShopRef.id,
             rewardPoints: FieldValue.increment(pointsToAward),

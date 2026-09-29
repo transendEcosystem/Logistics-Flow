@@ -376,13 +376,40 @@ export default function HomePage() {
                 <Button size="lg" className="h-16 px-12 text-lg font-black uppercase tracking-widest shadow-2xl bg-primary hover:bg-primary/90 text-white border-b-4 border-green-800 active:border-b-0 transition-all text-center" onClick={handleJoinClick}>
                     Open Your digital Branch <ArrowRight className="ml-2 h-6 w-6 text-white" />
                 </Button>
-                <Button asChild size="lg" variant="outline" className="h-16 px-12 text-lg font-black uppercase tracking-tight border-white/20 hover:bg-white/10 text-white text-center">
+                <Button asChild size="lg" className="h-16 px-12 text-lg font-black uppercase tracking-tight bg-slate-700 text-white hover:bg-slate-600 border-slate-600 text-center">
                     <Link href="/mall">Browse the Malls</Link>
                 </Button>
             </div>
             <div className="mt-16 animate-bounce opacity-30 text-center">
                 <ArrowDown className="mx-auto h-8 w-8 text-white" />
             </div>
+        </div>
+      </section>
+
+      {/* FUNDING ENTRY POINTS */}
+      <section className="py-24 bg-slate-900 text-white border-y border-slate-800">
+        <div className="container mx-auto px-4">
+          <div className="max-w-6xl mx-auto space-y-12">
+            <div className="max-w-3xl space-y-4">
+              <Badge className="bg-primary/20 text-primary border-primary/30 py-1.5 px-5 font-black uppercase tracking-widest text-[10px]">Funding at the point of need</Badge>
+              <h2 className="text-4xl md:text-6xl font-black font-headline uppercase leading-none text-white">Capital that follows the transaction.</h2>
+              <p className="text-lg md:text-xl text-slate-300 leading-relaxed">Start with a simple application, finance everyday operational purchases at checkout, or structure capital for the larger assets that move your business forward.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="border-white/10 bg-white/5 text-white flex flex-col h-full">
+                <CardHeader className="p-7"><Landmark className="h-10 w-10 text-primary mb-5" /><CardTitle className="text-xl font-black uppercase text-white">Apply for a facility</CardTitle><CardDescription className="text-slate-300 leading-relaxed">Build your verified business profile and apply for a broad client facility. Product terms follow later when you know what you need.</CardDescription></CardHeader>
+                <CardFooter className="p-7 pt-0 mt-auto"><Button asChild className="w-full h-12 font-black uppercase text-xs tracking-widest bg-slate-700 text-white hover:bg-slate-600 border-slate-600"><Link href="/funding/client-application?origination=direct">Start application <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter>
+              </Card>
+              <Card className="border-white/10 bg-white/5 text-white flex flex-col h-full">
+                <CardHeader className="p-7"><ShoppingBasket className="h-10 w-10 text-amber-400 mb-5" /><CardTitle className="text-xl font-black uppercase text-white">Finance at checkout</CardTitle><CardDescription className="text-slate-300 leading-relaxed">Buy smaller consumables and operational essentials through the ecosystem, with finance embedded into the purchase journey.</CardDescription></CardHeader>
+                <CardFooter className="p-7 pt-0 mt-auto"><Button asChild className="w-full h-12 font-black uppercase text-xs tracking-widest bg-slate-700 text-white hover:bg-slate-600 border-slate-600"><Link href="/mall">Shop and finance <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter>
+              </Card>
+              <Card className="border-white/10 bg-white/5 text-white flex flex-col h-full">
+                <CardHeader className="p-7"><Truck className="h-10 w-10 text-blue-400 mb-5" /><CardTitle className="text-xl font-black uppercase text-white">Structure asset capital</CardTitle><CardDescription className="text-slate-300 leading-relaxed">Apply for vehicle, equipment, or other larger-asset finance with transaction-specific terms and security.</CardDescription></CardHeader>
+                <CardFooter className="p-7 pt-0 mt-auto"><Button asChild className="w-full h-12 font-black uppercase text-xs tracking-widest bg-slate-700 text-white hover:bg-slate-600 border-slate-600"><Link href="/funding/products?agreement=vehicles">Explore asset finance <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter>
+              </Card>
+            </div>
+          </div>
         </div>
       </section>
 

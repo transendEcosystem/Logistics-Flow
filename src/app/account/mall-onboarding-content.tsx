@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Building2, CheckCircle2, ClipboardList, Landmark, Loader2, PackageSearch, ShoppingCart, Store, Truck, Warehouse } from 'lucide-react';
+import { Building2, CheckCircle2, ClipboardList, Landmark, Loader2, Network, PackageSearch, ShoppingCart, Store, Truck, Warehouse } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -145,6 +145,26 @@ const profiles: Record<string, Record<string, MallRoleProfile>> = {
         { key: 'budgetRange', label: 'Budget range and finance requirement', kind: 'text', required: true },
         { key: 'operatingUse', label: 'Intended operating use', kind: 'textarea', required: true },
         { key: 'locationPreference', label: 'Preferred location and delivery requirement', kind: 'textarea' },
+      ],
+    },
+  },
+  distribution: {
+    provider: {
+      title: 'Distribution Capacity Profile', description: 'Define your delivery zones, vehicle types and service levels before publishing local distribution capacity.', icon: Network,
+      fields: [
+        { key: 'serviceZones', label: 'Suburbs and delivery zones covered', kind: 'textarea', required: true },
+        { key: 'deliveryVehicleTypes', label: 'Delivery vehicle types', kind: 'multi', required: true, options: ['Panel van', 'Bakkie', 'Fixed body truck', 'Motorcycle', 'Bicycle courier'] },
+        { key: 'deliveryWindows', label: 'Delivery windows supported (same-day, next-day, scheduled)', kind: 'text', required: true },
+        { key: 'maxDailyParcels', label: 'Maximum parcels handled per day', kind: 'number' },
+      ],
+    },
+    buyer: {
+      title: 'Local Delivery Requirement Profile', description: 'Define your final-mile delivery need so we can match suitable local distributors.', icon: Network,
+      fields: [
+        { key: 'deliveryZones', label: 'Delivery suburbs or zones required', kind: 'textarea', required: true },
+        { key: 'parcelProfile', label: 'Parcel type and expected volume', kind: 'textarea', required: true },
+        { key: 'deliveryWindow', label: 'Required delivery window (same-day, next-day, scheduled)', kind: 'text', required: true },
+        { key: 'specialHandling', label: 'Special handling or compliance requirements', kind: 'textarea' },
       ],
     },
   },

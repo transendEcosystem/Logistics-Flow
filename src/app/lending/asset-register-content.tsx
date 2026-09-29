@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Loader2, Plus, PlusCircle, Truck, Edit, Trash2, Warehouse, Wrench, ArrowLeft, FileText, Handshake, Car, Bus, Monitor, RefreshCcw, ShoppingBag, User, CheckCircle2, ShieldCheck, Filter, Search } from "lucide-react";
+import { Loader2, Plus, PlusCircle, Truck, Edit, Trash2, Warehouse, Wrench, ArrowLeft, FileText, Handshake, Car, Bus, Monitor, RefreshCcw, ShoppingBag, User, CheckCircle2, ShieldCheck, Filter, Search, Scale } from "lucide-react";
 import { DataTable } from '@/components/ui/data-table';
 import { type ColumnDef } from '@/hooks/use-data-table';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,34 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+
+function AssetAccountingEventDialog({ asset, onComplete }: { asset: any; onComplete: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [eventType, setEventType] = useState('lease_depreciation');
+    const [amount, setAmount] = useState('');
+    const [reference, setReference] = useState('');
+    const [eventDate, setEventDate] = useState(new Date().toISOString().slice(0, 10));
+    const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
+    const [accumulatedDepreciation, setAccumulatedDepreciation] = useState('0');
+    const [isSaving, setIsSaving] = useState(false);
+    const { toast } = useToast();
+    const saveEvent = async () => {
+        try {
+            setIsSaving(true);
+            const token = await getClientSideAuthToken();
+            if (!token) throw new Error('Authentication required.');
+            const response = await fetch('/api/admin/lending/asset-accounting', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ eventType, assetId: asset.id, clientId: asset.clientId, reference, amount: Number(amount), assetCost: Number(asset.costOfSale || 0), accumulatedDepreciation: Number(accumulatedDepreciation), eventDate, effectiveDate }) });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.error || 'Unable to post accounting event.');
+            toast({ title: 'Asset accounting event posted' });
+            setOpen(false); setAmount(''); setReference(''); onComplete();
+        } catch (error: any) { toast({ variant: 'destructive', title: 'Accounting event failed', description: error.message }); } finally { setIsSaving(false); }
+    };
+    return <Dialog open={open} onOpenChange={setOpen}><Button variant="ghost" size="icon" title="Post asset accounting event" onClick={() => setOpen(true)}><Scale className="h-4 w-4 text-primary" /></Button><DialogContent><DialogHeader><DialogTitle>Post asset accounting event</DialogTitle><DialogDescription>{asset.year} {asset.make} {asset.model}. The event is immutable and will create an accounting journal.</DialogDescription></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Event type</Label><select className="flex h-10 w-full rounded-md border bg-background px-3 text-sm" value={eventType} onChange={(event) => setEventType(event.target.value)}><option value="installment_sale_conclusion">Installment-sale conclusion</option><option value="lease_depreciation">Lease depreciation</option><option value="rent_to_own_residual_settlement">Rent-to-own residual settlement</option><option value="discounting_cession">Discounting out-and-out cession</option></select></div><div className="grid grid-cols-2 gap-3"><div className="space-y-2"><Label>Amount / balloon payment</Label><Input type="number" min="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></div><div className="space-y-2"><Label>Reference</Label><Input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Invoice or journal reference" /></div><div className="space-y-2"><Label>Event date</Label><Input type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} /></div><div className="space-y-2"><Label>Effective date</Label><Input type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} /></div>{eventType === 'rent_to_own_residual_settlement' && <div className="space-y-2 col-span-2"><Label>Accumulated depreciation</Label><Input type="number" min="0" value={accumulatedDepreciation} onChange={(event) => setAccumulatedDepreciation(event.target.value)} /></div>}</div></div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={saveEvent} disabled={isSaving || !amount || !reference}>{isSaving ? 'Posting...' : 'Post event'}</Button></DialogFooter></DialogContent></Dialog>;
+}
 
 const statusColors: { [key: string]: 'default' | 'secondary' | 'destructive' | 'outline' } = {
     pending_acquisition: 'secondary',
@@ -201,8 +229,13 @@ export default function AssetRegisterContent() {
                 </Badge>
             ) 
         },
+        {
+            header: 'Ownership / treatment',
+            cell: ({ row }) => <div className="flex flex-col text-[10px] font-bold uppercase"><span>{row.original.ownership || 'lender_inventory'}</span><span className="text-muted-foreground">{row.original.treatment || 'acquired_for_resale'}</span></div>
+        },
         { id: 'actions', header: <div className="text-right">Audit</div>, cell: ({ row }) => (
             <div className="text-right flex justify-end gap-1">
+                <AssetAccountingEventDialog asset={row.original} onComplete={forceRefresh} />
                 <Button variant="ghost" size="icon" onClick={() => handleEdit(row.original)}><Edit className="h-4 w-4" /></Button>
                 <Button variant="ghost" size="icon" onClick={() => { setAssetToDelete(row.original); setIsDeleteAlertOpen(true); }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
             </div>
@@ -233,7 +266,7 @@ export default function AssetRegisterContent() {
                         <Truck className="h-8 w-8 text-primary" />
                         Asset Register
                     </h1>
-                    <p className="text-muted-foreground mt-1 text-left">Fiduciary ledger of all physical collateral and technical data nodes.</p>
+                    <p className="text-muted-foreground mt-1 text-left">Lender stock register for acquired physical assets only. Client collateral remains in the separate Collateral Register until enforcement and recovery.</p>
                 </div>
                 <div className="flex gap-2 text-left">
                     <Button variant="outline" size="sm" onClick={forceRefresh} disabled={isLoading} className="gap-2 h-10 px-6 font-bold">

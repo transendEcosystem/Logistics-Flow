@@ -30,26 +30,29 @@ export async function GET() {
     const db = getFirestore(app);
 
     try {
-        // Fetch all approved shops from the public root collection
-        const snapshot = await db.collection('shops').where('status', '==', 'approved').get();
+        // Query both root 'shops' collection and 'shops' subcollectionGroup to ensure all commercial nodes are found
+        const [rootSnap, groupSnap] = await Promise.all([
+            db.collection('shops').get().catch(() => ({ docs: [] })),
+            db.collectionGroup('shops').get().catch(() => ({ docs: [] })),
+        ]);
         
-        if (snapshot.empty) {
+        const allDocs = [...(rootSnap.docs || []), ...(groupSnap.docs || [])];
+        if (allDocs.length === 0) {
             return NextResponse.json({ success: true, data: [] });
         }
         
-        const approvedShops = snapshot.docs.map((doc: QueryDocumentSnapshot) => ({
+        const rawShops = allDocs.map((doc: QueryDocumentSnapshot) => ({
             id: doc.id,
             ...serializeTimestamps(doc.data())
         }));
 
-        // De-duplicate: Ensure one node per company, keeping newest.
+        // De-duplicate: Ensure unique shops by shop ID, keeping newest
         const uniqueShopsMap = new Map();
-        approvedShops.forEach(shop => {
-            const cid = shop.companyId;
-            if (!cid) return;
-            const existing = uniqueShopsMap.get(cid);
-            if (!existing || new Date(shop.updatedAt) > new Date(existing.updatedAt)) {
-                uniqueShopsMap.set(cid, shop);
+        rawShops.forEach(shop => {
+            if (!shop.id) return;
+            const existing = uniqueShopsMap.get(shop.id);
+            if (!existing || new Date(shop.updatedAt || 0) > new Date(existing.updatedAt || 0)) {
+                uniqueShopsMap.set(shop.id, shop);
             }
         });
 

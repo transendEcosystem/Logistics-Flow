@@ -20,6 +20,7 @@ import { collection, query, where, doc, setDoc, serverTimestamp } from 'firebase
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { LendingAssetControlRecord } from '@/lib/lending/asset-architecture';
 
 const assetSchema = z.object({
   sourceType: z.enum(['dealer', 'client', 'stock']).default('dealer'),
@@ -85,6 +86,9 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
             
             await setDoc(ref, { 
                 ...values, 
+                assetKind: 'physical_asset' satisfies LendingAssetControlRecord['assetKind'],
+                ownership: values.status === 'sold' ? 'borrower' : 'lender_inventory',
+                treatment: 'acquired_for_resale' satisfies LendingAssetControlRecord['treatment'],
                 id: ref.id, 
                 updatedAt: serverTimestamp(),
                 createdAt: asset?.createdAt || serverTimestamp()

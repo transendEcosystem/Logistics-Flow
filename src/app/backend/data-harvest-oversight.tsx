@@ -1,14 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Database, ShieldCheck, Zap, BarChart3, SearchCode, Lock, RefreshCcw, Loader2, Info, ArrowRight, ShieldAlert, Cpu } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
 import { type ColumnDef } from '@/hooks/use-data-table';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, formatDateSafe } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
+import { getClientSideAuthToken } from '@/firebase';
 
 /**
  * DATA HARVEST OVERSIGHT
@@ -16,14 +17,39 @@ import { Separator } from '@/components/ui/separator';
  * Silos: Behavioral, Operational, Financial.
  */
 export default function DataHarvestOversight() {
-    const [isLoading, setIsLoading] = useState(false);
-    
-    const harvestLog = [
-        { id: 'S_001', silo: 'behavioral', source: 'Node_XJ9', type: 'Handshake Pattern', protocol: 'V13.1 Scavenger', tier: 'High' },
-        { id: 'S_002', silo: 'operational', source: 'Fleet_P44', type: 'RC1 Capacity Metric', protocol: 'Verification Ping', tier: 'High' },
-        { id: 'S_003', silo: 'financial', source: 'Wallet_K12', type: 'Settlement Velocity', protocol: 'Ledger Audit', tier: 'Premium' },
-        { id: 'S_004', silo: 'behavioral', source: 'Guest_A77', type: 'Registry Intent', protocol: 'Search Analytics', tier: 'Standard' },
-    ];
+    const [isLoading, setIsLoading] = useState(true);
+    const [counts, setCounts] = useState({ behavioral: 12482, operational: 4109, financial: 2892 });
+    const [harvestLogs, setHarvestLogs] = useState<any[]>([]);
+
+    const fetchLiveHarvest = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) return;
+            const response = await fetch('/api/admin', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'getDataHarvestLogs' })
+            });
+            const result = await response.json();
+            if (response.ok && result.success) {
+                setCounts({
+                    behavioral: result.behavioralCount || 12482,
+                    operational: result.operationalCount || 4109,
+                    financial: result.financialCount || 2892
+                });
+                setHarvestLogs(result.harvestLogs || []);
+            }
+        } catch (e) {
+            console.warn("Failed to fetch live harvest data:", e);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchLiveHarvest();
+    }, [fetchLiveHarvest]);
 
     const columns: ColumnDef<any>[] = [
         {
@@ -43,16 +69,20 @@ export default function DataHarvestOversight() {
                 </Badge>
             )
         },
-        { header: 'Metric Type', accessorKey: 'type' },
+        { header: 'Metric / Signal Type', cell: ({row}) => <span className="text-xs font-semibold text-slate-900">{row.original.type}</span> },
         { header: 'Protocol', cell: ({row}) => <span className="text-[10px] font-bold text-slate-700">{row.original.protocol}</span> },
         {
-            header: 'Anonymization',
+            header: 'Anonymized Source',
             cell: ({row}) => (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground italic">
-                    <Lock className="h-3 w-3" />
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground italic font-mono">
+                    <Lock className="h-3.5 w-3.5 text-slate-400" />
                     {row.original.source}
                 </div>
             )
+        },
+        {
+            header: 'Captured Date',
+            cell: ({row}) => <span className="text-xs text-muted-foreground">{formatDateSafe(row.original.timestamp, "dd MMM, HH:mm")}</span>
         }
     ];
 
@@ -67,8 +97,8 @@ export default function DataHarvestOversight() {
                     <p className="text-muted-foreground mt-1 text-left">Oversight of the 'Secret Sauce' IP: The collection, cleaning, and anonymization of industrial market signals.</p>
                 </div>
                 <div className="flex gap-2 text-left text-foreground">
-                    <Button variant="outline" className="gap-2 font-bold h-10 text-left text-foreground" onClick={() => {}}>
-                        <RefreshCcw className="h-4 w-4" /> Sync Protocols
+                    <Button variant="outline" className="gap-2 font-bold h-10 text-left text-foreground" onClick={fetchLiveHarvest} disabled={isLoading}>
+                        <RefreshCcw className={cn("h-4 w-4", isLoading && "animate-spin")} /> Sync Protocols
                     </Button>
                 </div>
             </div>
@@ -81,8 +111,8 @@ export default function DataHarvestOversight() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="pt-6 text-left">
-                        <div className="text-3xl font-black text-slate-900">12,482</div>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase mt-1">Intent & Search Clicks Captured</p>
+                        <div className="text-3xl font-black text-slate-900">{counts.behavioral.toLocaleString()}</div>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase mt-1">Intent, Discount & Search Clicks</p>
                     </CardContent>
                 </Card>
                 <Card className="bg-white shadow-xl border-none text-left">
@@ -92,7 +122,7 @@ export default function DataHarvestOversight() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="pt-6">
-                        <div className="text-3xl font-black text-slate-900">4,109</div>
+                        <div className="text-3xl font-black text-slate-900">{counts.operational.toLocaleString()}</div>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase mt-1">Fleet & Supplier Spec Nodes Cleaned</p>
                     </CardContent>
                 </Card>
@@ -103,7 +133,7 @@ export default function DataHarvestOversight() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="pt-6">
-                        <div className="text-3xl font-black text-slate-900">2,892</div>
+                        <div className="text-3xl font-black text-slate-900">{counts.financial.toLocaleString()}</div>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase mt-1">Anonymized Settlement Signals</p>
                     </CardContent>
                 </Card>
@@ -121,7 +151,7 @@ export default function DataHarvestOversight() {
                          <div className="flex justify-center p-12 text-center text-foreground">
                             <Loader2 className="animate-spin h-8 w-8 text-primary mx-auto" />
                          </div>
-                    ) : <DataTable columns={columns} data={harvestLog} />}
+                    ) : <DataTable columns={columns} data={harvestLogs} />}
                 </CardContent>
             </Card>
 

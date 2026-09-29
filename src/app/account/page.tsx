@@ -65,6 +65,7 @@ import ProfileContent from './profile-content';
 import CompanyContent from './company-content';
 import WalletContent from './wallet-content';
 import BillingContent from './billing-content';
+import LendingContent from './lending-content';
 import ActivityFeed from './activity-feed';
 import NetworkContent from './network-content';
 import SupportChatContent from './support-chat';
@@ -74,6 +75,8 @@ import ActionsPlanPage from '@/app/connect/actions/page';
 import IntelligenceHistory from './intelligence-history';
 import MarketingStudio from './marketing-studio';
 import MyFacilitiesContent from './facilities-content';
+import MyFacilityLettersContent from './facility-letters-content';
+import AgreementApplicationContent from './agreement-application';
 import ShopContent from './shop-content';
 import TrustIdentityContent from './trust-identity-content';
 import HumanCapitalContent from './human-capital-content';
@@ -87,6 +90,7 @@ import BusinessDomainContent from './business-domain-content';
 import { getPrimaryBusinessDomain } from '@/lib/business-domain';
 import { usePermissions } from '@/hooks/use-permissions';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 
 // Mall Gate Components
 import { MallGate } from './malls/MallGate';
@@ -104,6 +108,16 @@ function AccountPageContent() {
   const requestedRole = searchParams.get('role');
   const activeRole = requestedRole && availableRoles.includes(requestedRole) ? requestedRole : primaryBusinessDomain || 'supplier';
   const { can: canAccess } = usePermissions(activeRole);
+
+  const roleDisplayNames: Record<string, string> = {
+    supplier: 'Vendor',
+    transporter: 'Transporter',
+    broker: 'Transport Broker',
+    warehouseManager: 'Warehouse Manager',
+    lender: 'Lender',
+    dealer: 'Auto Dealer',
+    distributor: 'Distributor',
+  };
 
   useEffect(() => {
     window.localStorage.setItem('logistics-flow-active-role', activeRole);
@@ -166,6 +180,7 @@ function AccountPageContent() {
       case 'staff': return <StaffContent />;
       case 'wallet': return <WalletContent />;
       case 'billing': return <BillingContent />;
+      case 'lending': return <LendingContent />;
       case 'activity': return <ActivityFeed />;
       case 'support-chat': return <SupportChatContent />;
       case 'network': return <NetworkContent />;
@@ -173,6 +188,8 @@ function AccountPageContent() {
       case 'earnings': return <EarningsContent />;
       case 'marketing-studio': return <MarketingStudio />;
       case 'my-facilities': return <MyFacilitiesContent />;
+      case 'facility-letters': return <MyFacilityLettersContent />;
+      case 'agreement-application': return <AgreementApplicationContent />;
       case 'search-history': return <IntelligenceHistory />;
       case 'trust-identity': return <TrustIdentityContent />;
       case 'human-capital': return <HumanCapitalContent />;
@@ -196,11 +213,45 @@ function AccountPageContent() {
           <div className="flex items-center gap-2 p-2">
             <div className="bg-primary/10 p-2 rounded-full"><Box className="h-6 w-6 text-primary" /></div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-semibold text-sidebar-foreground">{activeRole[0].toUpperCase() + activeRole.slice(1)} Portal</h2>
-              {availableRoles.length > 1 && <Select value={activeRole} onValueChange={switchRole}><SelectTrigger className="h-7 border-0 bg-transparent p-0 text-xs text-sidebar-foreground/70"><SelectValue /></SelectTrigger><SelectContent>{availableRoles.map(role => <SelectItem key={role} value={role}>{role[0].toUpperCase() + role.slice(1)} Portal</SelectItem>)}</SelectContent></Select>}
+              <h2 className="text-lg font-bold text-sidebar-foreground tracking-tight">{roleDisplayNames[activeRole] || (activeRole[0].toUpperCase() + activeRole.slice(1))} Portal</h2>
+              {availableRoles.length > 1 && (
+                <Select value={activeRole} onValueChange={switchRole}>
+                  <SelectTrigger className="h-7 border-0 bg-primary/10 px-2 rounded-md font-medium text-xs text-primary mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableRoles.map(role => (
+                      <SelectItem key={role} value={role} className="font-semibold text-xs">
+                        {roleDisplayNames[role] || (role[0].toUpperCase() + role.slice(1))} Portal
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
-          <Button variant="outline" size="sm" className="mx-2 mb-2" onClick={() => router.push('/account/additional-role?role=transporter')}>Add Role</Button>
+          {availableRoles.length > 1 && (
+            <div className="px-2 pt-2 pb-1">
+              <div className="flex flex-wrap gap-1.5 p-1.5 bg-slate-100 rounded-lg border border-slate-200">
+                <span className="text-[10px] font-black uppercase text-slate-500 w-full mb-1">Active Company Portals</span>
+                {availableRoles.map(role => (
+                  <Button
+                    key={role}
+                    variant={activeRole === role ? "default" : "outline"}
+                    size="sm"
+                    className={cn(
+                      "h-7 text-[11px] font-bold px-2.5 rounded-md transition-all",
+                      activeRole === role ? "bg-primary text-white shadow-sm" : "bg-white text-slate-700 hover:bg-slate-50"
+                    )}
+                    onClick={() => switchRole(role)}
+                  >
+                    {roleDisplayNames[role] || (role[0].toUpperCase() + role.slice(1))}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+          <Button variant="outline" size="sm" className="mx-2 my-2 font-bold text-xs" onClick={() => router.push('/account/additional-role?role=transporter')}>+ Add Secondary Role</Button>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
@@ -247,7 +298,19 @@ function AccountPageContent() {
                     {canAccess('edit', 'postTransport' as any) && <SidebarMenuItem><SidebarMenuButton tooltip="Fleet and Routes" isActive={activeView === 'fleet-profile'} onClick={() => navigate('fleet-profile')}><Truck /><span>Fleet & Routes</span></SidebarMenuButton></SidebarMenuItem>}
                     {canAccess('edit', 'shop') && <SidebarMenuItem><SidebarMenuButton tooltip="Transport Storefront" isActive={activeView === 'shop' && nodeType === 'transport'} onClick={() => navigate('shop', 'transport')}><Store /><span>My Transport Storefront</span></SidebarMenuButton></SidebarMenuItem>}
                   </>}
+                  {primaryBusinessDomain === 'broker' && <>
+                    <SidebarMenuItem><SidebarMenuButton tooltip="Load Shop Back Office" isActive={activeView === 'shop' && nodeType === 'loads'} onClick={() => navigate('shop', 'loads')}><PackageSearch /><span>Load Shop Back Office</span></SidebarMenuButton></SidebarMenuItem>
+                  </>}
+                  {primaryBusinessDomain === 'warehouseManager' && <>
+                    <SidebarMenuItem><SidebarMenuButton tooltip="Warehouse Shop Back Office" isActive={activeView === 'shop' && nodeType === 'warehouse'} onClick={() => navigate('shop', 'warehouse')}><Warehouse /><span>Warehouse Back Office</span></SidebarMenuButton></SidebarMenuItem>
+                  </>}
                   {primaryBusinessDomain === 'lender' && <SidebarMenuItem><SidebarMenuButton tooltip="Lending Products and Criteria" isActive={activeView === 'shop' && nodeType === 'finance'} onClick={() => navigate('shop', 'finance')}><Landmark /><span>Lending Products & Criteria</span></SidebarMenuButton></SidebarMenuItem>}
+                  {primaryBusinessDomain === 'dealer' && <>
+                    <SidebarMenuItem><SidebarMenuButton tooltip="Buy & Sell Shop Back Office" isActive={activeView === 'shop' && nodeType === 'buy-sell'} onClick={() => navigate('shop', 'buy-sell')}><ShoppingCart /><span>Buy & Sell Back Office</span></SidebarMenuButton></SidebarMenuItem>
+                  </>}
+                  {primaryBusinessDomain === 'distributor' && <>
+                    <SidebarMenuItem><SidebarMenuButton tooltip="Distribution Shop Back Office" isActive={activeView === 'shop' && nodeType === 'distribution'} onClick={() => navigate('shop', 'distribution')}><Network /><span>Distribution Back Office</span></SidebarMenuButton></SidebarMenuItem>
+                  </>}
                   {!primaryBusinessDomain && <SidebarMenuItem><SidebarMenuButton tooltip="Set Primary Business Domain" isActive={activeView === 'business-domain'} onClick={() => navigate('business-domain')}><Target /><span>Set Primary Business Domain</span></SidebarMenuButton></SidebarMenuItem>}
                 </SidebarMenu>
               </SidebarGroup>
@@ -277,6 +340,9 @@ function AccountPageContent() {
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton tooltip="Billing" isActive={activeView === 'billing'} onClick={() => navigate('billing')}><Wallet /><span>Billing</span></SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton tooltip="Lending Account" isActive={activeView === 'lending'} onClick={() => navigate('lending')}><Landmark /><span>Lending Account</span></SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton tooltip="Trust & Identity" isActive={activeView === 'trust-identity'} onClick={() => navigate('trust-identity')}><Fingerprint /><span>Trust & Identity</span></SidebarMenuButton>

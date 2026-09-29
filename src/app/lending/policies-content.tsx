@@ -13,7 +13,9 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { DEFAULT_SCORING_THRESHOLDS, ScoringPolicyThresholds } from '@/lib/lending/scoring-engine';
 
 export default function PoliciesContent() {
     const { toast } = useToast();
@@ -38,12 +40,52 @@ export default function PoliciesContent() {
             lease: 4.5,
             factoring: 3
         },
+        agreementRules: [
+            {
+                id: 'loan-working-capital-default',
+                label: 'Loan / Working Capital default authority',
+                agreementType: 'loan-pv-term',
+                maxAmount: 100000,
+                maxTermMonths: 24,
+                allowedProvinces: ['Western Cape', 'Western Province'],
+                allowedCities: ['Beaufort West', 'Baufortwest Wes'],
+            }
+        ],
+        scoringThresholds: DEFAULT_SCORING_THRESHOLDS,
         entityTypeAppetite: ["Ltd", "Private Company (Pty Ltd)", "Sole Proprietorship"]
     });
 
     useEffect(() => {
         if (config) setPolicies(prev => ({ ...prev, ...config }));
     }, [config]);
+
+    const updateAgreementRule = (index: number, patch: Record<string, any>) => {
+        const agreementRules = [...(policies.agreementRules || [])];
+        agreementRules[index] = { ...agreementRules[index], ...patch };
+        setPolicies({ ...policies, agreementRules });
+    };
+
+    const addAgreementRule = () => {
+        setPolicies({
+            ...policies,
+            agreementRules: [
+                ...(policies.agreementRules || []),
+                {
+                    id: `agreement-rule-${Date.now()}`,
+                    label: 'New agreement authority rule',
+                    agreementType: 'loan-pv-term',
+                    maxAmount: 0,
+                    maxTermMonths: 0,
+                    allowedProvinces: [],
+                    allowedCities: [],
+                }
+            ]
+        });
+    };
+
+    const removeAgreementRule = (index: number) => {
+        setPolicies({ ...policies, agreementRules: (policies.agreementRules || []).filter((_, itemIndex) => itemIndex !== index) });
+    };
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -91,11 +133,17 @@ export default function PoliciesContent() {
                     <TabsTrigger value="risk" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
                         <Scale className="h-3.5 w-3.5" /> Risk Appetite
                     </TabsTrigger>
+                    <TabsTrigger value="scoring-policy" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
+                        <ShieldCheck className="h-3.5 w-3.5" /> Scoring Policy Ratios
+                    </TabsTrigger>
                     <TabsTrigger value="pricing" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
                         <TrendingUp className="h-3.5 w-3.5" /> Yield & Pricing
                     </TabsTrigger>
                     <TabsTrigger value="assets" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
                         <Truck className="h-3.5 w-3.5" /> Asset Vetting
+                    </TabsTrigger>
+                    <TabsTrigger value="agreement-rules" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
+                        <Gavel className="h-3.5 w-3.5" /> Agreement Rules
                     </TabsTrigger>
                     <TabsTrigger value="entities" className="gap-2 px-6 py-2.5 font-bold uppercase tracking-widest text-[10px]">
                         <Building2 className="h-3.5 w-3.5" /> Authorized Profiles
@@ -154,6 +202,212 @@ export default function PoliciesContent() {
                             </CardContent>
                         </Card>
                     </div>
+                </TabsContent>
+
+                <TabsContent value="scoring-policy" className="mt-8 space-y-8 text-left">
+                    <Card className="border-none shadow-xl bg-white text-left">
+                        <CardHeader className="p-8 border-b bg-muted/20 flex flex-row items-center justify-between text-left">
+                            <div className="space-y-1 text-left">
+                                <CardTitle className="text-xl font-bold text-left">Scoring Engine Policy & Financial Ratio Bounds</CardTitle>
+                                <CardDescription className="text-left">Configure bank score floors, variance penalties, conduct weighting, and financial ratio exception limits.</CardDescription>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="p-8 space-y-8 text-left text-foreground">
+                            {/* Stream 1 & 2 Config */}
+                            <div className="space-y-4">
+                                <h4 className="text-xs font-black uppercase tracking-widest text-primary">Data Stream 1 & 2: Bank Score Floor & Questionnaire Variance Penalties</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Min Bank Score Floor</Label>
+                                        <Input 
+                                            type="number" 
+                                            value={policies.scoringThresholds?.minBankScore || 580} 
+                                            onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), minBankScore: Number(e.target.value)}})} 
+                                            className="h-11 border-2 bg-white font-bold" 
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Returned Debit Penalty (Pts/Item)</Label>
+                                        <Input 
+                                            type="number" 
+                                            value={policies.scoringThresholds?.returnedDebitPenalty || 45} 
+                                            onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), returnedDebitPenalty: Number(e.target.value)}})} 
+                                            className="h-11 border-2 bg-white font-bold text-destructive" 
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Bureau Adverse Record Penalty (Pts)</Label>
+                                        <Input 
+                                            type="number" 
+                                            value={policies.scoringThresholds?.bureauPenaltyPoints || 50} 
+                                            onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), bureauPenaltyPoints: Number(e.target.value)}})} 
+                                            className="h-11 border-2 bg-white font-bold text-destructive" 
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            {/* Stream 3 Config */}
+                            <div className="space-y-4">
+                                <h4 className="text-xs font-black uppercase tracking-widest text-primary">Data Stream 3: Internal Conduct Weighting (Existing Clients)</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Clean Payment History Bonus (Pts)</Label>
+                                        <Input 
+                                            type="number" 
+                                            value={policies.scoringThresholds?.conductBonusPoints || 30} 
+                                            onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), conductBonusPoints: Number(e.target.value)}})} 
+                                            className="h-11 border-2 bg-white font-bold text-green-700" 
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Internal Arrears Penalty (Pts/Transaction)</Label>
+                                        <Input 
+                                            type="number" 
+                                            value={policies.scoringThresholds?.conductArrearsPenalty || 60} 
+                                            onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), conductArrearsPenalty: Number(e.target.value)}})} 
+                                            className="h-11 border-2 bg-white font-bold text-destructive" 
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            {/* Inter-Month & Recon Variance Policy Thresholds */}
+                            <div className="space-y-4">
+                                <h4 className="text-xs font-black uppercase tracking-widest text-primary">Inter-Month Trend & Bank Reconciliation Variance Thresholds</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground">DSO Expansion Threshold (Days)</Label>
+                                        <Input 
+                                            type="number" 
+                                            value={policies.scoringThresholds?.dsoExpansionThresholdDays ?? 15} 
+                                            onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), dsoExpansionThresholdDays: Number(e.target.value)}})} 
+                                            className="h-11 border-2 bg-white font-bold text-amber-700" 
+                                        />
+                                        <p className="text-[9px] text-muted-foreground">Flags debtor collection drift over 12 months.</p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Creditor Payment Stretch Threshold (Days)</Label>
+                                        <Input 
+                                            type="number" 
+                                            value={policies.scoringThresholds?.creditorDaysDriftThreshold ?? 15} 
+                                            onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), creditorDaysDriftThreshold: Number(e.target.value)}})} 
+                                            className="h-11 border-2 bg-white font-bold text-amber-700" 
+                                        />
+                                        <p className="text-[9px] text-muted-foreground">Flags supplier payment stretch over 12 months.</p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Bank Recon Variance Tolerance (%)</Label>
+                                        <Input 
+                                            type="number" 
+                                            step="0.5"
+                                            value={policies.scoringThresholds?.reconVarianceTolerancePercent ?? 2.5} 
+                                            onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), reconVarianceTolerancePercent: Number(e.target.value)}})} 
+                                            className="h-11 border-2 bg-white font-bold text-destructive" 
+                                        />
+                                        <p className="text-[9px] text-muted-foreground">Max variance declared vs bank statement pull.</p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-muted-foreground">Bank Liquidity Contraction Max (%)</Label>
+                                        <Input 
+                                            type="number" 
+                                            step="1"
+                                            value={policies.scoringThresholds?.closingBalanceContractionPercent ?? 20} 
+                                            onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), closingBalanceContractionPercent: Number(e.target.value)}})} 
+                                            className="h-11 border-2 bg-white font-bold text-amber-700" 
+                                        />
+                                        <p className="text-[9px] text-muted-foreground">Max month-to-month bank balance contraction.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            {/* Stream 4 Ratio Policy Limits */}
+                            <div className="space-y-4">
+                                <h4 className="text-xs font-black uppercase tracking-widest text-primary">Data Stream 4: 13 Critical Financial Ratios (Approved Min / Max Bounds)</h4>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="p-4 border-2 rounded-2xl bg-slate-50 space-y-3">
+                                        <Label className="font-bold text-xs uppercase text-slate-900 block">Debt Service Coverage Ratio (DSCR Min / Max)</Label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <span className="text-[9px] font-black uppercase text-muted-foreground block">Min Approved</span>
+                                                <Input type="number" step="0.05" value={policies.scoringThresholds?.debtServiceCoverageRatio?.min || 1.25} onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), debtServiceCoverageRatio: {...(policies.scoringThresholds?.debtServiceCoverageRatio || DEFAULT_SCORING_THRESHOLDS.debtServiceCoverageRatio), min: Number(e.target.value)}}})} className="h-10 bg-white font-bold" />
+                                            </div>
+                                            <div>
+                                                <span className="text-[9px] font-black uppercase text-muted-foreground block">Max Approved</span>
+                                                <Input type="number" step="0.05" value={policies.scoringThresholds?.debtServiceCoverageRatio?.max || 4.0} onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), debtServiceCoverageRatio: {...(policies.scoringThresholds?.debtServiceCoverageRatio || DEFAULT_SCORING_THRESHOLDS.debtServiceCoverageRatio), max: Number(e.target.value)}}})} className="h-10 bg-white font-bold" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-4 border-2 rounded-2xl bg-slate-50 space-y-3">
+                                        <Label className="font-bold text-xs uppercase text-slate-900 block">Current Ratio Liquidity (Min / Max)</Label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <span className="text-[9px] font-black uppercase text-muted-foreground block">Min Approved</span>
+                                                <Input type="number" step="0.05" value={policies.scoringThresholds?.currentRatio?.min || 1.1} onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), currentRatio: {...(policies.scoringThresholds?.currentRatio || DEFAULT_SCORING_THRESHOLDS.currentRatio), min: Number(e.target.value)}}})} className="h-10 bg-white font-bold" />
+                                            </div>
+                                            <div>
+                                                <span className="text-[9px] font-black uppercase text-muted-foreground block">Max Approved</span>
+                                                <Input type="number" step="0.05" value={policies.scoringThresholds?.currentRatio?.max || 3.0} onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), currentRatio: {...(policies.scoringThresholds?.currentRatio || DEFAULT_SCORING_THRESHOLDS.currentRatio), max: Number(e.target.value)}}})} className="h-10 bg-white font-bold" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-4 border-2 rounded-2xl bg-slate-50 space-y-3">
+                                        <Label className="font-bold text-xs uppercase text-slate-900 block">Quick Ratio / Acid Test (Min / Max)</Label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <span className="text-[9px] font-black uppercase text-muted-foreground block">Min Approved</span>
+                                                <Input type="number" step="0.05" value={policies.scoringThresholds?.quickRatio?.min || 0.9} onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), quickRatio: {...(policies.scoringThresholds?.quickRatio || DEFAULT_SCORING_THRESHOLDS.quickRatio), min: Number(e.target.value)}}})} className="h-10 bg-white font-bold" />
+                                            </div>
+                                            <div>
+                                                <span className="text-[9px] font-black uppercase text-muted-foreground block">Max Approved</span>
+                                                <Input type="number" step="0.05" value={policies.scoringThresholds?.quickRatio?.max || 2.5} onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), quickRatio: {...(policies.scoringThresholds?.quickRatio || DEFAULT_SCORING_THRESHOLDS.quickRatio), max: Number(e.target.value)}}})} className="h-10 bg-white font-bold" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-4 border-2 rounded-2xl bg-slate-50 space-y-3">
+                                        <Label className="font-bold text-xs uppercase text-slate-900 block">Debt to Equity / Worth (Min / Max)</Label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <span className="text-[9px] font-black uppercase text-muted-foreground block">Min Approved</span>
+                                                <Input type="number" step="0.05" value={policies.scoringThresholds?.debtToWorthRatio?.min || 0.1} onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), debtToWorthRatio: {...(policies.scoringThresholds?.debtToWorthRatio || DEFAULT_SCORING_THRESHOLDS.debtToWorthRatio), min: Number(e.target.value)}}})} className="h-10 bg-white font-bold" />
+                                            </div>
+                                            <div>
+                                                <span className="text-[9px] font-black uppercase text-muted-foreground block">Max Approved</span>
+                                                <Input type="number" step="0.05" value={policies.scoringThresholds?.debtToWorthRatio?.max || 2.5} onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), debtToWorthRatio: {...(policies.scoringThresholds?.debtToWorthRatio || DEFAULT_SCORING_THRESHOLDS.debtToWorthRatio), max: Number(e.target.value)}}})} className="h-10 bg-white font-bold" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-4 border-2 rounded-2xl bg-slate-50 space-y-3">
+                                        <Label className="font-bold text-xs uppercase text-slate-900 block">Net Profit Margin % (Min / Max)</Label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <span className="text-[9px] font-black uppercase text-muted-foreground block">Min % Approved</span>
+                                                <Input type="number" step="0.5" value={policies.scoringThresholds?.netMarginPercent?.min || 3.0} onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), netMarginPercent: {...(policies.scoringThresholds?.netMarginPercent || DEFAULT_SCORING_THRESHOLDS.netMarginPercent), min: Number(e.target.value)}}})} className="h-10 bg-white font-bold" />
+                                            </div>
+                                            <div>
+                                                <span className="text-[9px] font-black uppercase text-muted-foreground block">Max % Approved</span>
+                                                <Input type="number" step="0.5" value={policies.scoringThresholds?.netMarginPercent?.max || 50.0} onChange={e => setPolicies({...policies, scoringThresholds: {...(policies.scoringThresholds || DEFAULT_SCORING_THRESHOLDS), netMarginPercent: {...(policies.scoringThresholds?.netMarginPercent || DEFAULT_SCORING_THRESHOLDS.netMarginPercent), max: Number(e.target.value)}}})} className="h-10 bg-white font-bold" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
                 </TabsContent>
 
                 <TabsContent value="pricing" className="mt-8 space-y-8 text-left">
@@ -264,6 +518,65 @@ export default function PoliciesContent() {
                             </CardContent>
                         </Card>
                     </div>
+                </TabsContent>
+
+                <TabsContent value="agreement-rules" className="mt-8 space-y-8 text-left text-foreground">
+                    <Card className="border-none shadow-xl bg-white text-left">
+                        <CardHeader className="p-8 border-b bg-muted/20 flex flex-row items-center justify-between text-left">
+                            <div className="space-y-1 text-left">
+                                <CardTitle className="text-xl font-bold text-left">Agreement-Level Authority Rules</CardTitle>
+                                <CardDescription className="text-left">Hard controls applied when an agreement is committed. Amount, term, province, and city must fit the governing policy.</CardDescription>
+                            </div>
+                            <Button type="button" variant="outline" onClick={addAgreementRule} className="font-bold">Add Rule</Button>
+                        </CardHeader>
+                        <CardContent className="p-8 space-y-6 text-left">
+                            {(policies.agreementRules || []).map((rule, index) => (
+                                <div key={rule.id || index} className="rounded-2xl border-2 border-dashed bg-slate-50 p-6 space-y-5 text-left">
+                                    <div className="flex items-start justify-between gap-4 text-left">
+                                        <div className="space-y-1 text-left">
+                                            <Label className="text-[10px] font-black uppercase tracking-widest text-primary">Rule label</Label>
+                                            <Input value={rule.label || ''} onChange={event => updateAgreementRule(index, { label: event.target.value })} className="h-11 border-2 bg-white font-bold" />
+                                        </div>
+                                        <Button type="button" variant="ghost" onClick={() => removeAgreementRule(index)} className="text-destructive font-bold">Remove</Button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-left">
+                                        <div className="space-y-2 text-left">
+                                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Agreement type</Label>
+                                            <Select value={rule.agreementType || 'loan-pv-term'} onValueChange={value => updateAgreementRule(index, { agreementType: value })}>
+                                                <SelectTrigger className="h-11 border-2 bg-white"><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="loan-pv-term">Loan / Working Capital</SelectItem>
+                                                    <SelectItem value="installment-sale-term">Installment Sale</SelectItem>
+                                                    <SelectItem value="rental-term">Lease / Rental</SelectItem>
+                                                    <SelectItem value="discounting">Discounting / Factoring</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-2 text-left">
+                                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Max amount</Label>
+                                            <Input type="number" value={rule.maxAmount || 0} onChange={event => updateAgreementRule(index, { maxAmount: Number(event.target.value) })} className="h-11 border-2 bg-white font-bold" />
+                                        </div>
+                                        <div className="space-y-2 text-left">
+                                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Max term months</Label>
+                                            <Input type="number" value={rule.maxTermMonths || 0} onChange={event => updateAgreementRule(index, { maxTermMonths: Number(event.target.value) })} className="h-11 border-2 bg-white font-bold" />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-left">
+                                        <div className="space-y-2 text-left">
+                                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Allowed provinces</Label>
+                                            <Input value={(rule.allowedProvinces || []).join(', ')} onChange={event => updateAgreementRule(index, { allowedProvinces: event.target.value.split(',').map(item => item.trim()).filter(Boolean) })} placeholder="Western Cape, Gauteng" className="h-11 border-2 bg-white font-bold" />
+                                        </div>
+                                        <div className="space-y-2 text-left">
+                                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Allowed cities</Label>
+                                            <Input value={(rule.allowedCities || []).join(', ')} onChange={event => updateAgreementRule(index, { allowedCities: event.target.value.split(',').map(item => item.trim()).filter(Boolean) })} placeholder="Beaufort West, Cape Town" className="h-11 border-2 bg-white font-bold" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
                 </TabsContent>
 
                 <TabsContent value="entities" className="mt-8 space-y-8 text-left text-foreground">

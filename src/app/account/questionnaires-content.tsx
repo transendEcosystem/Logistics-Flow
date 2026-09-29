@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Building2, ClipboardList, Landmark, PackageSearch, Truck, Warehouse } from 'lucide-react';
+import { Building2, ClipboardList, Landmark, Network, PackageSearch, Truck, Warehouse } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -40,6 +40,13 @@ const questionnaires = [
     title: 'Loads Mall',
     description: 'Provide fleet availability, equipment and lanes. We use the detail to match loads to the right vehicle capacity, reduce unsuitable requests and improve utilisation.',
     icon: PackageSearch,
+  },
+  {
+    mall: 'distribution',
+    role: 'provider',
+    title: 'Distribution Mall',
+    description: 'Share your delivery zones, vehicle types and service levels. Accurate coverage helps us match local delivery opportunities and qualified last-mile requests to your business.',
+    icon: Network,
   },
 ];
 

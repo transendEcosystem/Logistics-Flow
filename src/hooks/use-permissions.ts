@@ -77,7 +77,10 @@ export function usePermissions(activeRole?: string) {
         const isAdmin = user.email === 'mkoton100@gmail.com' || 
                         user.email === 'beyondtransport@gmail.com' ||
                         user.email === 'michael@logisticsflow.co.za' ||
-                        user.claims?.admin === true;
+                        user.claims?.admin === true ||
+                        user.role === 'admin' ||
+                        user.declaredPosition === 'admin' ||
+                        user.declaredPosition === 'ai-agent';
 
         if (isAdmin) {
             perms.add('manage:all');
@@ -139,6 +142,21 @@ export function usePermissions(activeRole?: string) {
         }
         if (companyData.hasSupplierPlan || companyData.primaryBusinessDomain === 'supplier' || companyData.declaredRole === 'supplier') {
             perms.add('view:supplierMall');
+        }
+        if (companyData.primaryBusinessDomain === 'broker' || companyData.declaredRole === 'broker') {
+            perms.add('view:loads');
+            perms.add('transact:loads');
+        }
+        if (companyData.primaryBusinessDomain === 'warehouseManager' || companyData.declaredRole === 'warehouseManager') {
+            perms.add('view:warehouseMall');
+            perms.add('transact:warehouseMall');
+        }
+        if (companyData.primaryBusinessDomain === 'dealer' || companyData.declaredRole === 'dealer') {
+            perms.add('view:buySellMall');
+            perms.add('transact:buySellMall');
+        }
+        if (companyData.primaryBusinessDomain === 'distributor' || companyData.declaredRole === 'distributor') {
+            perms.add('view:distributionMall');
         }
         
         // 3. Operational Presence

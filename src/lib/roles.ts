@@ -1,4 +1,4 @@
-import { ShoppingCart, Truck, Handshake, Briefcase, Bot, Users, Code, Share2, Landmark, ShieldCheck } from "lucide-react";
+import { ShoppingCart, Truck, Handshake, Briefcase, Bot, Users, Code, Share2, Landmark, ShieldCheck, Building2, Warehouse, Network, PackageSearch } from "lucide-react";
 import * as React from "react";
 import data from '@/lib/placeholder-images.json';
 
@@ -6,7 +6,12 @@ const { placeholderImages } = data;
 
 const roleImages = {
     vendor: placeholderImages.find(p => p.id === 'mall-division')!,
+    supplier: placeholderImages.find(p => p.id === 'mall-division')!,
     transporter: placeholderImages.find(p => p.id === 'marketplace-division')!,
+    broker: placeholderImages.find(p => p.id === 'marketplace-division')!,
+    warehouseManager: placeholderImages.find(p => p.id === 'mall-division')!,
+    dealer: placeholderImages.find(p => p.id === 'marketplace-division')!,
+    distributor: placeholderImages.find(p => p.id === 'tech-home')!,
     partner: placeholderImages.find(p => p.id === 'funding-division')!,
     associate: placeholderImages.find(p => p.id === 'value-integrity')!,
     'isa-agent': placeholderImages.find(p => p.id === 'tech-home')!,
@@ -28,31 +33,76 @@ export const roles = [
         image: roleImages.admin
     },
     {
-        id: "vendor",
-        icon: ShoppingCart,
+        id: "ai-agent",
+        icon: Bot,
+        title: "AI Co-Pilot / Auditor",
+        description: "Automated end-to-end testing, shop audits, and AI quality assurance across all malls.",
+        cta: "Join as AI Co-Pilot",
+        longDescription: "Specialized system role for AI-assisted platform verification, automated shop audits, and cross-mall testing.",
+        image: roleImages['isa-agent']
+    },
+    {
+        id: "supplier",
+        icon: Building2,
         title: "Vendors",
-        description: "Sell parts, equipment, and services directly to a targeted market of transport professionals.",
+        description: "Sell parts, equipment, products, and services directly to transport professionals.",
         cta: "Become a Vendor",
-        longDescription: "As a vendor, you gain direct access to a dedicated marketplace of transport businesses actively seeking parts, equipment, and essential services. Showcase your products, reach qualified buyers, and grow your business by becoming a trusted supplier within the Logistics Flow ecosystem.",
-        image: roleImages.vendor
+        longDescription: "As a vendor, you gain direct access to a dedicated marketplace of transport businesses actively seeking parts, equipment, and essential services.",
+        image: roleImages.supplier
     },
     {
         id: "transporter",
         icon: Truck,
         title: "Transporters",
-        description: "Sell transport services. Source parts, services and products to buy from a trusted community network",
+        description: "Sell long-haul transport services and manage fleet capacity across corridors.",
         cta: "Become a Transporter",
-        longDescription: "As a transporter, you can efficiently source high-quality vehicles, parts, and services from a network of vetted vendors and fellow transporters, while also marketing your own transport services to the community. Leverage our marketplace to find competitive pricing, reliable partners, and new customers, ensuring your fleet stays on the road and operates efficiently.",
+        longDescription: "As a transporter, efficiently market fleet capacity and connect with cargo owners needing long-haul freight movement.",
         image: roleImages.transporter
+    },
+    {
+        id: "broker",
+        icon: PackageSearch,
+        title: "Transport Brokers",
+        description: "Publish load requirements, source carriers, and manage freight matching.",
+        cta: "Become a Transport Broker",
+        longDescription: "As a transport broker, list loads, accept carrier bids, and coordinate transport capacity across cargo networks.",
+        image: roleImages.broker
+    },
+    {
+        id: "warehouseManager",
+        icon: Warehouse,
+        title: "Warehouse Managers",
+        description: "Offer storage capacity, warehousing services, and pallet handling to logistics operators.",
+        cta: "Become a Warehouse Manager",
+        longDescription: "Publish available pallet spaces, rack storage, and warehouse facility services directly to logistics operators.",
+        image: roleImages.warehouseManager
     },
     {
         id: "lender",
         icon: Landmark,
         title: "Lenders",
-        description: "Configure your lending criteria, reach qualified borrowers, and fund more deals.",
+        description: "Configure lending criteria, reach qualified borrowers, and fund commercial transport deals.",
         cta: "Become a Lender",
-        longDescription: "As a lender, you can define your specific credit appetite—from asset finance to working capital. Our matching engine delivers high-fidelity leads that fit your exact parameters, allowing you to focus on deployment and yield rather than cold origination.",
+        longDescription: "As a lender, define credit parameters for asset finance, working capital, and trade finance to match high-fidelity leads.",
         image: roleImages.lender
+    },
+    {
+        id: "dealer",
+        icon: ShoppingCart,
+        title: "Auto Dealers",
+        description: "List trucks, trailers, plant, and heavy equipment for sale or commercial lease.",
+        cta: "Become an Auto Dealer",
+        longDescription: "Publish commercial asset listings, manage buyer inquiries, and trade heavy-duty vehicles in the Buy & Sell Mall.",
+        image: roleImages.dealer
+    },
+    {
+        id: "distributor",
+        icon: Network,
+        title: "Distributors",
+        description: "Provide local, urban, and last-mile parcel delivery across regional coverage zones.",
+        cta: "Become a Distributor",
+        longDescription: "Publish final-mile delivery capacity, suburban service zones, and local logistics solutions for regional buyers.",
+        image: roleImages.distributor
     },
     {
         id: "partner",

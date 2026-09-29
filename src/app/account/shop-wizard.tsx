@@ -14,7 +14,7 @@ import {
     Warehouse, ShieldCheck, PackageSearch,
     ClipboardList, Sparkles, Store, FileUp, Trash2, PlusCircle, 
     Package, Info, Clock, Camera, ListOrdered, Edit, Tag, Zap,
-    FileText, Lock, Globe, UploadCloud
+    FileText, Lock, Globe, UploadCloud, Download, Network
 } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -72,6 +72,9 @@ const nodeFormSchema = z.object({
   kmRate: z.coerce.number().min(0).optional(),
   routeRates: z.array(routeRateSchema).default([]),
   imageUrls: z.array(z.string()).default([]),
+  serviceZones: z.string().optional(),
+  deliveryVehicleTypes: z.array(z.string()).default([]),
+  maxDailyParcels: z.coerce.number().min(0).optional(),
   termsText: z.string().optional(),
   privacyText: z.string().optional(),
 });
@@ -331,13 +334,37 @@ function StepCatalog({ shop }: { shop: any }) {
     );
 }
 
-function StepMedia() {
+function buildShopImagePrompt(type: 'logo' | 'banner', nodeType: string, shopName: string, category: string, aboutText: string) {
+    const shopFocus: Record<string, string> = {
+        loads: 'route maps, connected corridors, freight networks, journey planning, origin and destination flow',
+        transport: 'heavy-duty trucks and trailers moving goods safely on South African freight corridors',
+        warehouse: 'warehouse shelving, pallet storage, organised space, loading bays and efficient goods handling',
+        supplier: 'industrial products, truck parts, workshop services and reliable supply operations',
+        finance: 'commercial finance, capital flow, responsible lending and industrial business growth',
+        'buy-sell': 'heavy-duty vehicles, trailers, equipment and trusted asset trading',
+        distribution: 'local delivery vans and bakkies, urban routes, final-mile parcels, city district maps',
+        default: 'professional logistics operations and industrial business services',
+    };
+    const focus = shopFocus[nodeType] || shopFocus.default;
+    return type === 'logo'
+        ? `Create a polished, distinctive square logo mark for ${shopName}, a ${category} business. Visual direction: ${focus}. Use a clean vector-inspired industrial identity with professional brand colours. Do not include letters, words, watermarks, numbers or text. Center the symbol on a simple background.`
+        : `Create a premium realistic wide commercial banner for ${shopName}, a ${category} business. Visual direction: ${focus}. Show the actual business operation, equipment, facility or service environment. Professional South African logistics context, natural light, credible composition. Do not include letters, words, watermarks, numbers or text. Business context: ${aboutText.slice(0, 280) || 'Reliable commercial logistics service.'}`;
+}
+
+function StepMedia({ nodeType }: { nodeType: string }) {
     const { control, watch, setValue } = useFormContext<NodeFormValues>();
     const { user } = useUser();
     const { toast } = useToast();
     const [uploading, setUploading] = useState<string | null>(null);
     const [generating, setGenerating] = useState<string | null>(null);
+    const [promptType, setPromptType] = useState<'logo' | 'banner' | null>(null);
+    const [prompt, setPrompt] = useState('');
+    const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+    const [generatedImageType, setGeneratedImageType] = useState<'logo' | 'banner' | null>(null);
+    const [generationError, setGenerationError] = useState<string | null>(null);
+    const [savingGeneratedImage, setSavingGeneratedImage] = useState(false);
     const [progress, setProgress] = useState(0);
+    const promptScrollRef = React.useRef<HTMLDivElement>(null);
 
     const imageUrls = watch('imageUrls') || [];
     const shopName = watch('shopName') || 'Logistics Flow business';
@@ -359,27 +386,71 @@ function StepMedia() {
         else setValue('imageUrls', [...imageUrls, result.url]);
     };
 
-    const generateImage = async (type: 'logo' | 'banner') => {
+    const openPrompt = (type: 'logo' | 'banner') => {
+        setPrompt(buildShopImagePrompt(type, nodeType, shopName, category, aboutText));
+        setGeneratedImage(null);
+        setGeneratedImageType(null);
+        setGenerationError(null);
+        setPromptType(type);
+    };
+
+    useEffect(() => {
+        if (promptType && promptScrollRef.current) promptScrollRef.current.scrollTop = 0;
+    }, [promptType]);
+
+    const generateImage = async () => {
+        if (!promptType || !prompt.trim()) {
+            toast({ variant: 'destructive', title: 'Prompt is required', description: 'Describe the image you want to create before generating it.' });
+            return;
+        }
+        const type = promptType;
         setGenerating(type);
+        setGeneratedImage(null);
+        setGenerationError(null);
         try {
-            const imagePurpose = type === 'logo'
-                ? `A polished, distinctive square logo mark for ${shopName}, a ${category} business. No letters, words, watermarks or text. Clean vector-inspired industrial identity, professional brand colours, centered on a simple background.`
-                : `A premium, realistic wide commercial banner for ${shopName}, a ${category} business. Show the actual logistics operation, equipment, facility or products relevant to this business. No letters, words, watermarks or text. ${aboutText.slice(0, 280)}`;
             const token = await getClientSideAuthToken();
             const response = await fetch('/api/generateImage', {
                 method: 'POST',
                 headers: { 'Authorization': token ? `Bearer ${token}` : '', 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: imagePurpose }),
+                body: JSON.stringify({ prompt }),
             });
             const result = await response.json();
             if (!response.ok || !result.imageDataUri) throw new Error(result.error || 'Image generation did not return an image.');
-            await saveGeneratedImage(result.imageDataUri, type);
-            toast({ title: `AI ${type === 'logo' ? 'logo' : 'banner'} added`, description: 'The generated image is ready to review and will be saved with this Shop.' });
+            setGeneratedImage(result.imageDataUri);
+            setGeneratedImageType(type);
+            toast({ title: 'Image generated', description: 'Review it below, then save it to your Shop or download it.' });
         } catch (error: any) {
+            setGenerationError(error.message || 'Image generation failed.');
             toast({ variant: 'destructive', title: 'Image generation failed', description: error.message });
         } finally {
             setGenerating(null);
         }
+    };
+
+    const saveGeneratedImageToShop = async () => {
+        if (!generatedImage || !generatedImageType) return;
+        setSavingGeneratedImage(true);
+        try {
+            await saveGeneratedImage(generatedImage, generatedImageType);
+            toast({ title: `AI ${generatedImageType === 'logo' ? 'logo' : 'banner'} saved`, description: 'The image has been added to this Shop. Submit the wizard to publish the updated media.' });
+            setGeneratedImage(null);
+            setGeneratedImageType(null);
+            setPromptType(null);
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Save to Shop failed', description: error.message });
+        } finally {
+            setSavingGeneratedImage(false);
+        }
+    };
+
+    const downloadGeneratedImage = () => {
+        if (!generatedImage) return;
+        const link = document.createElement('a');
+        link.href = generatedImage;
+        link.download = `${shopName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'shop'}-${generatedImageType || 'image'}-${Date.now()}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'gallery') => {
@@ -430,11 +501,11 @@ function StepMedia() {
                         </div>
                         <div className="flex-1 space-y-2 text-left">
                             <input type="file" id="logo-up" className="hidden" onChange={e => handleUpload(e, 'logo')} />
-                            <Button variant="outline" size="sm" onClick={() => document.getElementById('logo-up')?.click()} disabled={!!uploading}>
+                            <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById('logo-up')?.click()} disabled={!!uploading}>
                                 {uploading === 'logo' ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <UploadCloud className="h-4 w-4 mr-2" />}
                                 Upload Logo
                             </Button>
-                            <Button variant="secondary" size="sm" onClick={() => generateImage('logo')} disabled={!!generating}>
+                            <Button type="button" variant="secondary" size="sm" onClick={() => openPrompt('logo')} disabled={!!generating}>
                                 {generating === 'logo' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Generate with AI
                             </Button>
                             <p className="text-[10px] text-muted-foreground">PNG or JPG. Square recommended.</p>
@@ -457,7 +528,7 @@ function StepMedia() {
                             <PlusCircle className="h-5 w-5" />
                             <span className="text-[9px] font-bold uppercase">Add Photo</span>
                         </button>
-                        <button type="button" onClick={() => generateImage('banner')} disabled={!!generating} className="aspect-square rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 hover:border-primary transition-colors text-muted-foreground hover:text-primary disabled:opacity-50">
+                        <button type="button" onClick={() => openPrompt('banner')} disabled={!!generating} className="aspect-square rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 hover:border-primary transition-colors text-muted-foreground hover:text-primary disabled:opacity-50">
                             {generating === 'banner' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
                             <span className="text-[9px] font-bold uppercase">AI Banner</span>
                         </button>
@@ -465,7 +536,82 @@ function StepMedia() {
                      </div>
                 </div>
             </div>
-            {(uploading || generating) && <Progress value={uploading ? progress : 60} className="h-1" />}
+            <Dialog open={promptType !== null} onOpenChange={open => { if (!open) setPromptType(null); }}>
+                <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Generate AI {promptType === 'logo' ? 'Logo' : 'Banner'}</DialogTitle>
+                        <DialogDescription>This starting prompt is tailored to your Shop type. Edit it to make the image your own, generate it, then save it to your Shop or download it.</DialogDescription>
+                    </DialogHeader>
+                    <div ref={promptScrollRef} className="-mr-4 flex-1 space-y-4 overflow-y-auto py-4 pr-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="shop-image-prompt">Image prompt</Label>
+                            <Textarea id="shop-image-prompt" value={prompt} onChange={event => setPrompt(event.target.value)} className="min-h-32" rows={5} />
+                        </div>
+                        <div className="relative flex h-64 w-full shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed bg-muted">
+                            {generating ? (
+                                <div className="text-center">
+                                    <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+                                    <p className="mt-2 text-sm text-muted-foreground">Generating...</p>
+                                </div>
+                            ) : generatedImage ? (
+                                <img src={generatedImage} alt="Generated Shop media" className="h-full w-full object-contain" onError={() => setGenerationError('The generated image could not be displayed. Please try generating again.')} />
+                            ) : generationError ? (
+                                <p className="px-6 text-center text-sm text-destructive">{generationError}</p>
+                            ) : (
+                                <p className="px-6 text-center text-sm text-muted-foreground">Your generated image will appear here.</p>
+                            )}
+                        </div>
+                    </div>
+                    <DialogFooter className="mt-auto flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-between">
+                        {generatedImage && (
+                            <Button type="button" variant="secondary" onClick={downloadGeneratedImage} disabled={savingGeneratedImage}>
+                                <Download className="mr-2 h-4 w-4" /> Download
+                            </Button>
+                        )}
+                        <div className={cn('flex gap-2', !generatedImage && 'w-full')}>
+                            {generatedImage ? (
+                                <Button type="button" onClick={saveGeneratedImageToShop} disabled={savingGeneratedImage} className={!generatedImage ? 'w-full' : 'ml-auto'}>
+                                    {savingGeneratedImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}Save to Shop
+                                </Button>
+                            ) : (
+                                <Button type="button" onClick={generateImage} disabled={!!generating} className="w-full">
+                                    {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                                    Generate image
+                                </Button>
+                            )}
+                        </div>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+            {uploading && <Progress value={progress} className="h-1" />}
+        </div>
+    );
+}
+
+function StepDistributionZones() {
+    const { control, watch, setValue } = useFormContext<NodeFormValues>();
+    const vehicleOptions = ['Panel Van', 'Bakkie', 'Fixed Body Truck', 'Motorcycle', 'Bicycle Courier'];
+    const deliveryVehicleTypes = watch('deliveryVehicleTypes') || [];
+    return (
+        <div className="space-y-8 text-left">
+            <h3 className="text-xl font-black font-headline flex items-center gap-2"><Network className="h-6 w-6 text-primary" /> Delivery Zones & Fleet</h3>
+            <FormField control={control} name="serviceZones" render={({ field }) => (
+                <FormItem className="text-left"><FormLabel>Suburbs / delivery zones covered</FormLabel><FormControl><Textarea placeholder="List the suburbs, districts or delivery zones you cover..." {...field} className="min-h-[120px] bg-white border-2" /></FormControl></FormItem>
+            )} />
+            <div className="space-y-2 text-left">
+                <Label>Delivery vehicle types</Label>
+                <div className="grid grid-cols-2 gap-2">
+                    {vehicleOptions.map(option => (
+                        <label key={option} className="flex items-center gap-2 rounded-md border p-3 text-sm bg-white">
+                            <Checkbox checked={deliveryVehicleTypes.includes(option)} onCheckedChange={checked => setValue('deliveryVehicleTypes', checked ? [...deliveryVehicleTypes, option] : deliveryVehicleTypes.filter((item: string) => item !== option))} />
+                            {option}
+                        </label>
+                    ))}
+                </div>
+            </div>
+            <FormField control={control} name="maxDailyParcels" render={({ field }) => (
+                <FormItem className="max-w-xs text-left"><FormLabel>Maximum parcels per day</FormLabel><FormControl><Input type="number" {...field} className="h-11 border-2 bg-white" /></FormControl></FormItem>
+            )} />
         </div>
     );
 }
@@ -497,6 +643,7 @@ export function ShopWizard({ shop, nodeType, onUpdate }: { shop: any, nodeType: 
     const isTransport = nodeType === 'transport';
     const isLoadShop = nodeType === 'loads';
     const isMarketplaceShop = nodeType === 'buy-sell';
+    const isDistribution = nodeType === 'distribution';
     const usesCatalog = nodeType === 'supplier' || nodeType === 'default' || isMarketplaceShop;
 
     const wizardSteps = useMemo(() => {
@@ -510,6 +657,9 @@ export function ShopWizard({ shop, nodeType, onUpdate }: { shop: any, nodeType: 
         if (isTransport || isLoadShop) {
             base.push({ id: 'rates', title: isLoadShop ? 'Operating Lanes' : 'Fleet Rate Sheet', icon: ListOrdered, fields: ['rateType', 'kmRate', 'routeRates'] });
         }
+        if (isDistribution) {
+            base.push({ id: 'zones', title: 'Delivery Zones & Fleet', icon: Network, fields: ['serviceZones', 'deliveryVehicleTypes', 'maxDailyParcels'] });
+        }
         if (usesCatalog) {
             base.push({ id: 'catalog', title: isMarketplaceShop ? 'Buy & Sell Listings' : 'Product Catalog', icon: ListOrdered, fields: [] });
         }
@@ -518,7 +668,7 @@ export function ShopWizard({ shop, nodeType, onUpdate }: { shop: any, nodeType: 
         base.push({ id: 'legal', title: 'Legal & Privacy', icon: Lock, fields: ['termsText', 'privacyText'] });
         base.push({ id: 'submit', title: 'Audit Submission', icon: ShieldCheck, fields: [] });
         return base;
-    }, [isWarehouse, isTransport, isLoadShop, isMarketplaceShop, usesCatalog]);
+    }, [isWarehouse, isTransport, isLoadShop, isMarketplaceShop, isDistribution, usesCatalog]);
 
     const methods = useForm<NodeFormValues>({
         resolver: zodResolver(nodeFormSchema),
@@ -527,7 +677,8 @@ export function ShopWizard({ shop, nodeType, onUpdate }: { shop: any, nodeType: 
             ...shop,
             routeRates: shop.routeRates || [],
             securityFeatures: shop.securityFeatures || [],
-            imageUrls: shop.imageUrls || []
+            imageUrls: shop.imageUrls || [],
+            deliveryVehicleTypes: shop.deliveryVehicleTypes || []
         }
     });
 
@@ -586,8 +737,9 @@ export function ShopWizard({ shop, nodeType, onUpdate }: { shop: any, nodeType: 
                             {wizardSteps[currentStep].id === 'fees' && <StepWarehouseFees />}
                             {wizardSteps[currentStep].id === 'security' && <StepWarehouseSecurity />}
                             {wizardSteps[currentStep].id === 'rates' && <StepRateSheet title={isLoadShop ? 'Load Shop Operating Lanes' : 'Fleet Rate Sheet'} />}
+                            {wizardSteps[currentStep].id === 'zones' && <StepDistributionZones />}
                             {wizardSteps[currentStep].id === 'catalog' && <StepCatalog shop={shop} />}
-                            {wizardSteps[currentStep].id === 'media' && <StepMedia />}
+                            {wizardSteps[currentStep].id === 'media' && <StepMedia nodeType={nodeType} />}
                             {wizardSteps[currentStep].id === 'branding' && (
                                 <div className="space-y-8 text-left text-foreground">
                                     <h3 className="text-xl font-black font-headline flex items-center gap-2 text-foreground text-left text-foreground text-foreground"><Sparkles className="h-6 w-6 text-primary"/> Brand Presence</h3>

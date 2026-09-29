@@ -27,19 +27,42 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { generateAmortizationSchedule } from './loan-calculations';
+import { getAgreementAssetControl, isDiscountingAgreement } from '@/lib/lending/asset-architecture';
+import { DEFAULT_BOOKING_CHECKLIST, LendingBookingChecklist } from '@/lib/lending/booking';
 
 // --- SCHEMA ---
 const agreementSubSchema = z.object({
   clientId: z.string().min(1, 'Client is required'),
+    facilityId: z.string().optional().nullable(),
+    creditCaseId: z.string().optional().nullable(),
   assetId: z.string().optional().nullable(),
+    cessionDocumentId: z.string().optional().nullable(),
+    cessionDocumentUrl: z.string().optional().nullable(),
   type: z.string().min(1, 'Agreement type is required'),
   description: z.string().min(1, 'Description is required'),
   totalAdvanced: z.coerce.number().positive('Amount must be positive'),
+    applicantHasDeposit: z.boolean().default(false),
+    applicantDepositAmount: z.coerce.number().min(0).default(0),
   interestRate: z.coerce.number().min(0, "Rate can't be negative"),
   numberOfInstallments: z.coerce.number().int().positive('Term must be a positive integer'),
+    province: z.string().optional(),
+    city: z.string().optional(),
   creditorId: z.string().optional().nullable(),
   creditorName: z.string().optional().nullable(),
   liabilityAmount: z.coerce.number().min(0).optional(),
+    rentToOwn: z.boolean().default(false),
+    residualAmount: z.coerce.number().min(0).default(0),
+    status: z.enum(['booking', 'live', 'active', 'settled', 'cancelled']).default('booking'),
+    bookingChecklist: z.object({
+        depositReceived: z.boolean().default(false),
+        assetRegisteredToLender: z.boolean().default(false),
+        collateralRegistered: z.boolean().default(false),
+        securityRegistered: z.boolean().default(false),
+        originalDocumentsVaulted: z.boolean().default(false),
+        signaturesChecked: z.boolean().default(false),
+        authorizedSignerVerified: z.boolean().default(false),
+        companyOrSpouseDocumentsVaulted: z.boolean().default(false),
+    }).default(DEFAULT_BOOKING_CHECKLIST),
 });
 
 const wizardSchema = z.object({
@@ -73,8 +96,12 @@ function StepBorrower({ clients, isLocked }: { clients: any[], isLocked: boolean
     );
 }
 
-function StepProtocol({ availableAssets, isLoadingAssets, isLocked }: { availableAssets: any[], isLoadingAssets: boolean, isLocked: boolean }) {
-    const { control } = useFormContext<WizardFormValues>();
+function StepProtocol({ availableAssets, isLoadingAssets, facilities, isLocked }: { availableAssets: any[], isLoadingAssets: boolean, facilities: any[], isLocked: boolean }) {
+    const { control, watch } = useFormContext<WizardFormValues>();
+    const clientId = watch('agreement.clientId');
+    const agreementType = watch('agreement.type');
+    const isDiscounting = isDiscountingAgreement(agreementType);
+    const eligibleFacilities = useMemo(() => facilities.filter((facility: any) => facility.facilityClass === 'sub' && facility.clientId === clientId && (facility.status === 'approved' || facility.status === 'active')), [facilities, clientId]);
     return (
         <div className="space-y-10 animate-in fade-in duration-500 text-left text-foreground">
             <h3 className="text-xl font-black font-headline flex items-center gap-2 text-left"><Scale className="h-6 w-6 text-primary"/> 2. Facility Protocol</h3>
@@ -94,9 +121,20 @@ function StepProtocol({ availableAssets, isLoadingAssets, isLocked }: { availabl
                         <FormMessage />
                     </FormItem>
                 )} />
+                <FormField control={control} name="agreement.facilityId" render={({ field }) => (
+                    <FormItem className="text-left text-foreground">
+                        <FormLabel className="text-[10px] font-black uppercase text-primary tracking-widest ml-1 text-left">Sub-Facility Allocation</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || ''}>
+                            <FormControl><SelectTrigger className="h-12 border-2 bg-white font-bold text-left text-foreground"><SelectValue placeholder="Choose approved sub-facility..." /></SelectTrigger></FormControl>
+                            <SelectContent>
+                                {eligibleFacilities.map((facility: any) => <SelectItem key={facility.id} value={facility.id}>{facility.type} - {formatCurrency(facility.limit)}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </FormItem>
+                )} />
                 <div className="p-8 border-2 border-dashed rounded-[2rem] bg-slate-50 space-y-4 text-left">
-                    <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 text-left"><Truck className="h-4 w-4" /> Physical Asset Bind</h4>
-                    <FormField control={control} name="agreement.assetId" render={({ field }) => (
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 text-left"><Truck className="h-4 w-4" /> {isDiscounting ? 'Receivable Rights Bind' : 'Physical Asset Bind'}</h4>
+                    {!isDiscounting ? <FormField control={control} name="agreement.assetId" render={({ field }) => (
                         <FormItem className="text-left text-foreground text-foreground">
                             <Select onValueChange={field.onChange} value={field.value || ''}>
                                 <FormControl>
@@ -112,7 +150,7 @@ function StepProtocol({ availableAssets, isLoadingAssets, isLocked }: { availabl
                             </Select>
                             <FormMessage />
                         </FormItem>
-                    )} />
+                    )} /> : <div className="space-y-4"><p className="text-sm text-muted-foreground">Discounting does not transfer ownership of the underlying asset. Record the receivable rights and attach the out-and-out cession instrument.</p><FormField control={control} name="agreement.cessionDocumentId" render={({ field }) => (<FormItem><FormLabel>Cession agreement reference</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Cession document ID" /></FormControl></FormItem>)} /><FormField control={control} name="agreement.cessionDocumentUrl" render={({ field }) => (<FormItem><FormLabel>Cession agreement URL</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Uploaded out-and-out cession URL" /></FormControl></FormItem>)} /></div>}
                 </div>
             </fieldset>
         </div>
@@ -120,7 +158,10 @@ function StepProtocol({ availableAssets, isLoadingAssets, isLocked }: { availabl
 }
 
 function StepTerms({ isLocked }: { isLocked: boolean }) {
-    const { control } = useFormContext<WizardFormValues>();
+    const { control, watch } = useFormContext<WizardFormValues>();
+    const agreementType = watch('agreement.type');
+    const isLease = agreementType === 'rental-term';
+    const isAssetFinance = agreementType === 'installment-sale-term' || agreementType === 'rental-term';
     return (
         <div className="space-y-10 animate-in fade-in duration-500 text-left text-foreground">
             <h3 className="text-xl font-black font-headline flex items-center gap-2 text-left"><FileSignature className="h-6 w-6 text-primary"/> 3. Technical Terms</h3>
@@ -153,6 +194,22 @@ function StepTerms({ isLocked }: { isLocked: boolean }) {
                         </FormItem>
                     )} />
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+                    <FormField control={control} name="agreement.province" render={({ field }) => (
+                        <FormItem className="text-left">
+                            <FormLabel className="text-[10px] font-black uppercase text-muted-foreground ml-1">Province</FormLabel>
+                            <FormControl><Input {...field} value={field.value || ''} className="h-12 border-2 bg-white font-bold text-left" /></FormControl>
+                        </FormItem>
+                    )} />
+                    <FormField control={control} name="agreement.city" render={({ field }) => (
+                        <FormItem className="text-left">
+                            <FormLabel className="text-[10px] font-black uppercase text-muted-foreground ml-1">City</FormLabel>
+                            <FormControl><Input {...field} value={field.value || ''} className="h-12 border-2 bg-white font-bold text-left" /></FormControl>
+                        </FormItem>
+                    )} />
+                </div>
+                {isLease && <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left"><FormField control={control} name="agreement.rentToOwn" render={({ field }) => (<FormItem className="flex items-center gap-3 rounded-md border p-4"><FormControl><input type="checkbox" checked={field.value} onChange={field.onChange} disabled={isLocked} /></FormControl><FormLabel className="m-0">Rent-to-own clause</FormLabel></FormItem>)} /><FormField control={control} name="agreement.residualAmount" render={({ field }) => (<FormItem><FormLabel className="text-[10px] font-black uppercase text-muted-foreground">Residual / balloon amount (ZAR)</FormLabel><FormControl><Input type="number" min="0" {...field} disabled={isLocked || !watch('agreement.rentToOwn')} className="h-12 border-2 bg-white font-bold" /></FormControl></FormItem>)} /></div>}
+                {isAssetFinance && <div className="p-5 rounded-2xl border-2 border-primary/20 bg-primary/5 space-y-4 text-left"><div><h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2"><Banknote className="h-4 w-4" /> Deposit assessment</h4><p className="text-xs text-muted-foreground mt-1">Standard policy guidance is a minimum 20% deposit for vehicle or equipment finance. The Credit Committee may vary this requirement at its discretion.</p></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><FormField control={control} name="agreement.applicantHasDeposit" render={({ field }) => (<FormItem className="flex items-center gap-3 rounded-md border bg-white p-4"><FormControl><input type="checkbox" checked={Boolean(field.value)} onChange={field.onChange} disabled={isLocked} /></FormControl><FormLabel className="m-0 font-semibold">Applicant has a deposit available</FormLabel></FormItem>)} /><FormField control={control} name="agreement.applicantDepositAmount" render={({ field }) => (<FormItem><FormLabel>Deposit available (ZAR)</FormLabel><FormControl><Input type="number" min="0" {...field} disabled={isLocked || !watch('agreement.applicantHasDeposit')} className="h-12 border-2 bg-white font-bold" /></FormControl></FormItem>)} /></div></div>}
             </fieldset>
         </div>
     );
@@ -300,9 +357,24 @@ function StepCommitmentAudit({ isLocked, onUnlock }: { isLocked: boolean, onUnlo
     );
 }
 
+function StepBookingChecklist({ isLocked }: { isLocked: boolean }) {
+    const { control } = useFormContext<WizardFormValues>();
+    const checks: Array<[keyof LendingBookingChecklist, string]> = [
+        ['depositReceived', 'Deposit received'],
+        ['assetRegisteredToLender', 'Asset registered in lender name as titleholder'],
+        ['collateralRegistered', 'Required collateral registered'],
+        ['securityRegistered', 'Required security registered'],
+        ['originalDocumentsVaulted', 'Original signed documents received in vault'],
+        ['signaturesChecked', 'Signatures checked against required documents'],
+        ['authorizedSignerVerified', 'Authorized signatory verified'],
+        ['companyOrSpouseDocumentsVaulted', 'Company or spouse documents (where applicable) in vault'],
+    ];
+    return <div className="space-y-6 text-left"><div><h3 className="text-xl font-black uppercase">Booking Preconditions</h3><p className="text-sm text-muted-foreground">Every facility-letter precondition must be confirmed before an authorized staff member releases this booking to live.</p></div><div className="space-y-3">{checks.map(([key, label]) => <FormField key={key} control={control} name={`agreement.bookingChecklist.${key}` as any} render={({ field }) => <FormItem className="flex items-center gap-3 rounded-md border bg-white p-4"><FormControl><input type="checkbox" checked={Boolean(field.value)} onChange={field.onChange} disabled={isLocked} /></FormControl><FormLabel className="m-0 font-semibold">{label}</FormLabel></FormItem>} />)}</div></div>;
+}
+
 // --- WIZARD TERMINAL ---
 
-export function AgreementWizard({ agreement, clients, onSave, onBack }: any) {
+export function AgreementWizard({ agreement, clients, facilities = [], onSave, onBack }: any) {
     const [isLoading, setIsLoading] = useState(false);
     const [currentStep, setCurrentStep] = useState(0);
     const [isOverridden, setIsOverridden] = useState(false);
@@ -310,14 +382,14 @@ export function AgreementWizard({ agreement, clients, onSave, onBack }: any) {
     const firestore = useFirestore();
 
     const isLocked = useMemo(() => {
-        return agreement?.status === 'active' && !isOverridden;
+        return ['active', 'live'].includes(agreement?.status) && !isOverridden;
     }, [agreement, isOverridden]);
 
     const methods = useForm<WizardFormValues>({
         resolver: zodResolver(wizardSchema),
         mode: 'onChange',
         defaultValues: agreement ? { agreement } : { 
-            agreement: { totalAdvanced: 0, interestRate: 15, numberOfInstallments: 60, status: 'pending' } 
+            agreement: { totalAdvanced: 0, interestRate: 15, numberOfInstallments: 60, status: 'booking', bookingChecklist: DEFAULT_BOOKING_CHECKLIST }
         }
     });
     
@@ -329,11 +401,12 @@ export function AgreementWizard({ agreement, clients, onSave, onBack }: any) {
 
     const steps = [
         { id: 'client', title: '1. Borrower Identity', icon: User, fields: ['agreement.clientId'] },
-        { id: 'protocol', title: '2. Facility Protocol', icon: Scale, fields: ['agreement.type', 'agreement.assetId'] },
+        { id: 'protocol', title: '2. Facility Protocol', icon: Scale, fields: ['agreement.type', 'agreement.facilityId'] },
         { id: 'details', title: '3. Technical Terms', icon: FileSignature, fields: ['agreement.description', 'agreement.totalAdvanced', 'agreement.interestRate', 'agreement.numberOfInstallments'] },
         { id: 'schedule', title: '4. Repayment Schedule', icon: TableIcon, fields: [] },
         { id: 'liability', title: '5. Financial Lock', icon: Banknote, fields: ['agreement.creditorId', 'agreement.liabilityAmount'] },
-        { id: 'review', title: '6. Audit Check', icon: ShieldCheck, fields: [] },
+        { id: 'booking', title: '6. Booking Preconditions', icon: ClipboardCheck, fields: [] },
+        { id: 'review', title: '7. Audit Check', icon: ShieldCheck, fields: [] },
     ];
 
     const isStepValid = (index: number) => {
@@ -368,7 +441,16 @@ export function AgreementWizard({ agreement, clients, onSave, onBack }: any) {
             const agreementRes = await fetchFromAdminAPI(token, 'saveLendingAgreement', { 
                 agreement: { 
                     ...data.agreement, 
-                    status: 'active',
+                    assetControl: {
+                        ...getAgreementAssetControl(data.agreement.type),
+                        underlyingAssetId: data.agreement.assetId || undefined,
+                        clientId: data.agreement.clientId,
+                        cessionDocumentId: data.agreement.cessionDocumentId,
+                        cessionDocumentUrl: data.agreement.cessionDocumentUrl,
+                        residualAmount: data.agreement.rentToOwn ? data.agreement.residualAmount : 0,
+                        stockTreatment: data.agreement.type === 'rental-term' && data.agreement.rentToOwn ? 'exit_on_residual_settlement' : getAgreementAssetControl(data.agreement.type).stockTreatment,
+                    },
+                    status: data.agreement.status || 'booking',
                     isOverridden: isOverridden
                 } 
             });
@@ -445,10 +527,11 @@ export function AgreementWizard({ agreement, clients, onSave, onBack }: any) {
                             </div>
                             <div className="p-12 space-y-12 bg-white min-h-[600px] text-left">
                                 {steps[currentStep].id === 'client' && <StepBorrower clients={clients} isLocked={isLocked} />}
-                                {steps[currentStep].id === 'protocol' && <StepProtocol availableAssets={availableAssets || []} isLoadingAssets={isLoadingAssets} isLocked={isLocked} />}
+                                {steps[currentStep].id === 'protocol' && <StepProtocol availableAssets={availableAssets || []} facilities={facilities || []} isLoadingAssets={isLoadingAssets} isLocked={isLocked} />}
                                 {steps[currentStep].id === 'details' && <StepTerms isLocked={isLocked} />}
                                 {steps[currentStep].id === 'schedule' && <StepSchedule />}
                                 {steps[currentStep].id === 'liability' && <StepLiability availableAssets={availableAssets || []} isLocked={isLocked} />}
+                                {steps[currentStep].id === 'booking' && <StepBookingChecklist isLocked={isLocked} />}
                                 {steps[currentStep].id === 'review' && <StepCommitmentAudit isLocked={isLocked} onUnlock={handleUnlock} />}
                             </div>
                         </div>

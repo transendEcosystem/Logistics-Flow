@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress';
 
 /**
- * COLLATERAL REGISTER (OWNERSHIP TRANSFERRED)
+ * COLLATERAL REGISTER: CLIENT-OWNED SECURITY INTERESTS HELD OFF STOCK UNTIL ENFORCEMENT AND RECOVERY.
  * Formal ledger for assets where ownership is legally transferred to the cedent.
  * Focus: Cessions of book debts, Out-and-out Pledges, Registered Bonds.
  */

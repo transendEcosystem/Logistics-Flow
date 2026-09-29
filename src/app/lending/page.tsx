@@ -52,7 +52,8 @@ import {
   ArrowLeft,
   Wallet,
   Banknote,
-  Briefcase
+  Briefcase,
+  Receipt
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -72,14 +73,22 @@ const DebtorsContent = dynamic(() => import('@/app/lending/debtors-content'), { 
 const SuppliersContent = dynamic(() => import('@/app/lending/suppliers-content'), { ssr: false });
 const AgreementsContent = dynamic(() => import('@/app/lending/agreements-content'), { ssr: false });
 const AssetRegisterContent = dynamic(() => import('@/app/lending/asset-register-content'), { ssr: false });
+const AssetAccountingContent = dynamic(() => import('@/app/lending/asset-accounting-content'), { ssr: false });
 const FacilitiesContent = dynamic(() => import('@/app/lending/facilities-content'), { ssr: false });
+const ClientFacilityOnboarding = dynamic(() => import('@/app/lending/client-facility-onboarding'), { ssr: false });
+const FacilityBookingControl = dynamic(() => import('@/app/lending/facility-booking-control'), { ssr: false });
+const TemplatesContent = dynamic(() => import('@/app/lending/templates-content'), { ssr: false });
 const LenderDeskContent = dynamic(() => import('@/app/lending/lender-desk-content'), { ssr: false });
 const PaymentsContent = dynamic(() => import('@/app/lending/payments-content'), { ssr: false });
+const TransactionLedgerContent = dynamic(() => import('@/app/lending/transaction-ledger-content'), { ssr: false });
+const UtilitiesContent = dynamic(() => import('@/app/lending/utilities-content'), { ssr: false });
 const DocumentVaultContent = dynamic(() => import('@/app/lending/documents-content'), { ssr: false });
 const SecurityVaultContent = dynamic(() => import('@/app/lending/security-content'), { ssr: false });
 const CollateralContent = dynamic(() => import('@/app/lending/collateral-content'), { ssr: false });
+const PoliciesContent = dynamic(() => import('@/app/lending/policies-content'), { ssr: false });
 const PlatformStaffManagement = dynamic(() => import('@/app/adminaccount/platform-staff'), { ssr: false });
 const PermissionsContent = dynamic(() => import('@/app/backend/permissions-content'), { ssr: false });
+const LendingOperatingLayer = dynamic(() => import('@/app/lending/application-operating-layer').then((mod) => mod.LendingOperatingLayer), { ssr: false });
 
 function LendingPortalContent() {
   const router = useRouter();
@@ -107,14 +116,20 @@ function LendingPortalContent() {
 
   const renderContent = useCallback(() => {
     switch (activeView) {
-      case 'desk': return <LenderDeskContent />;
+      case 'desk': return <LendingOperatingLayer />;
       case 'clients': return <ClientsContent />;
       case 'debtors': return <DebtorsContent />;
       case 'suppliers': return <SuppliersContent />;
       case 'agreements': return <AgreementsContent />;
       case 'assets': return <AssetRegisterContent />;
+      case 'asset-accounting': return <AssetAccountingContent />;
       case 'payments': return <PaymentsContent />;
-      case 'facilities-clients': return <FacilitiesContent mode="client-global" />;
+      case 'transaction-ledger': return <TransactionLedgerContent />;
+      case 'utilities': return <UtilitiesContent />;
+      case 'policies': return <PoliciesContent />;
+      case 'facilities-clients': return <ClientFacilityOnboarding />;
+      case 'facility-booking': return <FacilityBookingControl />;
+      case 'templates': return <TemplatesContent />;
       case 'facilities-debtors': return <FacilitiesContent mode="debtor" />;
       case 'facilities-suppliers': return <FacilitiesContent mode="facilities-suppliers" />;
       case 'documents': return <DocumentVaultContent />;
@@ -164,7 +179,7 @@ function LendingPortalContent() {
               </SidebarMenuItem>
               
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Portfolios" isActive={['clients', 'debtors', 'suppliers', 'agreements', 'assets', 'payments'].includes(activeView)}>
+                <SidebarMenuButton tooltip="Portfolios" isActive={['clients', 'debtors', 'suppliers', 'agreements', 'assets', 'asset-accounting', 'payments', 'transaction-ledger'].includes(activeView)}>
                   <ClipboardList />
                   <span>Lending Portfolios</span>
                 </SidebarMenuButton>
@@ -174,7 +189,9 @@ function LendingPortalContent() {
                   <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'suppliers'} onClick={() => navigate('suppliers')}>Suppliers</SidebarMenuSubButton></SidebarMenuSubItem>
                   <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'agreements'} onClick={() => navigate('agreements')}>Agreements</SidebarMenuSubButton></SidebarMenuSubItem>
                   <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'assets'} onClick={() => navigate('assets')}>Asset Register</SidebarMenuSubButton></SidebarMenuSubItem>
+                  <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'asset-accounting'} onClick={() => navigate('asset-accounting')}>Asset Accounting</SidebarMenuSubButton></SidebarMenuSubItem>
                   <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'payments'} onClick={() => navigate('payments')}><Banknote className="h-3.5 w-3.5 mr-2 text-primary" />Disbursements</SidebarMenuSubButton></SidebarMenuSubItem>
+                  <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'transaction-ledger'} onClick={() => navigate('transaction-ledger')}><Receipt className="h-3.5 w-3.5 mr-2 text-primary" />Transaction Ledger</SidebarMenuSubButton></SidebarMenuSubItem>
                 </SidebarMenuSub>
               </SidebarMenuItem>
 
@@ -185,6 +202,7 @@ function LendingPortalContent() {
                 </SidebarMenuButton>
                 <SidebarMenuSub>
                   <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'facilities-clients'} onClick={() => navigate('facilities-clients')}>Client facility</SidebarMenuSubButton></SidebarMenuSubItem>
+                  <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'facility-booking'} onClick={() => navigate('facility-booking')}>Facility letter &amp; booking</SidebarMenuSubButton></SidebarMenuSubItem>
                   <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'facilities-debtors'} onClick={() => navigate('facilities-debtors')}>Debtor facility</SidebarMenuSubButton></SidebarMenuSubItem>
                   <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'facilities-suppliers'} onClick={() => navigate('facilities-suppliers')}>Supplier facility</SidebarMenuSubButton></SidebarMenuSubItem>
                 </SidebarMenuSub>
@@ -205,8 +223,17 @@ function LendingPortalContent() {
           </SidebarGroup>
 
           <SidebarGroup>
+            <SidebarGroupLabel>Templates</SidebarGroupLabel>
+            <SidebarMenu>
+              <SidebarMenuItem><SidebarMenuButton tooltip="Document Templates" isActive={activeView === 'templates'} onClick={() => navigate('templates')}><FileText /><span>Document Templates</span></SidebarMenuButton></SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+
+          <SidebarGroup>
             <SidebarGroupLabel>Oversight</SidebarGroupLabel>
             <SidebarMenu>
+              <SidebarMenuItem><SidebarMenuButton tooltip="Utilities" isActive={activeView === 'utilities'} onClick={() => navigate('utilities')}><Wrench /><span>Global Utilities</span></SidebarMenuButton></SidebarMenuItem>
+              <SidebarMenuItem><SidebarMenuButton tooltip="Policies" isActive={activeView === 'policies'} onClick={() => navigate('policies')}><Gavel /><span>Lending Policies</span></SidebarMenuButton></SidebarMenuItem>
               <SidebarMenuItem><SidebarMenuButton tooltip="Staff" isActive={activeView === 'staff'} onClick={() => navigate('staff')}><UserCheck /><span>Internal Team</span></SidebarMenuButton></SidebarMenuItem>
               <SidebarMenuItem><SidebarMenuButton tooltip="Security" isActive={activeView === 'permissions'} onClick={() => navigate('permissions')}><Lock /><span>Security Matrix</span></SidebarMenuButton></SidebarMenuItem>
             </SidebarMenu>

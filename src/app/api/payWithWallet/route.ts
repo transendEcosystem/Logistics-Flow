@@ -86,6 +86,61 @@ async function processPlanPurchase(db: FirebaseFirestore.Firestore, adminUid: st
             companyId: companyId,
         });
 
+        // 6.5. AUTOMATED TAX INVOICE & STATEMENT GENERATION
+        const invoiceRef = companyRef.collection('invoices').doc();
+        const rootInvoiceRef = db.collection('platformInvoices').doc(invoiceRef.id);
+        const invoiceNum = `INV-2026-${Math.floor(100000 + Math.random() * 900000)}`;
+        const subtotal = Math.round((amount / 1.15) * 100) / 100;
+        const vatAmount = Math.round((amount - subtotal) * 100) / 100;
+
+        const invoiceData = {
+            id: invoiceRef.id,
+            invoiceNumber: invoiceNum,
+            companyId,
+            companyName: companyData.companyName || 'Member Company',
+            companyAddress: companyData.address || companyData.city || 'South Africa',
+            vatNumber: companyData.vatNumber || companyData.cipcRegNumber || 'N/A',
+            date: FieldValue.serverTimestamp(),
+            dueDate: FieldValue.serverTimestamp(),
+            status: 'paid',
+            planType,
+            planId: planId || 'custom',
+            cycle: cycle || 'monthly',
+            description,
+            items: [
+                {
+                    description: `${description} (${cycle || 'monthly'})`,
+                    quantity: 1,
+                    unitPrice: subtotal,
+                    subtotal: subtotal,
+                    vat: vatAmount,
+                    total: amount,
+                }
+            ],
+            subtotal,
+            vatAmount,
+            totalAmount: amount,
+            paymentMethod: 'Wallet Balance',
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+        };
+
+        transaction.set(invoiceRef, invoiceData);
+        transaction.set(rootInvoiceRef, invoiceData);
+
+        const statementRef = companyRef.collection('statements').doc();
+        transaction.set(statementRef, {
+            id: statementRef.id,
+            companyId,
+            invoiceId: invoiceRef.id,
+            invoiceNumber: invoiceNum,
+            description,
+            type: 'debit',
+            amount,
+            runningBalance: currentBalance - amount,
+            date: FieldValue.serverTimestamp(),
+        });
+
         if (planType === 'membership' && referrerRef && referrerSnap) {
             const referrerData = referrerSnap.data();
             const commissionRate = Number(salesIncentivesSnap.data()?.membershipCommissionPercent ?? 30);
@@ -136,7 +191,7 @@ async function processPlanPurchase(db: FirebaseFirestore.Firestore, adminUid: st
             else nextBilling.setMonth(nextBilling.getMonth() + 1);
 
             if (planType === 'role') {
-                if (!['supplier', 'transporter', 'finance'].includes(role)) throw new Error('Invalid role membership.');
+                if (!['supplier', 'transporter', 'broker', 'warehouseManager', 'lender', 'dealer', 'distributor', 'finance'].includes(role)) throw new Error('Invalid role membership.');
                 const activeBusinessRoles = Array.from(new Set([...(companyData.activeBusinessRoles || []), role]));
                 transaction.set(companyRef.collection('roleMemberships').doc(role), { role, planId, status: 'active', billingCycle: cycle || 'monthly', nextBillingDate: nextBilling, activatedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
                 transaction.update(companyRef, { activeBusinessRoles, roleMemberships: { ...(companyData.roleMemberships || {}), [role]: { planId, status: 'active', billingCycle: cycle || 'monthly', nextBillingDate: nextBilling } }, status: 'active' });

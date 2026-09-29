@@ -126,7 +126,7 @@ export function InitializeSubFacilityModal({ parent, clients, onComplete, isOpen
                 type: isDiscounting ? `Discounting: ${discountingSubType}` : type,
                 associatedClientId: isDebtorMode ? associatedClientId : null,
                 limit: Number(limit),
-                status: 'active',
+                status: 'pending_credit',
                 createdByName: user?.displayName || 'Admin',
                 vettingParams: {
                     assetVetting: isAssetBased ? {

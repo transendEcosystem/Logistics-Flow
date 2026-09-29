@@ -79,17 +79,14 @@ function JoinFormComponent() {
   // Filter roles based on restricted status (Funding origins)
   const displayedRoles = useMemo(() => {
     if (isRestricted) {
-        return roles.filter(r => r.id === 'vendor' || r.id === 'transporter').map(role => role.id === 'vendor'
-          ? { ...role, id: 'supplier', title: 'Suppliers', cta: 'Join as a Supplier' }
-          : role);
+        return roles.filter(r => r.id === 'supplier' || r.id === 'vendor' || r.id === 'transporter');
     }
     const directRole = searchParams.get('role');
-    if (directRole && !['vendor', 'supplier', 'transporter', 'lender'].includes(directRole)) {
+    const validDomainRoles = ['supplier', 'vendor', 'transporter', 'broker', 'warehouseManager', 'lender', 'dealer', 'distributor', 'admin', 'ai-agent'];
+    if (directRole && !validDomainRoles.includes(directRole) && !['partner', 'associate', 'isa-agent', 'driver', 'developer'].includes(directRole)) {
       return roles.filter(role => role.id === directRole);
     }
-    return roles
-      .filter(role => role.id === 'vendor' || role.id === 'transporter' || role.id === 'lender')
-      .map(role => role.id === 'vendor' ? { ...role, id: 'supplier', title: 'Suppliers', cta: 'Join as a Supplier' } : role);
+    return roles.filter(role => validDomainRoles.includes(role.id) && role.id !== 'vendor');
   }, [isRestricted, searchParams]);
 
   useEffect(() => {

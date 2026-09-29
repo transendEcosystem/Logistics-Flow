@@ -33,10 +33,29 @@ export default function PublicShopPage() {
         return query(collection(firestore, `shops/${shopId}/products`));
     }, [firestore, shopId, isClient]);
 
-    const { data: shop, isLoading: isShopLoading } = useDoc(shopRef);
+    const { data: firestoreShop, isLoading: isShopLoading } = useDoc(shopRef);
     const { data: products, isLoading: areProductsLoading } = useCollection(productsQuery);
-    
-    const isLoading = !isClient || isShopLoading || areProductsLoading;
+    const [apiShop, setApiShop] = useState<any>(null);
+    const [isApiLoading, setIsApiLoading] = useState(false);
+
+    useEffect(() => {
+        if (!isShopLoading && !firestoreShop && shopId && isClient) {
+            setIsApiLoading(true);
+            fetch('/api/getApprovedShops')
+                .then(res => res.json())
+                .then(res => {
+                    if (res.success && Array.isArray(res.data)) {
+                        const found = res.data.find((s: any) => s.id === shopId);
+                        if (found) setApiShop(found);
+                    }
+                })
+                .catch(err => console.error("Failed to fetch fallback shop:", err))
+                .finally(() => setIsApiLoading(false));
+        }
+    }, [isShopLoading, firestoreShop, shopId, isClient]);
+
+    const shop = firestoreShop || apiShop;
+    const isLoading = !isClient || isShopLoading || areProductsLoading || (isApiLoading && !shop);
 
     if (isLoading) {
          return (
@@ -74,5 +93,19 @@ export default function PublicShopPage() {
     }
 
     // Render the shop preview with the fetched data
-    return <ShopPreview shop={shop} products={products || []} />;
+    return (
+        <div className="min-h-screen bg-slate-50/30 pb-16">
+            <div className="bg-slate-900 text-white py-3 border-b border-white/10">
+                <div className="container mx-auto px-4 flex items-center justify-between text-xs font-semibold">
+                    <Link href={`/shops${shop?.nodeType ? `?mall=${shop.nodeType}` : ''}`} className="inline-flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors">
+                        <Store className="h-3.5 w-3.5 text-primary" /> ← Return to {shop?.nodeType ? `${shop.nodeType[0].toUpperCase()}${shop.nodeType.slice(1)} Mall Directory` : 'Public Shops Directory'}
+                    </Link>
+                    <Link href="/mall" className="text-slate-400 hover:text-white transition-colors">
+                        All Ecosystem Malls
+                    </Link>
+                </div>
+            </div>
+            <ShopPreview shop={shop} products={products || []} />
+        </div>
+    );
 }

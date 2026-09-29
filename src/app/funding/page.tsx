@@ -59,7 +59,7 @@ export default function FundingPage() {
                             </CardContent>
                             <CardFooter className="p-8 bg-slate-50 border-t">
                                 <Button asChild size="lg" className="w-full h-14 font-black uppercase tracking-tight shadow-xl">
-                                    <Link href="/funding/apply?origination=direct">
+                                    <Link href="/funding/client-application?origination=direct">
                                         Start Direct Application <ArrowRight className="ml-2 h-4 w-4" />
                                     </Link>
                                 </Button>

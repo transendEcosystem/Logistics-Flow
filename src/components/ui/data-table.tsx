@@ -117,7 +117,7 @@ export function DataTable<TData>({ columns, data, onSelectionChange, totalCount,
           </div>
         </div>
       </div>
-      <div className="rounded-md border overflow-hidden bg-white">
+      <div className="rounded-md border overflow-x-auto bg-white">
         <Table>
           <TableHeader className="bg-slate-50">
             <TableRow>
@@ -160,7 +160,7 @@ export function DataTable<TData>({ columns, data, onSelectionChange, totalCount,
                       />
                   </TableCell>
                   {columns.map(column => (
-                    <TableCell key={(column.id || column.accessorKey) as string} className="py-3 text-foreground">
+                    <TableCell key={(column.id || column.accessorKey) as string} className={column.id === 'actions' ? 'py-3 text-foreground min-w-[340px] whitespace-nowrap' : 'py-3 text-foreground'}>
                       {column.cell ? column.cell({ row }) : getNestedValue(row.original, column.accessorKey as string)}
                     </TableCell>
                   ))}

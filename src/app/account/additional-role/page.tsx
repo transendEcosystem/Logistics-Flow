@@ -4,7 +4,7 @@ import { Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query } from 'firebase/firestore';
-import { ArrowRight, CheckCircle2, Loader2, ShieldCheck, Truck, Building2, Landmark } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Loader2, ShieldCheck, Truck, Building2, Landmark, Network, PackageSearch, ShoppingCart, Warehouse } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,9 +12,13 @@ import { useUser } from '@/firebase';
 import { formatCurrency } from '@/lib/utils';
 
 const roleDetails: Record<string, { label: string; description: string; icon: typeof Truck; capabilities: string[] }> = {
-  supplier: { label: 'Supplier', description: 'Add supplier operations, products, and storefront publishing to this company.', icon: Building2, capabilities: ['Supplier capability profile', 'Product and service publishing', 'Supplier storefront'] },
-  transporter: { label: 'Transporter', description: 'Add fleet, route, and transport capacity operations to this company.', icon: Truck, capabilities: ['Fleet and route profile', 'Transport capacity publishing', 'Loads and transporter matching'] },
-  finance: { label: 'Finance', description: 'Add finance-provider operations and lending product publishing to this company.', icon: Landmark, capabilities: ['Finance provider profile', 'Lending product publishing', 'Funding application matching'] },
+  supplier: { label: 'Vendor', description: 'Add supplier operations, products, and storefront publishing to this company.', icon: Building2, capabilities: ['Supplier capability profile', 'Product and service publishing', 'Supplier storefront'] },
+  transporter: { label: 'Transporter', description: 'Add fleet, route, and long-haul transport capacity operations to this company.', icon: Truck, capabilities: ['Fleet and route profile', 'Transport capacity publishing', 'Loads and transporter matching'] },
+  broker: { label: 'Transport Broker', description: 'Add freight brokerage operations so this company can publish and manage loads.', icon: PackageSearch, capabilities: ['Load Shop profile', 'Freight publishing', 'Carrier response management'] },
+  warehouseManager: { label: 'Warehouse Manager', description: 'Add storage, handling and capacity operations to this company.', icon: Warehouse, capabilities: ['Warehouse capacity profile', 'Storage and handling publishing', 'Storage enquiry matching'] },
+  lender: { label: 'Lender', description: 'Add finance-provider operations and lending product publishing to this company.', icon: Landmark, capabilities: ['Finance provider profile', 'Lending product publishing', 'Funding application matching'] },
+  dealer: { label: 'Auto Dealer', description: 'Add vehicle and equipment trading operations to this company.', icon: ShoppingCart, capabilities: ['Buy & Sell Shop profile', 'Asset listing publishing', 'Buyer enquiry management'] },
+  distributor: { label: 'Distributor', description: 'Add local, final-mile delivery operations to this company.', icon: Network, capabilities: ['Distribution Shop profile', 'Delivery zone publishing', 'Local delivery matching'] },
 };
 
 function AdditionalRoleContent() {

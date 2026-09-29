@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from '@/components/ui/button';
-import { Loader2, Store, PlusCircle, ShieldAlert, Edit, ArrowLeft, Warehouse, Truck, ShieldCheck, Landmark, PackageSearch, ShoppingCart, Zap, Eye, Clock, ExternalLink, ArrowRight, CheckCircle, BarChart3, TrendingUp, Info, MapPin, Lock } from 'lucide-react';
+import { Loader2, Store, PlusCircle, ShieldAlert, Edit, ArrowLeft, Warehouse, Truck, ShieldCheck, Landmark, PackageSearch, ShoppingCart, Zap, Eye, Clock, ExternalLink, ArrowRight, CheckCircle, BarChart3, TrendingUp, Info, MapPin, Lock, FileText, Network } from 'lucide-react';
 import { useUser, useFirestore, getClientSideAuthToken, useDoc, useMemoFirebase, useCollection } from '@/firebase';
 import { doc, query, collection, orderBy, limit, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -83,6 +83,7 @@ const nodeConfig: Record<string, { title: string; description: string; icon: any
     'buy-sell': { title: "Buy & Sell Shop Back Office", description: "Manage vehicle inventory, buyer offers, sales agreements and communications.", icon: ShoppingCart },
     supplier: { title: "Supplier Shop Back Office", description: "Manage your digital storefront, catalogue, customer enquiries and fulfilment activity.", icon: Store },
     finance: { title: "Finance Shop Back Office", description: "Manage funding products, applicant opportunities, lending criteria and commercial execution.", icon: Landmark },
+    distribution: { title: "Distribution Shop Back Office", description: "Manage your delivery zones, fleet, enquiries and fulfilment activity.", icon: Network },
     default: { title: "Shop Back Office", description: "Manage your public commercial presence and the activity it generates across the ecosystem.", icon: Landmark }
 };
 
@@ -153,15 +154,15 @@ export default function ShopContent() {
     }
   };
 
-  const isLoading = isUserLoading || isUserDataLoading || isCompanyLoading || arePermissionsLoading;
-    const hasTransactionMembership = Boolean(companyData?.transactionMembershipId);
-        const requiredRoleByNodeType: Record<string, string> = { supplier: 'supplier', warehouse: 'supplier', 'buy-sell': 'supplier', transport: 'transporter', loads: 'transporter', finance: 'finance' };
-        const requiredRole = requiredRoleByNodeType[nodeType];
-        const primaryRole = getPrimaryBusinessDomain({ companyData, ...userData });
-        const activeRoles = new Set([primaryRole, ...(companyData?.activeBusinessRoles || [])].filter(Boolean));
-        const hasRole = !requiredRole || activeRoles.has(requiredRole === 'finance' ? 'lender' : requiredRole) || companyData?.roleMemberships?.[requiredRole]?.status === 'active';
+  const isInitialLoading = (isUserLoading && !user) || (isUserDataLoading && !userData) || (isCompanyLoading && !companyData) || (arePermissionsLoading && !companyData);
+  const hasTransactionMembership = Boolean(companyData?.transactionMembershipId);
+  const requiredRoleByNodeType: Record<string, string> = { supplier: 'supplier', transport: 'transporter', loads: 'broker', warehouse: 'warehouseManager', finance: 'lender', 'buy-sell': 'dealer', distribution: 'distributor' };
+  const requiredRole = requiredRoleByNodeType[nodeType];
+  const primaryRole = getPrimaryBusinessDomain({ companyData, ...userData });
+  const activeRoles = new Set([primaryRole, ...(companyData?.activeBusinessRoles || [])].filter(Boolean));
+  const hasRole = !requiredRole || activeRoles.has(requiredRole) || companyData?.roleMemberships?.[requiredRole]?.status === 'active' || (requiredRole === 'lender' && companyData?.roleMemberships?.finance?.status === 'active');
 
-  if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
+  if (isInitialLoading) return <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
 
     if (!hasTransactionMembership) {
         return (
@@ -175,8 +176,9 @@ export default function ShopContent() {
     }
 
     if (!hasRole) {
-        const roleToActivate = requiredRole === 'finance' ? 'finance' : requiredRole;
-        return <div className="text-center py-24 border-4 border-dashed rounded-3xl bg-muted/10"><div className="bg-white p-6 rounded-full w-fit mx-auto mb-6 shadow-sm"><Lock className="h-12 w-12 text-muted-foreground opacity-50" /></div><h3 className="text-2xl font-black uppercase tracking-tight">{requiredRole?.[0].toUpperCase()}{requiredRole?.slice(1)} Role Required</h3><p className="mt-2 text-muted-foreground max-w-md mx-auto font-medium">Activate the matching business role before opening this Shop. This keeps each public Shop aligned with the company role that operates it.</p><Button asChild size="lg" className="mt-10 h-14 px-10 font-black uppercase tracking-tight"><Link href={`/account/additional-role?role=${roleToActivate}`}>Activate {roleToActivate} Role</Link></Button></div>;
+        const roleLabels: Record<string, string> = { supplier: 'Supplier', transporter: 'Transporter', broker: 'Transport Broker', warehouseManager: 'Warehouse Manager', lender: 'Lender', dealer: 'Auto Dealer', distributor: 'Distributor' };
+        const roleLabel = requiredRole ? (roleLabels[requiredRole] || requiredRole) : '';
+        return <div className="text-center py-24 border-4 border-dashed rounded-3xl bg-muted/10"><div className="bg-white p-6 rounded-full w-fit mx-auto mb-6 shadow-sm"><Lock className="h-12 w-12 text-muted-foreground opacity-50" /></div><h3 className="text-2xl font-black uppercase tracking-tight">{roleLabel} Role Required</h3><p className="mt-2 text-muted-foreground max-w-md mx-auto font-medium">Activate the matching business role before opening this Shop. This keeps each public Shop aligned with the company role that operates it.</p><Button asChild size="lg" className="mt-10 h-14 px-10 font-black uppercase tracking-tight"><Link href={`/account/additional-role?role=${requiredRole}`}>Activate {roleLabel} Role</Link></Button></div>;
     }
 
     if (nodeType === 'finance') {

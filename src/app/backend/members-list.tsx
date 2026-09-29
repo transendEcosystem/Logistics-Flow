@@ -122,6 +122,24 @@ export default function MembersList() {
           )
         },
         {
+          accessorKey: 'status',
+          header: 'Status',
+          cell: ({ row }) => {
+              const status = row.original.status || 'active';
+              const statusColors: { [key: string]: string } = {
+                  active: 'bg-green-100 text-green-700',
+                  invited: 'bg-amber-100 text-amber-700',
+                  pending: 'bg-amber-100 text-amber-700',
+                  suspended: 'bg-red-100 text-red-700',
+              };
+              return (
+                  <Badge className={cn("capitalize text-[10px] font-bold border-none", statusColors[status] || 'bg-slate-100 text-slate-700')}>
+                      {status === 'invited' ? 'Invited (Pending Signup)' : status}
+                  </Badge>
+              );
+          }
+        },
+        {
           accessorKey: 'createdAt',
           header: 'Member Since',
           cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatDateSafe(row.original.createdAt)}</span>

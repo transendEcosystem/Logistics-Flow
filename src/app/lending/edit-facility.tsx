@@ -8,17 +8,21 @@ import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Save, ArrowLeft, ArrowRight, Landmark, Building, ShieldCheck, Gavel, CheckCircle2, Info, Scale, Lock } from 'lucide-react';
 import { getClientSideAuthToken, useDoc, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardHeader, CardContent, CardFooter, CardTitle, CardDescription } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn, formatCurrency, fetchFromAdminAPI } from '@/lib/utils';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { LENDING_ONBOARDING_WORKFLOW, getNextOnboardingStage, getOnboardingStageDefinition } from '@/lib/lending/onboarding-workflow';
+import { TaskEvidenceReviewer } from './task-evidence-reviewer';
 
 const facilitySchema = z.object({
   id: z.string().optional(),
@@ -32,6 +36,9 @@ const facilitySchema = z.object({
   type: z.string().min(1, 'Product type or identifier is required'),
   limit: z.coerce.number().min(0, 'Limit must be a positive number'),
   status: z.string().default('active'),
+    onboardingStage: z.string().default('lead'),
+    onboardingTasks: z.record(z.boolean()).default({}),
+        onboardingEvidence: z.record(z.string()).default({}),
 });
 
 type FacilityFormValues = z.infer<typeof facilitySchema>;
@@ -68,6 +75,7 @@ export function EditFacilityWizard({
 }: EditFacilityWizardProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [currentStep, setCurrentStep] = useState(0);
+    const [reviewTaskId, setReviewTaskId] = useState<string | null>(null);
     const { toast } = useToast();
     
     const isSubLimitMode = useMemo(() => !!parentFacility || initialFacilityClass === 'sub' || facility?.facilityClass === 'sub', [parentFacility, initialFacilityClass, facility]);
@@ -83,9 +91,12 @@ export function EditFacilityWizard({
             debtorId: parentFacility?.debtorId || facility?.debtorId || null,
             sourceDealerId: parentFacility?.sourceDealerId || facility?.sourceDealerId || null,
             limit: facility?.limit || 0, 
-            status: facility?.status || 'active',
+            status: facility?.status || 'pending_credit',
             type: facility?.type || (isSubLimitMode ? 'Sub-Limit' : 'Global Ceiling'),
             associatedClientId: facility?.associatedClientId || null,
+            onboardingStage: facility?.onboardingStage || 'lead',
+            onboardingTasks: facility?.onboardingTasks || {},
+            onboardingEvidence: facility?.onboardingEvidence || {},
         }
     });
 
@@ -100,9 +111,12 @@ export function EditFacilityWizard({
             debtorId: parentFacility?.debtorId || facility?.debtorId || null,
             sourceDealerId: parentFacility?.sourceDealerId || facility?.sourceDealerId || null,
             limit: facility?.limit || 0, 
-            status: facility?.status || 'active',
+            status: facility?.status || 'pending_credit',
             type: facility?.type || (isSubLimitMode ? 'Sub-Limit' : 'Global Ceiling'),
             associatedClientId: facility?.associatedClientId || null,
+            onboardingStage: facility?.onboardingStage || 'lead',
+            onboardingTasks: facility?.onboardingTasks || {},
+            onboardingEvidence: facility?.onboardingEvidence || {},
         };
         methods.reset(defaults);
         setCurrentStep(0);
@@ -139,6 +153,10 @@ export function EditFacilityWizard({
             if (!token) throw new Error("Authentication failed.");
 
             const allValues = methods.getValues();
+            const activeStage = getOnboardingStageDefinition(allValues.onboardingStage);
+            const tasksComplete = activeStage.tasks.length > 0 && activeStage.tasks.every(task => allValues.onboardingTasks?.[task.id]);
+            const nextStage = tasksComplete ? getNextOnboardingStage(allValues.onboardingStage) : allValues.onboardingStage;
+            const shouldAdvance = tasksComplete && nextStage !== allValues.onboardingStage;
 
             const finalPayload = {
                 ...allValues,
@@ -150,10 +168,13 @@ export function EditFacilityWizard({
                 clientId: parentFacility?.clientId || facility?.clientId || allValues.clientId || null,
                 debtorId: parentFacility?.debtorId || facility?.debtorId || allValues.debtorId || null,
                 sourceDealerId: parentFacility?.sourceDealerId || facility?.sourceDealerId || allValues.sourceDealerId || null,
+                onboardingStage: nextStage || 'lead',
+                onboardingTasks: shouldAdvance ? {} : (allValues.onboardingTasks || {}),
+                onboardingEvidence: shouldAdvance ? {} : (allValues.onboardingEvidence || {}),
             };
 
             await fetchFromAdminAPI(token, 'saveLendingFacility', { facility: finalPayload });
-            toast({ title: 'Authority Node Committed' });
+            toast({ title: shouldAdvance ? 'Milestone Complete' : 'Authority Node Committed', description: shouldAdvance ? `Facility moved to ${getOnboardingStageDefinition(nextStage).label}.` : 'Onboarding progress saved.' });
             onSave();
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Save Failed', description: e.message });
@@ -193,6 +214,129 @@ export function EditFacilityWizard({
         if (type === 'supplier') return suppliers.find(s => s.id === sId)?.name || 'Unassigned Supplier';
         return debtors.find(d => d.id === dId)?.name || 'Unassigned Debtor';
     }, [watched.ownerType, watched.clientId, watched.debtorId, watched.sourceDealerId, initialOwnerType, parentFacility, facility, clients, debtors, suppliers]);
+
+    const currentStage = getOnboardingStageDefinition(watched.onboardingStage);
+    const completedTaskCount = currentStage.tasks.filter(task => watched.onboardingTasks?.[task.id]).length;
+    const reviewTask = currentStage.tasks.find(task => task.id === reviewTaskId) || null;
+
+    const getEvidenceRows = (taskId?: string): Array<[string, string]> => {
+        const currentOwnerType = initialOwnerType || parentFacility?.ownerType || facility?.ownerType || watched.ownerType;
+        const selectedClient = clients.find(c => c.id === (parentFacility?.clientId || facility?.clientId || watched.clientId));
+        const selectedDebtor = debtors.find(d => d.id === (parentFacility?.debtorId || facility?.debtorId || watched.debtorId));
+        const selectedSupplier = suppliers.find(s => s.id === (parentFacility?.sourceDealerId || facility?.sourceDealerId || watched.sourceDealerId));
+        const parentName = parentFacility?.ownerName || parentFacility?.clientName || parentFacility?.name || 'No parent master facility linked';
+        const ownerName = selectedClient?.name || selectedDebtor?.name || selectedSupplier?.name || resolvedTargetName;
+        const commonRows: Array<[string, string]> = [
+            ['Facility class', isSubLimitMode ? 'Agreement-level sub-facility' : 'Global master facility'],
+            ['Owner type', currentOwnerType || 'Not captured'],
+            ['Owner / borrower', ownerName || 'Not captured'],
+            ['Facility type', watched.type || 'Not captured'],
+            ['Facility limit', formatCurrency(watched.limit || 0)],
+            ['Parent master facility', isSubLimitMode ? parentName : 'This record is the master facility'],
+            ['Status', watched.status || 'Not captured'],
+        ];
+
+        if (taskId === 'source_confirmed') {
+            return [
+                ['Source record', facility?.id || parentFacility?.id ? 'Existing facility record' : 'New facility record'],
+                ['Created by', facility?.createdByName || facility?.createdBy || 'Not captured'],
+                ['Created at', facility?.createdAt || 'Not captured'],
+                ...commonRows,
+            ];
+        }
+        if (taskId === 'borrower_identified' || taskId === 'contact_verified') {
+            return [
+                ['Client name', selectedClient?.name || ownerName || 'Not captured'],
+                ['Client email', selectedClient?.email || selectedClient?.contactEmail || 'Not captured'],
+                ['Client phone', selectedClient?.phone || selectedClient?.contactPhone || 'Not captured'],
+                ['Registration number', selectedClient?.registrationId || 'Not captured'],
+                ...commonRows,
+            ];
+        }
+        if (taskId === 'product_fit_selected' || taskId === 'indicative_limit_confirmed') {
+            return [
+                ['Agreement facility type', watched.type || 'Not captured'],
+                ['Authorized limit', formatCurrency(watched.limit || 0)],
+                ['Master facility', isSubLimitMode ? parentName : ownerName],
+                ...commonRows,
+            ];
+        }
+        if (taskId === 'policy_fit_checked' || taskId === 'policy_limit_confirmed') {
+            return [
+                ['Policy check basis', 'Agreement type, amount, term, province and city'],
+                ['Agreement facility type', watched.type || 'Not captured'],
+                ['Requested / authorized amount', formatCurrency(watched.limit || 0)],
+                ...commonRows,
+            ];
+        }
+        return commonRows;
+    };
+
+    const renderOnboardingMilestone = () => (
+        <Card className="border-2 border-primary/10 bg-primary/5 shadow-none">
+            <CardHeader className="pb-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div>
+                        <CardTitle className="text-base font-black uppercase tracking-widest text-primary">Onboarding Milestone</CardTitle>
+                        <CardDescription className="mt-1 text-foreground">{currentStage.milestone}</CardDescription>
+                    </div>
+                    <FormField control={methods.control} name="onboardingStage" render={({ field }) => (
+                        <FormItem className="min-w-48">
+                            <Select onValueChange={(value) => { field.onChange(value); methods.setValue('onboardingTasks', {}, { shouldDirty: true }); }} value={field.value || 'lead'}>
+                                <FormControl><SelectTrigger className="h-10 border-2 bg-white font-bold"><SelectValue /></SelectTrigger></FormControl>
+                                <SelectContent>
+                                    {LENDING_ONBOARDING_WORKFLOW.map(stage => <SelectItem key={stage.id} value={stage.id}>{stage.label}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </FormItem>
+                    )} />
+                </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+                {currentStage.tasks.map(task => (
+                    <FormField key={task.id} control={methods.control} name={`onboardingTasks.${task.id}` as any} render={({ field }) => (
+                        <FormItem className="flex flex-col gap-3 rounded-md border bg-white p-3 md:flex-row md:items-center md:justify-between">
+                            <div className="flex items-center gap-3">
+                                <FormControl><input type="checkbox" checked={Boolean(field.value)} onChange={(event) => field.onChange(event.target.checked)} /></FormControl>
+                                <FormLabel className="m-0 text-sm font-semibold">{task.label}</FormLabel>
+                            </div>
+                            <Button type="button" variant="outline" size="sm" className="h-8 text-[10px] font-black uppercase" onClick={() => setReviewTaskId(task.id)}>
+                                Review Evidence
+                            </Button>
+                        </FormItem>
+                    )} />
+                ))}
+                <div className="flex flex-col gap-3 border-t pt-4 md:flex-row md:items-center md:justify-between">
+                    <Badge variant="outline" className="w-fit text-[10px] font-black uppercase">{completedTaskCount}/{currentStage.tasks.length} tasks complete</Badge>
+                    <p className="text-xs font-semibold text-muted-foreground">Complete all tasks, then commit to ledger to advance automatically.</p>
+                </div>
+            </CardContent>
+            <Dialog open={Boolean(reviewTask)} onOpenChange={(open) => !open && setReviewTaskId(null)}>
+                <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto text-left">
+                    <DialogHeader>
+                        <DialogTitle>{reviewTask?.label || 'Review evidence'}</DialogTitle>
+                        <DialogDescription>Review forensic evidence, document checklists, public discovery, and variance analysis for this task.</DialogDescription>
+                    </DialogHeader>
+                    {reviewTask && (
+                        <TaskEvidenceReviewer
+                            taskId={reviewTask.id}
+                            facility={facility}
+                            parentFacility={parentFacility}
+                            selectedClient={clients.find(c => c.id === (parentFacility?.clientId || facility?.clientId || watched.clientId))}
+                            selectedDebtor={debtors.find(d => d.id === (parentFacility?.debtorId || facility?.debtorId || watched.debtorId))}
+                            selectedSupplier={suppliers.find(s => s.id === (parentFacility?.sourceDealerId || facility?.sourceDealerId || watched.sourceDealerId))}
+                            watchedForm={watched}
+                            evidenceNote={methods.watch(`onboardingEvidence.${reviewTask.id}` as any) || ''}
+                            onEvidenceNoteChange={(note) => methods.setValue(`onboardingEvidence.${reviewTask.id}` as any, note, { shouldDirty: true })}
+                        />
+                    )}
+                    <DialogFooter>
+                        <Button type="button" onClick={() => setReviewTaskId(null)}>Close Evidence Review</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </Card>
+    );
     
     const renderStepContent = () => {
         const stepId = steps[currentStep]?.id;
@@ -233,7 +377,7 @@ export function EditFacilityWizard({
 
                     <FormField control={methods.control} name="limit" render={({ field }) => (
                         <FormItem className="text-left">
-                            <FormLabel className="text-primary font-black uppercase text-[10px]">Authorized Limit Ceiling (ZAR)</FormLabel>
+                            <FormLabel className="text-primary font-black uppercase text-[10px]">{isSubLimitMode ? 'Agreement Facility Limit (ZAR)' : 'Committee-Determined Global Ceiling (ZAR)'}</FormLabel>
                             <FormControl><Input type="number" {...field} onChange={e => field.onChange(Number(e.target.value))} className="h-12 border-2 bg-white text-xl font-black" /></FormControl>
                         </FormItem>
                     )} />
@@ -253,11 +397,10 @@ export function EditFacilityWizard({
                                 <Select onValueChange={field.onChange} value={field.value || ''}>
                                     <FormControl><SelectTrigger className="h-11 border-2 bg-white font-bold"><SelectValue placeholder="Select context..." /></SelectTrigger></FormControl>
                                     <SelectContent>
-                                        <SelectItem value="factoring">Factoring (Discounting)</SelectItem>
-                                        <SelectItem value="asset_finance">Asset Finance (Lease/Sale)</SelectItem>
-                                        <SelectItem value="Trucks">Trucks</SelectItem>
-                                        <SelectItem value="Trailers">Trailers</SelectItem>
-                                        <SelectItem value="Bakkies">Light Commercial (Bakkies)</SelectItem>
+                                        <SelectItem value="loan-pv-term">Loan / Working Capital</SelectItem>
+                                        <SelectItem value="installment-sale-term">Installment Sale</SelectItem>
+                                        <SelectItem value="rental-term">Lease / Rental</SelectItem>
+                                        <SelectItem value="discounting">Discounting Products</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </FormItem>
@@ -332,6 +475,7 @@ export function EditFacilityWizard({
                                 })}
                             </div>
                              <div className="p-12 space-y-12 bg-white min-h-[500px] text-left text-foreground">
+                                          {renderOnboardingMilestone()}
                                 {renderStepContent()}
                              </div>
                         </div>
@@ -340,16 +484,17 @@ export function EditFacilityWizard({
                         <Button type="button" variant="outline" onClick={handleBackStep} className="font-bold h-12 px-8">
                             <ArrowLeft className="mr-2 h-4 w-4" /> Back
                         </Button>
-                        {currentStep < steps.length - 1 ? (
-                            <Button type="button" onClick={handleNext} className="h-12 px-12 font-black uppercase text-xs text-white shadow-lg">
-                                Next Protocol Stage <ArrowRight className="ml-2 h-4 w-4"/>
-                            </Button>
-                        ) : (
+                        <div className="flex gap-3">
+                            {currentStep < steps.length - 1 && (
+                                <Button type="button" onClick={handleNext} className="h-12 px-12 font-black uppercase text-xs text-white shadow-lg">
+                                    Next Protocol Stage <ArrowRight className="ml-2 h-4 w-4"/>
+                                </Button>
+                            )}
                             <Button type="submit" disabled={isLoading} className="h-14 px-16 bg-primary hover:bg-primary/90 shadow-2xl font-black uppercase tracking-tight text-white">
                                 {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Save className="mr-2 h-5 w-5" />}
                                 Commit Node to Ledger
                             </Button>
-                        )}
+                        </div>
                     </CardFooter>
                 </form>
             </FormProvider>

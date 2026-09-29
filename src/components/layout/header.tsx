@@ -84,7 +84,7 @@ export function Header() {
   const isWctaMember = user?.claims?.wcta === true || user?.companyData?.referrerId === 'WCTA';
   const primaryRole = getPrimaryBusinessDomain(user);
   const portalRoles = Array.from(new Set([primaryRole, ...(user?.companyData?.activeBusinessRoles || [])].filter(Boolean))) as string[];
-  const [activeRole, setActiveRole] = React.useState(primaryRole);
+  const [activeRole, setActiveRole] = React.useState<string | null>(primaryRole);
 
   React.useEffect(() => {
     const storedRole = window.localStorage.getItem('logistics-flow-active-role');

@@ -126,7 +126,7 @@ function RegistrySearch({ type }: { type: 'transporter' | 'supplier' | 'finance'
             
             if (type === 'transporter') router.push(`/mall/transporter/${res.id}`);
             else if (type === 'supplier') router.push(`/mall/supplier/${res.id}`);
-            else if (type === 'finance') router.push(`/funding/apply?origination=market&type=${res.entryType}`);
+            else if (type === 'finance') router.push(`/funding/agreement-application?origination=market&type=${res.entryType}`);
         } catch (e: any) {
             toast({ variant: 'destructive', title: "Error", description: e.message });
         } finally {

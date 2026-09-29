@@ -1231,6 +1231,7 @@ export async function POST(request: Request) {
 
       const now = new Date().toISOString();
       let update: Record<string, any> = { updatedAt: now };
+      let savedContactSummary: Record<string, any> | null = null;
 
       if (action === 'logForensicInitiated') {
         update = { ...update, forensicInitiatedAt: now, forensicInitiatedBy: adminUid, researchStage: 'gap_analysis_requested' };
@@ -1321,11 +1322,25 @@ export async function POST(request: Request) {
           ...(verifiedPhone ? { phone: verifiedPhone } : {}),
           ...(researchedContact ? { [contactField]: researchedContact, primaryContactRole: contactField } : {}),
         };
+        savedContactSummary = {
+          slot: researchedContact ? contactField : null,
+          name: researchedContact?.name || null,
+          role: researchedContact?.role || null,
+          email: researchedContact?.email || null,
+          mobile: researchedContact?.mobile || null,
+          companyEmail: verifiedEmail || null,
+          companyPhone: verifiedPhone || null,
+        };
       }
 
       await located.ref.set(update, { merge: true });
       await syncRegistryIndexDocument(adminDb, located.collection, recordId);
-      return NextResponse.json({ success: true, id: recordId, collection: located.collection });
+      return NextResponse.json({
+        success: true,
+        id: recordId,
+        collection: located.collection,
+        savedContact: savedContactSummary,
+      });
     }
 
     // Manual admin-triggered promotion of a research/lead record into a visible (but not yet

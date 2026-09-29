@@ -112,7 +112,7 @@ export default function CapitalIntelligencePage() {
             });
             
             toast({ title: "Funder Connection Logged" });
-            router.push(`/funding/apply?origination=market&type=${res.entryType}`);
+            router.push(`/funding/agreement-application?origination=market&type=${res.entryType}`);
         } catch (e: any) {
             toast({ variant: 'destructive', title: "Error", description: e.message });
         } finally {

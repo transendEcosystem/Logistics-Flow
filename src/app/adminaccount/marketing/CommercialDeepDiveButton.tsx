@@ -265,13 +265,19 @@ RETURN RAW JSON ONLY:
       const token = await getClientSideAuthToken();
       if (!token) throw new Error('Session expired.');
 
-      await performAdminAction(token, 'saveCommercialDeepDive', {
+      const saveResult: any = await performAdminAction(token, 'saveCommercialDeepDive', {
         partnerId: partner.id,
         collection: partner.sourceCollection,
         commercialProfile: profileToSave,
       });
 
-      toast({ title: 'Commercial profile saved', description: parsed?.notFound ? `${companyName} has been saved as a presence-gap opportunity.` : `${companyName} is now engagement-ready.` });
+      const saved = saveResult?.savedContact;
+      const slotLabel: Record<string, string> = { ceo: 'CEO / Director', marketingManager: 'Marketing Manager', operationsManager: 'Operations Manager', technicalManager: 'Technical Manager' };
+      const contactNote = saved?.slot
+        ? `Contact ${saved.name} saved to the ${slotLabel[saved.slot] || saved.slot} fields.`
+        : 'No named contact was found in the research, so the contact fields were left unchanged.';
+
+      toast({ title: 'Commercial profile saved', description: parsed?.notFound ? `${companyName} has been saved as a presence-gap opportunity.` : `${companyName} is now engagement-ready. ${contactNote}` });
       setFindings('');
       setIsOpen(false);
       onUpdate();

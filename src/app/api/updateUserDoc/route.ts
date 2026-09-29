@@ -140,6 +140,12 @@ export async function POST(req: NextRequest) {
         } else {
             transaction.set(docRef, dataToSave, { merge: true });
         }
+
+        // Synchronize company shop updates to root 'shops' collection for public directory
+        if (pathSegments[0] === 'companies' && pathSegments[2] === 'shops' && pathSegments[3]) {
+            const rootShopRef = db.collection('shops').doc(pathSegments[3]);
+            transaction.set(rootShopRef, { ...beforeData, ...dataToSave, id: pathSegments[3] }, { merge: true });
+        }
         
         const auditLogRef = db.collection('auditLogs').doc();
         transaction.set(auditLogRef, {

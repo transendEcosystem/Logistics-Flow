@@ -1,13 +1,17 @@
-export type PrimaryBusinessDomain = 'supplier' | 'transporter' | 'lender';
+export type PrimaryBusinessDomain = 'supplier' | 'transporter' | 'broker' | 'warehouseManager' | 'lender' | 'dealer' | 'distributor';
 export type MarketPosition = 'buyer' | 'provider';
-export type MarketId = 'supplier' | 'transporter' | 'warehouse' | 'finance' | 'loads' | 'buy-sell';
+export type MarketId = 'supplier' | 'transporter' | 'warehouse' | 'finance' | 'loads' | 'buy-sell' | 'distribution';
 
 const legacyDomainMap: Record<string, PrimaryBusinessDomain> = {
   supplier: 'supplier',
   vendor: 'supplier',
   transporter: 'transporter',
+  broker: 'broker',
+  warehousemanager: 'warehouseManager',
   lender: 'lender',
   finance: 'lender',
+  dealer: 'dealer',
+  distributor: 'distributor',
 };
 
 export function getPrimaryBusinessDomain(source: any): PrimaryBusinessDomain | null {
@@ -34,7 +38,11 @@ export function canUseMarketPosition(domain: PrimaryBusinessDomain | null, mall:
   if (position === 'provider') {
     return (domain === 'supplier' && mall === 'supplier') ||
       (domain === 'transporter' && mall === 'transporter') ||
-      (domain === 'lender' && mall === 'finance');
+      (domain === 'broker' && mall === 'loads') ||
+      (domain === 'warehouseManager' && mall === 'warehouse') ||
+      (domain === 'lender' && mall === 'finance') ||
+      (domain === 'dealer' && mall === 'buy-sell') ||
+      (domain === 'distributor' && mall === 'distribution');
   }
 
   if (domain === 'lender') return false;
@@ -42,7 +50,11 @@ export function canUseMarketPosition(domain: PrimaryBusinessDomain | null, mall:
 }
 
 export const domainLabels: Record<PrimaryBusinessDomain, string> = {
-  supplier: 'Supplier',
+  supplier: 'Vendor',
   transporter: 'Transporter',
+  broker: 'Transport Broker',
+  warehouseManager: 'Warehouse Manager',
   lender: 'Lender',
+  dealer: 'Auto Dealer',
+  distributor: 'Distributor',
 };
