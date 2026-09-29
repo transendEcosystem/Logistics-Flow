@@ -91,22 +91,44 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
     defaultValues: { type: targetType, status: 'new', primaryContactRole: 'marketingManager' }
   });
 
+  // The registry index row that drives the table omits large text blobs such as the mined
+  // technical profile, so the full record is fetched to populate the form.
+  const [detailPartner, setDetailPartner] = useState<any>(null);
+  useEffect(() => {
+    if (!open || !partner?.id) { setDetailPartner(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getClientSideAuthToken();
+        if (!token) return;
+        const res: any = await performAdminAction(token, 'getRecordDetail', {
+          id: partner.id,
+          collection: partner.sourceCollection,
+        });
+        if (!cancelled && res?.data) setDetailPartner(res.data);
+      } catch {
+        // The index row remains as the fallback.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, partner?.id, partner?.sourceCollection]);
+
   useEffect(() => {
     if (open) {
       if (partner) {
-          const primaryContactRole = partner.primaryContactRole || 'marketingManager';
-          const structuredContact = partner[primaryContactRole];
+          const source = detailPartner && detailPartner.id === partner.id ? { ...partner, ...detailPartner } : partner;
+          const primaryContactRole = source.primaryContactRole || 'marketingManager';
           const sanitizedPartner = {
-              ...partner,
-              marketingManager: partner.marketingManager || (primaryContactRole === 'marketingManager' ? {
-                name: partner.contactPerson || `${partner.firstName || ''} ${partner.lastName || ''}`.trim(),
-                email: partner.email || '',
-                mobile: partner.mobile || partner.phone || '',
+              ...source,
+              marketingManager: source.marketingManager || (primaryContactRole === 'marketingManager' ? {
+                name: source.contactPerson || `${source.firstName || ''} ${source.lastName || ''}`.trim(),
+                email: source.email || '',
+                mobile: source.mobile || source.phone || '',
               } : { name: '', email: '', mobile: '' }),
-              operationsManager: partner.operationsManager || { name: '', email: '', mobile: '' },
-              technicalManager: partner.technicalManager || { name: '', email: '', mobile: '' },
-              ceo: partner.ceo || { name: '', email: '', mobile: '' },
-              status: partner.status || 'new',
+              operationsManager: source.operationsManager || { name: '', email: '', mobile: '' },
+              technicalManager: source.technicalManager || { name: '', email: '', mobile: '' },
+              ceo: source.ceo || { name: '', email: '', mobile: '' },
+              status: source.status || 'new',
               primaryContactRole,
           };
           form.reset(sanitizedPartner);
@@ -114,7 +136,7 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
         form.reset({ firstName: '', lastName: '', email: '', phone: '', mobile: '', contactPerson: '', companyName: '', website: '', minedServiceWording: '', address: '', status: 'new', type: targetType, marketingManager: { name: '', email: '', mobile: '' }, operationsManager: { name: '', email: '', mobile: '' }, technicalManager: { name: '', email: '', mobile: '' }, ceo: { name: '', email: '', mobile: '' }, primaryContactRole: 'marketingManager' });
       }
     }
-  }, [open, partner, form, targetType]);
+  }, [open, partner, detailPartner, form, targetType]);
 
   const handleFormSubmit = async (values: PartnerFormValues) => {
     setIsLoading(true);

@@ -1434,6 +1434,15 @@ export async function POST(request: Request) {
       }
 
       if (id) {
+        // A blank long-form field from a form that loaded before the full record arrived must
+        // never erase harvested content that is already stored.
+        const existingSnapshot = await db.collection(targetCollection).doc(String(id)).get();
+        const existingData = existingSnapshot.data() || {};
+        for (const field of ['minedServiceWording', 'notes', 'address', 'website'] as const) {
+          if (!String((dataToSave as any)[field] || '').trim() && String(existingData[field] || '').trim()) {
+            delete (dataToSave as any)[field];
+          }
+        }
         await db.collection(targetCollection).doc(String(id)).set(dataToSave, { merge: true });
         await syncRegistryIndexDocument(db, targetCollection, String(id));
         if (partner.type === 'isa' && linkedCompanyId) {
