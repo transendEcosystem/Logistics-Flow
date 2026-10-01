@@ -160,13 +160,18 @@ export default function InvestorManagement() {
     actions: true
   });
 
-  const fetchData = useCallback(async (limit: number = 20000) => {
+  const fetchData = useCallback(async (limit: number = 20000, overrides?: { term?: string; outreach?: string }) => {
     setIsLoading(true);
     try {
         const token = await getClientSideAuthToken();
         if (!token) return;
         const [res, staffRes] = await Promise.all([
-          performAdminAction(token, 'searchRegistry', { type: 'investor', term: searchTerm, outreachFilter, limit }),
+          performAdminAction(token, 'searchRegistry', {
+            type: 'investor',
+            term: overrides?.term !== undefined ? overrides.term : searchTerm,
+            outreachFilter: overrides?.outreach !== undefined ? overrides.outreach : outreachFilter,
+            limit,
+          }),
           performAdminAction(token, 'getPlatformStaff', {})
         ]);
         setAllRecords(res.data || []);
@@ -179,7 +184,12 @@ export default function InvestorManagement() {
     }
   }, [searchTerm, outreachFilter, toast]);
 
-  useEffect(() => { if (hasLoaded) fetchData(); }, [fetchData, hasLoaded]);
+  const initialLoadRef = React.useRef(false);
+  useEffect(() => {
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
+    void fetchData();
+  }, [fetchData]);
 
   const handleEngage = useCallback((record: any) => {
     const engageList = selectedIds.length > 0 ? allRecords.filter(r => selectedIds.includes(r.id)) : (record ? [record] : []);
@@ -296,86 +306,7 @@ export default function InvestorManagement() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {!hasLoaded ? (
-            <Card className="bg-primary/5 border-primary/20 p-12 text-center text-foreground">
-                <Database className="mx-auto h-16 w-16 text-primary/20 mb-4" />
-                <h2 className="text-2xl font-black font-headline mb-2 text-center text-foreground">Investor Pipeline Scan</h2>
-                <p className="text-muted-foreground max-w-sm mx-auto mb-8 text-center text-foreground">Scan your equity partner pipeline. Use filters to prioritize fundraising outreach.</p>
-                
-                <div className="max-w-4xl mx-auto space-y-6 text-left text-foreground">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-left">
-                        <div className="space-y-1 text-left">
-                            <Label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Outreach Status</Label>
-                            <Select value={outreachFilter} onValueChange={setOutreachFilter}>
-                                <SelectTrigger className="bg-white"><SelectValue placeholder="All Outreach" /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All</SelectItem>
-                                    <SelectItem value="none">No Outreach Yet</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-1 text-left">
-                            <Label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Pipeline Status</Label>
-                            <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                <SelectTrigger className="bg-white text-left text-foreground"><SelectValue placeholder="All Stages" /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All</SelectItem>
-                                    <SelectItem value="new">New Lead</SelectItem>
-                                    <SelectItem value="contacted">In Research</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-1 text-left text-foreground">
-                            <Label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Category</Label>
-                            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                                <SelectTrigger className="bg-white text-left text-foreground"><SelectValue placeholder="All Categories" /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Categories</SelectItem>
-                                    {availableCategories.map(category => <SelectItem key={category} value={category}>{category}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-1 text-left text-foreground">
-                            <Label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Assignee</Label>
-                            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-                                <SelectTrigger className="bg-white text-left text-foreground"><SelectValue placeholder="All Staff" /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Staff</SelectItem>
-                                    <SelectItem value="none">Unallocated</SelectItem>
-                                    {staff.map(s => <SelectItem key={s.id} value={s.id}>{s.firstName} {s.lastName}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-1 text-left text-foreground">
-                            <TagSelector
-                                label="Tag Filter"
-                                registryType="investor"
-                                value={tagFilter}
-                                options={availableTags}
-                                placeholder="All Tags"
-                                onValueChange={(selectedTag) => {
-                                    setTagFilter(selectedTag);
-                                    console.log('Selected tag:', selectedTag, 'registry:', 'investor');
-                                }}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col md:flex-row justify-center gap-4 max-w-4xl mx-auto text-left">
-                        <div className="flex-1 space-y-2 text-left">
-                            <Label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Name, Fund or ID</Label>
-                            <Input placeholder="Search criteria..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="h-12 text-lg bg-white" onKeyDown={(e) => e.key === 'Enter' && fetchData()} />
-                        </div>
-                        <div className="flex flex-col md:flex-row gap-2 self-end text-left text-foreground">
-                            <Button size="lg" onClick={() => fetchData()} disabled={isLoading} className="h-12 px-8 font-bold text-left">
-                                {isLoading ? <Loader2 className="h-4 w-4 animate-spin"/> : <Search className="mr-2 h-4 w-4" />} Execute Scan
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            </Card>
-      ) : (
-            <div className="space-y-6 text-left text-foreground">
+      <div className="space-y-6 text-left text-foreground">
                 <CardHeader className="px-0 pt-0 flex flex-col md:flex-row md:items-center justify-between gap-4 text-left text-foreground">
                     <div className="text-left text-foreground"><CardTitle className="flex items-center gap-2 font-black font-headline text-left text-foreground"><DollarSign /> Investors</CardTitle><CardDescription className="text-left text-muted-foreground text-foreground">Registry view ({allRecords.length} records).</CardDescription></div>
                     <div className="flex gap-2 text-left text-foreground text-foreground">
@@ -405,6 +336,15 @@ export default function InvestorManagement() {
                 <Card className="text-left text-foreground text-foreground">
                     <CardContent className="pt-6 text-left text-foreground">
                         <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6 p-4 bg-muted/30 rounded-lg text-left text-foreground">
+                            <div className="space-y-1 text-left text-foreground md:col-span-2">
+                                <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5 text-left text-foreground"><Search className="h-3 w-3"/> Search</Label>
+                                <div className="flex gap-2">
+                                    <Input placeholder="Name, fund or ID..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchData()} className="h-9 bg-white text-xs" />
+                                    <Button size="sm" onClick={() => fetchData()} disabled={isLoading} className="h-9 px-3">
+                                        {isLoading ? <Loader2 className="h-3 w-3 animate-spin"/> : <Search className="h-3 w-3" />}
+                                    </Button>
+                                </div>
+                            </div>
                             <div className="space-y-1 text-left text-foreground">
                                 <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5 text-left text-foreground"><Filter className="h-3 w-3"/> Status</Label>
                                 <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -448,12 +388,12 @@ export default function InvestorManagement() {
                             </div>
                             <div className="space-y-1 text-left text-foreground">
                                 <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-1.5 text-left text-foreground"><Send className="h-3 w-3"/> Outreach</Label>
-                                <Select value={outreachFilter} onValueChange={setOutreachFilter}>
+                                <Select value={outreachFilter} onValueChange={(v) => { setOutreachFilter(v); void fetchData(20000, { outreach: v }); }}>
                                     <SelectTrigger className="h-9 bg-white text-xs text-left text-foreground text-left text-foreground text-foreground"><SelectValue placeholder="All Outreach" /></SelectTrigger>
                                     <SelectContent><SelectItem value="all">All Outreach</SelectItem><SelectItem value="none">No Outreach Yet</SelectItem></SelectContent>
                                 </Select>
                             </div>
-                            <div className="flex items-end text-left text-foreground"><Button variant="outline" onClick={() => setHasLoaded(false)} className="h-9 w-full text-xs font-bold uppercase tracking-widest text-left text-foreground text-foreground text-foreground text-foreground"><RotateCcw className="mr-1 h-3 w-3" /> New Search</Button></div>
+                            <div className="flex items-end text-left text-foreground"><Button variant="outline" onClick={() => { setSearchTerm(''); setStatusFilter('all'); setCategoryFilter('all'); setAssigneeFilter('all'); setTagFilter('all'); setOutreachFilter('all'); void fetchData(20000, { term: '', outreach: 'all' }); }} className="h-9 w-full text-xs font-bold uppercase tracking-widest text-left text-foreground text-foreground text-foreground text-foreground"><RotateCcw className="mr-1 h-3 w-3" /> Reset Filters</Button></div>
                         </div>
                         {isLoading ? <div className="flex justify-center items-center py-10 text-foreground text-left text-foreground text-foreground"><Loader2 className="animate-spin mx-auto h-8 w-8 text-primary" /></div> : (
                             <div className="space-y-6 text-left text-foreground">
@@ -471,7 +411,6 @@ export default function InvestorManagement() {
                     </CardContent>
                 </Card>
             </div>
-      )}
     </div>
   );
 }
