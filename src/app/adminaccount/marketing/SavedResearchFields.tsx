@@ -40,7 +40,7 @@ export function SavedResearchFields({ record }: { record: Record<string, unknown
       <h4 className="text-xs font-black uppercase tracking-widest text-primary">Saved research</h4>
       <p className="text-sm text-muted-foreground">
         These sections show the saved research in full. Update them using Gap Analysis, Harvest or Deep Dive;
-        edit the technical wording above to change the company profile without changing the source research.
+        use Profile details to edit the technical wording without changing the source research.
       </p>
       {!record.forensicFindings && Boolean(record.forensicAppliedAt) && (
         <p className="text-sm text-muted-foreground">
@@ -48,7 +48,7 @@ export function SavedResearchFields({ record }: { record: Record<string, unknown
         </p>
       )}
       {sections.map(({ title, text }) => (
-        <details key={title} className="rounded-lg border p-4">
+        <details key={title} open={Boolean(text)} className="rounded-lg border p-4">
           <summary className="cursor-pointer text-sm font-semibold">{title}{!text ? ' (not yet saved)' : ''}</summary>
           {text ? (
             <Textarea aria-label={title} readOnly value={text} className="mt-3 min-h-[220px] bg-muted/20" />

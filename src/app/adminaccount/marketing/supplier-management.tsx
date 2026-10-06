@@ -87,6 +87,8 @@ type PartnerFormValues = z.infer<typeof partnerSchema>;
 
 function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { open: boolean; onOpenChange: (open: boolean) => void; partner?: any; onSave: () => void; targetType: string; }) {
   const [isLoading, setIsLoading] = useState(false);
+  const [showResearch, setShowResearch] = useState(false);
+  useEffect(() => { setShowResearch(false); }, [open, partner?.id]);
   const { toast } = useToast();
   const form = useForm<PartnerFormValues>({ 
     resolver: zodResolver(partnerSchema),
@@ -153,16 +155,23 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl text-left text-foreground">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col overflow-hidden text-left text-foreground">
         <DialogHeader>
             <DialogTitle>{partner ? 'Edit' : 'Add'} Supplier Profile</DialogTitle>
             <DialogDescription>Manage high-fidelity contacts and industrial profile data.</DialogDescription>
         </DialogHeader>
         {detail.loading && <p role="status" className="py-4">Loading the complete record and saved research...</p>}
         {detail.error && <p role="alert" className="py-4 text-destructive">{detail.error} Close and reopen the editor to retry.</p>}
+        {partner && (
+          <div className="flex shrink-0 gap-2" role="group" aria-label="Profile sections">
+            <Button type="button" variant={!showResearch ? 'default' : 'outline'} aria-pressed={!showResearch} onClick={() => setShowResearch(false)}>Profile details</Button>
+            <Button type="button" variant={showResearch ? 'default' : 'outline'} aria-pressed={showResearch} onClick={() => setShowResearch(true)}>Saved research</Button>
+          </div>
+        )}
         {(!partner || detail.data) && (
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-8 py-4 max-h-[85vh] overflow-y-auto pr-2 text-left text-foreground">
+          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="min-h-0 overflow-y-auto py-4 pr-2 text-left text-foreground">
+            <div hidden={showResearch} className="space-y-8">
             <div className="space-y-4">
                 <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2 text-left">
                     <Building className="h-4 w-4" /> Core Entity Details
@@ -315,12 +324,13 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
                 )} />
             </div>
 
-            {detail.data && <SavedResearchFields record={detail.data} />}
             <DialogFooter className="pt-4 border-t sticky bottom-0 bg-white z-10 text-left">
               <Button type="submit" disabled={isLoading} size="lg" className="w-full font-bold shadow-lg text-white">
                 {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Forensic Record
               </Button>
             </DialogFooter>
+            </div>
+            {showResearch && detail.data && <SavedResearchFields record={detail.data} />}
           </form>
         </Form>
         )}
