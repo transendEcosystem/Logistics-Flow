@@ -23,6 +23,8 @@ import { downloadDataAsCSV, formatDateSafe, cn } from '@/lib/utils';
 import { EnrichPartnerButton } from './EnrichPartnerButton';
 import { CommercialDeepDiveButton } from './CommercialDeepDiveButton';
 import { ContentHarvestButton } from './ContentHarvestButton';
+import { useRegistryRecordDetail } from './useRegistryRecordDetail';
+import { SavedResearchFields } from './SavedResearchFields';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
@@ -85,32 +87,40 @@ function TransporterDialog({ open, onOpenChange, partner, onSave, targetType }: 
     resolver: zodResolver(partnerSchema),
     defaultValues: { type: targetType, status: 'new', primaryContactRole: 'marketingManager' }
   });
+  const sourceCollection = partner?.sourceCollection || (partner?.source === 'Lead' ? 'leads' : 'partners');
+  const detail = useRegistryRecordDetail(open, partner?.id, sourceCollection);
 
   useEffect(() => {
     if (open) {
       if (partner) {
+          if (!detail.data) return;
+          const source = { ...partner, ...detail.data };
           const sanitizedPartner = {
-              ...partner,
-              marketingManager: partner.marketingManager || { name: '', email: '', mobile: '' },
-              operationsManager: partner.operationsManager || { name: '', email: '', mobile: '' },
-              technicalManager: partner.technicalManager || { name: '', email: '', mobile: '' },
-              ceo: partner.ceo || { name: '', email: '', mobile: '' },
-              status: partner.status || 'new',
-              primaryContactRole: partner.primaryContactRole || 'marketingManager'
+              ...source,
+              marketingManager: source.marketingManager || { name: '', email: '', mobile: '' },
+              operationsManager: source.operationsManager || { name: '', email: '', mobile: '' },
+              technicalManager: source.technicalManager || { name: '', email: '', mobile: '' },
+              ceo: source.ceo || { name: '', email: '', mobile: '' },
+              status: source.status || 'new',
+              primaryContactRole: source.primaryContactRole || 'marketingManager'
           };
           form.reset(sanitizedPartner);
       } else {
         form.reset({ firstName: '', lastName: '', email: '', phone: '', mobile: '', whatsapp: '', contactPerson: '', companyName: '', status: 'new', type: targetType, website: '', notes: '', address: '', marketingManager: { name: '', email: '', mobile: '' }, operationsManager: { name: '', email: '', mobile: '' }, technicalManager: { name: '', email: '', mobile: '' }, ceo: { name: '', email: '', mobile: '' }, primaryContactRole: 'marketingManager' });
       }
     }
-  }, [open, partner, form, targetType]);
+  }, [open, partner, detail.data, form, targetType]);
 
   const handleFormSubmit = async (values: PartnerFormValues) => {
+    if (partner && !detail.data) {
+      toast({ variant: 'destructive', title: 'Record not loaded', description: detail.error || 'Please wait for the complete record to load.' });
+      return;
+    }
     setIsLoading(true);
     try {
         const token = await getClientSideAuthToken();
         if (!token) throw new Error("Authentication failed.");
-        const collection = partner?.source === 'Lead' ? 'leads' : 'partners';
+        const collection = sourceCollection;
         await performAdminAction(token, 'savePartner', { collection, partner: { id: partner?.id, ...values, type: targetType } });
         toast({ title: 'Transporter Record Saved' });
         onSave();
@@ -129,6 +139,9 @@ function TransporterDialog({ open, onOpenChange, partner, onSave, targetType }: 
             <DialogTitle>{partner ? 'Edit' : 'Add'} Transporter Profile</DialogTitle>
             <DialogDescription>Manage high-fidelity contacts and industrial profile data.</DialogDescription>
         </DialogHeader>
+        {detail.loading && <p role="status" className="py-4">Loading the complete record and saved research...</p>}
+        {detail.error && <p role="alert" className="py-4 text-destructive">{detail.error} Close and reopen the editor to retry.</p>}
+        {(!partner || detail.data) && (
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-8 py-4 max-h-[85vh] overflow-y-auto pr-2 text-left text-foreground">
             <div className="space-y-4">
@@ -264,6 +277,8 @@ function TransporterDialog({ open, onOpenChange, partner, onSave, targetType }: 
                 )} />
             </div>
 
+            {detail.data && <SavedResearchFields record={detail.data} />}
+
             <DialogFooter className="pt-4 border-t sticky bottom-0 bg-white z-10 text-left">
               <Button type="submit" disabled={isLoading} size="lg" className="w-full font-bold shadow-lg text-white">
                 {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Forensic Record
@@ -271,6 +286,7 @@ function TransporterDialog({ open, onOpenChange, partner, onSave, targetType }: 
             </DialogFooter>
           </form>
         </Form>
+        )}
       </DialogContent>
     </Dialog>
   );

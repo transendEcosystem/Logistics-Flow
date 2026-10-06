@@ -198,17 +198,17 @@ export function EnrichPartnerButton({ partner, onUpdate }: { partner: any, onUpd
                 partnerId: partner.id,
                 collection: partner.sourceCollection,
                 findings: preview.findings,
+                rawFindings: parseAiJson(findingsText),
                 overwrite,
             });
 
             const applied = result.applied?.length || 0;
             const skippedFields: string[] = result.skipped || [];
             toast({
-                variant: !applied && skippedFields.length ? 'destructive' : 'default',
-                title: applied ? `${applied} field${applied === 1 ? '' : 's'} updated` : 'Nothing was applied',
+                title: applied ? `Research saved; ${applied} field${applied === 1 ? '' : 's'} updated` : 'Research saved',
                 description: skippedFields.length
                     ? `Kept existing values for: ${skippedFields.join(', ')}. Re-run with "Overwrite" ticked to replace them.`
-                    : undefined,
+                    : 'The full findings are available in the edit profile under Saved research.',
             });
 
             setFindingsText('');

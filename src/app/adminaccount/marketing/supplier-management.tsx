@@ -26,6 +26,8 @@ import { PartnerTasksDialog } from './PartnerTasksDialog';
 import { downloadDataAsCSV, formatDateSafe, cn } from '@/lib/utils';
 import { EnrichPartnerButton } from './EnrichPartnerButton';
 import { CommercialDeepDiveButton } from './CommercialDeepDiveButton';
+import { useRegistryRecordDetail } from './useRegistryRecordDetail';
+import { SavedResearchFields } from './SavedResearchFields';
 import { ContentHarvestButton } from './ContentHarvestButton';
 import { BulkImportDialog } from './BulkImportDialog';
 import { Label } from '@/components/ui/label';
@@ -91,32 +93,14 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
     defaultValues: { type: targetType, status: 'new', primaryContactRole: 'marketingManager' }
   });
 
-  // The registry index row that drives the table omits large text blobs such as the mined
-  // technical profile, so the full record is fetched to populate the form.
-  const [detailPartner, setDetailPartner] = useState<any>(null);
-  useEffect(() => {
-    if (!open || !partner?.id) { setDetailPartner(null); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getClientSideAuthToken();
-        if (!token) return;
-        const res: any = await performAdminAction(token, 'getRecordDetail', {
-          id: partner.id,
-          collection: partner.sourceCollection,
-        });
-        if (!cancelled && res?.data) setDetailPartner(res.data);
-      } catch {
-        // The index row remains as the fallback.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [open, partner?.id, partner?.sourceCollection]);
+  const sourceCollection = partner?.sourceCollection || (partner?.source === 'Lead' ? 'leads' : targetType === 'supplier' ? 'suppliers' : 'partners');
+  const detail = useRegistryRecordDetail(open, partner?.id, sourceCollection);
 
   useEffect(() => {
     if (open) {
       if (partner) {
-          const source = detailPartner && detailPartner.id === partner.id ? { ...partner, ...detailPartner } : partner;
+          if (!detail.data) return;
+          const source = { ...partner, ...detail.data };
           const primaryContactRole = source.primaryContactRole || 'marketingManager';
           const sanitizedPartner = {
               ...source,
@@ -136,14 +120,18 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
         form.reset({ firstName: '', lastName: '', email: '', phone: '', mobile: '', contactPerson: '', companyName: '', website: '', minedServiceWording: '', address: '', status: 'new', type: targetType, marketingManager: { name: '', email: '', mobile: '' }, operationsManager: { name: '', email: '', mobile: '' }, technicalManager: { name: '', email: '', mobile: '' }, ceo: { name: '', email: '', mobile: '' }, primaryContactRole: 'marketingManager' });
       }
     }
-  }, [open, partner, detailPartner, form, targetType]);
+  }, [open, partner, detail.data, form, targetType]);
 
   const handleFormSubmit = async (values: PartnerFormValues) => {
+    if (partner && !detail.data) {
+      toast({ variant: 'destructive', title: 'Record not loaded', description: detail.error || 'Please wait for the complete record to load.' });
+      return;
+    }
     setIsLoading(true);
     try {
       const token = await getClientSideAuthToken();
       if (!token) throw new Error("Auth failed.");
-      const coll = partner?.sourceCollection || (partner?.source === 'Lead' ? 'leads' : targetType === 'supplier' ? 'suppliers' : 'partners');
+      const coll = sourceCollection;
       const explicitType = partner ? (values.type || partner.type) : targetType;
       await performAdminAction(token, 'savePartner', {
         collection: coll,
@@ -170,6 +158,9 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
             <DialogTitle>{partner ? 'Edit' : 'Add'} Supplier Profile</DialogTitle>
             <DialogDescription>Manage high-fidelity contacts and industrial profile data.</DialogDescription>
         </DialogHeader>
+        {detail.loading && <p role="status" className="py-4">Loading the complete record and saved research...</p>}
+        {detail.error && <p role="alert" className="py-4 text-destructive">{detail.error} Close and reopen the editor to retry.</p>}
+        {(!partner || detail.data) && (
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-8 py-4 max-h-[85vh] overflow-y-auto pr-2 text-left text-foreground">
             <div className="space-y-4">
@@ -324,6 +315,7 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
                 )} />
             </div>
 
+            {detail.data && <SavedResearchFields record={detail.data} />}
             <DialogFooter className="pt-4 border-t sticky bottom-0 bg-white z-10 text-left">
               <Button type="submit" disabled={isLoading} size="lg" className="w-full font-bold shadow-lg text-white">
                 {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Forensic Record
@@ -331,6 +323,7 @@ function SupplierDialog({ open, onOpenChange, partner, onSave, targetType }: { o
             </DialogFooter>
           </form>
         </Form>
+        )}
       </DialogContent>
     </Dialog>
   );

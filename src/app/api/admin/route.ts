@@ -1114,8 +1114,9 @@ export async function POST(request: Request) {
           ? harvestedWording
           : existingWording || harvestedWording || null;
 
-      await located.ref.set({
+      const serviceUpdate = {
         serviceProfile,
+        serviceProfileFindings: profile,
         shopProfile,
         campaignAngles,
         searchCorpus,
@@ -1124,7 +1125,8 @@ export async function POST(request: Request) {
         serviceProfileSavedAt: new Date().toISOString(),
         serviceProfileSavedBy: adminUid,
         updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      };
+      await located.ref.set(serviceUpdate, { mergeFields: Object.keys(serviceUpdate) });
       await syncRegistryIndexDocument(adminDb, located.collection, recordId);
 
       return NextResponse.json({ success: true, id: recordId, collection: located.collection });
@@ -1201,17 +1203,16 @@ export async function POST(request: Request) {
         }
       }
 
-      if (Object.keys(update).length === 0) {
-        return NextResponse.json({ success: true, applied: [], skipped, message: 'No new values to apply.' });
-      }
-
-      await located.ref.set({
+      const forensicUpdate = {
         ...update,
+        forensicFindings: resolvedPayload.rawFindings && typeof resolvedPayload.rawFindings === 'object'
+          && !Array.isArray(resolvedPayload.rawFindings) ? resolvedPayload.rawFindings : findings,
         researchStage: 'gap_analysis_complete',
         forensicAppliedAt: new Date().toISOString(),
         forensicAppliedBy: adminUid,
         updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      };
+      await located.ref.set(forensicUpdate, { mergeFields: Object.keys(forensicUpdate) });
       await syncRegistryIndexDocument(adminDb, located.collection, recordId);
 
       return NextResponse.json({ success: true, applied, skipped, collection: located.collection });
@@ -3099,7 +3100,7 @@ export async function POST(request: Request) {
       // matchesRegistryFilters/JSON.stringify. Returning these blobs for thousands of records at
       // once produced multi-megabyte JSON responses that could be truncated in transit, causing a
       // parse failure on the client and a silent fallback to a much smaller client-side query.
-      const LARGE_TEXT_FIELDS = ['searchCorpus', 'contentCorpus', 'minedServiceWording', 'commercialProfile', 'serviceProfile', 'shopProfile', 'campaignAngles'];
+      const LARGE_TEXT_FIELDS = ['searchCorpus', 'contentCorpus', 'minedServiceWording', 'commercialProfile', 'serviceProfile', 'shopProfile', 'campaignAngles', 'forensicFindings', 'serviceProfileFindings'];
       const pagedRecords = filteredRecords.slice(start, start + pageSize).map((record: any) => {
         const trimmed = { ...record };
         for (const field of LARGE_TEXT_FIELDS) {
