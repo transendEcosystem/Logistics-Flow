@@ -1,4 +1,5 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
+import { registryTimestampMillis } from '@/lib/registry-timestamps';
 import {
   CORE_OUTREACH_CONTENT_TYPES,
   normalizeEngagementContentType,
@@ -188,12 +189,6 @@ function normalizedTags(data: Record<string, any>): string[] {
   return Array.from(new Set(values.map(normalizeRegistryIndexText).filter(Boolean))).slice(0, 20);
 }
 
-function registryTimestampMillis(value: any): number {
-  if (!value) return 0;
-  if (typeof value?.toMillis === 'function') return value.toMillis();
-  const parsed = new Date(value).getTime();
-  return Number.isFinite(parsed) ? parsed : 0;
-}
 
 export function buildRegistryFilterKey(filters: {
   status?: unknown;

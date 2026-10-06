@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { registryTimestampMillis } from '@/lib/registry-timestamps';
 import { FieldValue, FieldPath, getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { getAdminApp, verifyAdmin } from '@/lib/firebase-admin';
@@ -3093,6 +3094,11 @@ export async function POST(request: Request) {
 
       const allRecords = Array.from(collectedRecords.values());
       const filteredRecords = allRecords.filter((record: any) => matchesRegistryFilters(record, filters, typeValues));
+      if (requestType === 'transporter') {
+        filteredRecords.sort((a, b) =>
+          registryTimestampMillis(b.updatedAt) - registryTimestampMillis(a.updatedAt)
+        );
+      }
       const totalCount = filteredRecords.length;
       const start = (page - 1) * pageSize;
       // Strip large text-blob fields (AI-harvested search/content corpora can be tens of KB per

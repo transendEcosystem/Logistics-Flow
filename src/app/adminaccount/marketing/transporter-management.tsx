@@ -25,6 +25,7 @@ import { CommercialDeepDiveButton } from './CommercialDeepDiveButton';
 import { ContentHarvestButton } from './ContentHarvestButton';
 import { useRegistryRecordDetail } from './useRegistryRecordDetail';
 import { SavedResearchFields } from './SavedResearchFields';
+import { registryTimestampMillis } from '@/lib/registry-timestamps';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
@@ -308,6 +309,7 @@ export default function TransporterManagement() {
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [tableRevision, setTableRevision] = useState(0);
   const [dialog, setDialog] = useState<{ type: 'add' | 'edit' | 'delete' | 'engage' | null, data?: any, initialIndex?: number }>({ type: null });
 
   const [statusFilter, setStatusFilter] = useState('all');
@@ -428,7 +430,7 @@ export default function TransporterManagement() {
         const partnerTags = p.industrial_tags || p.tags || [];
         const matchesTag = tagFilter === 'all' || partnerTags.includes(tagFilter);
         return matchesStatus && matchesCategory && matchesAssignee && matchesTag;
-    });
+    }).sort((a, b) => registryTimestampMillis(b.updatedAt) - registryTimestampMillis(a.updatedAt));
   }, [allRecords, statusFilter, categoryFilter, assigneeFilter, tagFilter]);
 
   const columns: ColumnDef<any>[] = useMemo(() => {
@@ -561,7 +563,7 @@ export default function TransporterManagement() {
   return (
     <div className="space-y-6 text-left text-foreground">
       <EngageDialog open={dialog.type === 'engage'} onOpenChange={(o) => !o && setDialog({ type: null })} partners={dialog.data || []} initialIndex={dialog.initialIndex} audience="transporters" onEngageSuccess={() => fetchData()} />
-      <TransporterDialog open={dialog.type === 'add' || dialog.type === 'edit'} onOpenChange={(o) => !o && setDialog({ type: null })} partner={dialog.type === 'edit' ? dialog.data : undefined} onSave={() => fetchData()} targetType={type} />
+      <TransporterDialog open={dialog.type === 'add' || dialog.type === 'edit'} onOpenChange={(o) => !o && setDialog({ type: null })} partner={dialog.type === 'edit' ? dialog.data : undefined} onSave={() => { setSelectedIds([]); setTableRevision(revision => revision + 1); void fetchData(); }} targetType={type} />
       <AlertDialog open={dialog.type === 'delete'} onOpenChange={(o) => !o && setDialog({ type: null })}>
         <AlertDialogContent className="text-left text-foreground text-foreground">
           <AlertDialogHeader><AlertDialogTitle className="text-left text-foreground text-foreground">Are you sure?</AlertDialogTitle><AlertDialogDescription className="text-left text-foreground text-foreground">Delete record?</AlertDialogDescription></AlertDialogHeader>
@@ -659,7 +661,8 @@ export default function TransporterManagement() {
                   </div>
                   {isLoading ? <div className="flex justify-center py-20 text-left"><Loader2 className="animate-spin mx-auto h-8 w-8 text-primary" /></div> : (
                       <div className="space-y-6 text-left">
-                          <DataTable columns={columns} data={filteredRecords} onSelectionChange={setSelectedIds} />
+                          <p className="mb-3 text-sm text-muted-foreground">Most recently updated records appear first. Saving a profile returns the table to page one.</p>
+                          <DataTable key={tableRevision} columns={columns} data={filteredRecords} onSelectionChange={setSelectedIds} />
                           {allRecords.length >= 100 && (
                                <div className="flex justify-center pt-4 text-left text-foreground">
                                   <Button variant="outline" size="lg" onClick={() => fetchData(allRecords.length + 100)} disabled={isLoading} className="gap-2 min-w-[200px] text-foreground text-left">
