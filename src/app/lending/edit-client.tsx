@@ -341,7 +341,7 @@ const StakeholderNode = ({ index, type, onRemove }: { index: number, type: 'shar
 
 // --- WIZARD TERMINAL ---
 
-export function EditClientWizard({ client, onSave, onBack, targetCollection = 'lendingClients', isMemberFacing = false }: { client?: any, onSave: () => void, onBack: () => void, targetCollection?: string, isMemberFacing?: boolean }) {
+export function EditClientWizard({ client, onSave, onBack, targetCollection = 'lendingClients', isMemberFacing = false, title = 'Client Protocol Terminal' }: { client?: any, onSave: () => void, onBack: () => void, targetCollection?: string, isMemberFacing?: boolean, title?: string }) {
   const { toast } = useToast();
   const firestore = useFirestore();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -510,7 +510,7 @@ export function EditClientWizard({ client, onSave, onBack, targetCollection = 'l
           <CardHeader className="bg-slate-900 text-white p-8">
             <div className="flex justify-between items-center text-left">
               <div className="text-left text-white">
-                <CardTitle className="text-2xl font-black font-headline uppercase text-white">Client Protocol Terminal</CardTitle>
+                <CardTitle className="text-2xl font-black font-headline uppercase text-white">{title}</CardTitle>
                 <CardDescription className="text-slate-400">Step: {steps[currentStep].title}</CardDescription>
               </div>
               <Button type="button" variant="ghost" className="text-white hover:text-primary" onClick={onBack}><ArrowLeft className="mr-2 h-4 w-4" /> Exit Terminal</Button>

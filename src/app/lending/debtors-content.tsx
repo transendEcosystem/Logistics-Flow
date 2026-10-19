@@ -160,7 +160,7 @@ export default function DebtorsContent() {
     ], [forceRefresh]);
     
     if (view === 'wizard') {
-        return <EditClientWizard client={selectedDebtor} targetCollection="lendingDebtors" onSave={handleSaveSuccess} onBack={handleBackToList} />;
+        return <EditClientWizard client={selectedDebtor} targetCollection="lendingDebtors" title="Debtor Protocol Terminal" onSave={handleSaveSuccess} onBack={handleBackToList} />;
     }
 
     return (

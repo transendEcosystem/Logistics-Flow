@@ -101,6 +101,8 @@ function StepProtocol({ availableAssets, isLoadingAssets, facilities, isLocked }
     const clientId = watch('agreement.clientId');
     const agreementType = watch('agreement.type');
     const isDiscounting = isDiscountingAgreement(agreementType);
+    const isLoanWorkingCapital = agreementType === 'loan-pv-term';
+    const shouldShowPhysicalAssetBind = agreementType === 'installment-sale-term' || agreementType === 'rental-term';
     const eligibleFacilities = useMemo(() => facilities.filter((facility: any) => facility.facilityClass === 'sub' && facility.clientId === clientId && (facility.status === 'approved' || facility.status === 'active')), [facilities, clientId]);
     return (
         <div className="space-y-10 animate-in fade-in duration-500 text-left text-foreground">
@@ -132,26 +134,50 @@ function StepProtocol({ availableAssets, isLoadingAssets, facilities, isLocked }
                         </Select>
                     </FormItem>
                 )} />
-                <div className="p-8 border-2 border-dashed rounded-[2rem] bg-slate-50 space-y-4 text-left">
-                    <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 text-left"><Truck className="h-4 w-4" /> {isDiscounting ? 'Receivable Rights Bind' : 'Physical Asset Bind'}</h4>
-                    {!isDiscounting ? <FormField control={control} name="agreement.assetId" render={({ field }) => (
-                        <FormItem className="text-left text-foreground text-foreground">
-                            <Select onValueChange={field.onChange} value={field.value || ''}>
-                                <FormControl>
-                                    <SelectTrigger className="h-14 border-2 bg-white font-bold text-left text-foreground">
-                                        <SelectValue placeholder={isLoadingAssets ? "Scanning Register..." : "Select from available assets..."} />
-                                    </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                    {availableAssets?.map((a:any) => (
-                                        <SelectItem key={a.id} value={a.id}>{a.year} {a.make} {a.model} - {formatCurrency(a.costOfSale)}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <FormMessage />
-                        </FormItem>
-                    )} /> : <div className="space-y-4"><p className="text-sm text-muted-foreground">Discounting does not transfer ownership of the underlying asset. Record the receivable rights and attach the out-and-out cession instrument.</p><FormField control={control} name="agreement.cessionDocumentId" render={({ field }) => (<FormItem><FormLabel>Cession agreement reference</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Cession document ID" /></FormControl></FormItem>)} /><FormField control={control} name="agreement.cessionDocumentUrl" render={({ field }) => (<FormItem><FormLabel>Cession agreement URL</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Uploaded out-and-out cession URL" /></FormControl></FormItem>)} /></div>}
-                </div>
+
+                {isDiscounting && (
+                    <div className="p-8 border-2 border-dashed rounded-[2rem] bg-slate-50 space-y-4 text-left">
+                        <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 text-left"><Truck className="h-4 w-4" /> Receivable Rights Bind</h4>
+                        <div className="space-y-4">
+                            <p className="text-sm text-muted-foreground">Discounting does not transfer ownership of the underlying asset. Record the receivable rights and attach the out-and-out cession instrument.</p>
+                            <FormField control={control} name="agreement.cessionDocumentId" render={({ field }) => (<FormItem><FormLabel>Cession agreement reference</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Cession document ID" /></FormControl></FormItem>)} />
+                            <FormField control={control} name="agreement.cessionDocumentUrl" render={({ field }) => (<FormItem><FormLabel>Cession agreement URL</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Uploaded out-and-out cession URL" /></FormControl></FormItem>)} />
+                        </div>
+                    </div>
+                )}
+
+                {shouldShowPhysicalAssetBind && (
+                    <div className="p-8 border-2 border-dashed rounded-[2rem] bg-slate-50 space-y-4 text-left">
+                        <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 text-left"><Truck className="h-4 w-4" /> Physical Asset Bind</h4>
+                        <FormField control={control} name="agreement.assetId" render={({ field }) => (
+                            <FormItem className="text-left text-foreground text-foreground">
+                                <Select onValueChange={field.onChange} value={field.value || ''}>
+                                    <FormControl>
+                                        <SelectTrigger className="h-14 border-2 bg-white font-bold text-left text-foreground">
+                                            <SelectValue placeholder={isLoadingAssets ? "Scanning Register..." : "Select from available assets..."} />
+                                        </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                        {availableAssets?.map((a:any) => (
+                                            <SelectItem key={a.id} value={a.id}>{a.year} {a.make} {a.model} - {formatCurrency(a.costOfSale)}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <FormMessage />
+                            </FormItem>
+                        )} />
+                    </div>
+                )}
+
+                {isLoanWorkingCapital && (
+                    <Alert className="border-primary/20 bg-primary/5">
+                        <Info className="h-4 w-4" />
+                        <AlertTitle>Asset Bind Not Required</AlertTitle>
+                        <AlertDescription>
+                            Loan / Working Capital agreements do not require a Physical Asset Bind in this step.
+                        </AlertDescription>
+                    </Alert>
+                )}
             </fieldset>
         </div>
     );
@@ -273,6 +299,24 @@ function StepSchedule() {
     );
 }
 
+function StepCollateralPending() {
+    return (
+        <div className="space-y-10 animate-in fade-in duration-500 text-left text-foreground">
+            <h3 className="text-xl font-black font-headline flex items-center gap-2 text-left"><ShieldCheck className="h-6 w-6 text-primary"/> 5. Collateral & Security</h3>
+            <Alert className="border-amber-300 bg-amber-50 text-amber-950">
+                <AlertTriangle className="h-4 w-4 text-amber-700" />
+                <AlertTitle>Pending Credit Committee Approval</AlertTitle>
+                <AlertDescription>
+                    This step remains disabled until Credit Committee approval is granted for this agreement.
+                </AlertDescription>
+            </Alert>
+            <div className="rounded-2xl border-2 border-dashed border-amber-200 bg-white p-6 text-sm text-muted-foreground">
+                Collateral registration, security perfection, and supporting legal instrument capture will be enabled after committee clearance.
+            </div>
+        </div>
+    );
+}
+
 function StepLiability({ availableAssets, isLocked }: { availableAssets: any[], isLocked: boolean }) {
     const { watch, setValue } = useFormContext<WizardFormValues>();
     const assetId = watch('agreement.assetId');
@@ -289,7 +333,7 @@ function StepLiability({ availableAssets, isLocked }: { availableAssets: any[], 
 
     return (
         <div className="space-y-10 animate-in fade-in duration-500 text-left text-foreground">
-            <h3 className="text-xl font-black font-headline flex items-center gap-2 text-left"><Scale className="h-6 w-6 text-primary"/> 5. Financial Lock</h3>
+            <h3 className="text-xl font-black font-headline flex items-center gap-2 text-left"><Scale className="h-6 w-6 text-primary"/> 6. Financial Lock</h3>
             <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-primary/20 space-y-6 text-left">
                 <p className="text-sm text-slate-600 leading-relaxed text-left">Committing this agreement creates an authorized disbursement record. The financial settlement path remains flexible for contingent milestones.</p>
                 <Separator className="bg-primary/10" />
@@ -404,14 +448,16 @@ export function AgreementWizard({ agreement, clients, facilities = [], onSave, o
         { id: 'protocol', title: '2. Facility Protocol', icon: Scale, fields: ['agreement.type', 'agreement.facilityId'] },
         { id: 'details', title: '3. Technical Terms', icon: FileSignature, fields: ['agreement.description', 'agreement.totalAdvanced', 'agreement.interestRate', 'agreement.numberOfInstallments'] },
         { id: 'schedule', title: '4. Repayment Schedule', icon: TableIcon, fields: [] },
-        { id: 'liability', title: '5. Financial Lock', icon: Banknote, fields: ['agreement.creditorId', 'agreement.liabilityAmount'] },
-        { id: 'booking', title: '6. Booking Preconditions', icon: ClipboardCheck, fields: [] },
-        { id: 'review', title: '7. Audit Check', icon: ShieldCheck, fields: [] },
-    ];
+        { id: 'collateral-security', title: '5. Collateral & Security (Pending Credit Committee)', icon: ShieldCheck, fields: [], disabled: true },
+        { id: 'liability', title: '6. Financial Lock', icon: Banknote, fields: ['agreement.creditorId', 'agreement.liabilityAmount'] },
+        { id: 'booking', title: '7. Booking Preconditions', icon: ClipboardCheck, fields: [] },
+        { id: 'review', title: '8. Audit Check', icon: ShieldCheck, fields: [] },
+    ] as const;
 
     const isStepValid = (index: number) => {
         if (isLocked) return true;
         const step = steps[index];
+        if (!step || step.disabled) return true;
         if (!step.fields || step.fields.length === 0) return true;
         const errors = methods.formState.errors;
         return step.fields.every(field => {
@@ -510,12 +556,13 @@ export function AgreementWizard({ agreement, clients, facilities = [], onSave, o
                                 {steps.map((step, index) => {
                                     const isCompleted = index < currentStep && isStepValid(index);
                                     const StepIcon = step.icon;
+                                    const isInactive = Boolean(step.disabled);
                                     return (
                                         <Button 
                                             key={step.id} 
                                             type="button" 
                                             variant={currentStep === index ? 'secondary' : 'ghost'} 
-                                            className={cn("w-full justify-start gap-4 h-12 px-4 transition-all text-left", currentStep === index && "bg-white shadow-sm ring-1 ring-primary/20")} 
+                                            className={cn("w-full justify-start gap-4 h-12 px-4 transition-all text-left", currentStep === index && "bg-white shadow-sm ring-1 ring-primary/20", isInactive && "opacity-70")}
                                             onClick={() => { if(index <= currentStep) setCurrentStep(index); }}
                                         >
                                             {isCompleted ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <div className={cn("h-4 w-4 rounded-full flex items-center justify-center text-[10px] font-black", currentStep >= index ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>{index + 1}</div>}
@@ -530,6 +577,7 @@ export function AgreementWizard({ agreement, clients, facilities = [], onSave, o
                                 {steps[currentStep].id === 'protocol' && <StepProtocol availableAssets={availableAssets || []} facilities={facilities || []} isLoadingAssets={isLoadingAssets} isLocked={isLocked} />}
                                 {steps[currentStep].id === 'details' && <StepTerms isLocked={isLocked} />}
                                 {steps[currentStep].id === 'schedule' && <StepSchedule />}
+                                {steps[currentStep].id === 'collateral-security' && <StepCollateralPending />}
                                 {steps[currentStep].id === 'liability' && <StepLiability availableAssets={availableAssets || []} isLocked={isLocked} />}
                                 {steps[currentStep].id === 'booking' && <StepBookingChecklist isLocked={isLocked} />}
                                 {steps[currentStep].id === 'review' && <StepCommitmentAudit isLocked={isLocked} onUnlock={handleUnlock} />}
