@@ -89,6 +89,7 @@ const propertyAssetSchema = z.object({
 const supplierWizardSchema = z.object({
   name: z.string().min(1, 'Entity name is required'),
   category: z.string().min(1, 'Category is required'),
+  status: z.enum(['draft', 'in_progress', 'active', 'inactive']).default('in_progress'),
   entityType: z.string().optional(),
   registrationId: z.string().optional(),
   vatRegistered: z.boolean().default(false),
@@ -192,6 +193,20 @@ const supplierWizardSchema = z.object({
 });
 
 type SupplierFormValues = z.infer<typeof supplierWizardSchema>;
+
+function removeUndefinedValues<T>(value: T): T {
+    if (Array.isArray(value)) {
+        return value.filter((item) => item !== undefined).map((item) => removeUndefinedValues(item)) as T;
+    }
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>)
+                .filter(([, item]) => item !== undefined)
+                .map(([key, item]) => [key, removeUndefinedValues(item)])
+        ) as T;
+    }
+    return value;
+}
 
 // --- HELPER COMPONENTS ---
 
@@ -375,8 +390,9 @@ export function EditSupplierWizard({ supplier, onSave, onBack }: { supplier?: an
         const token = await getClientSideAuthToken();
         if (!token) throw new Error("Auth failed.");
         const ref = supplier?.id ? doc(firestore, 'lendingSuppliers', supplier.id) : doc(collection(firestore, 'lendingSuppliers'));
-        await setDoc(ref, { ...values, id: ref.id, updatedAt: serverTimestamp() }, { merge: true });
-        toast({ title: 'Supplier Node Committed' });
+        const cleanValues = removeUndefinedValues(values);
+        await setDoc(ref, { ...cleanValues, status: 'active', id: ref.id, updatedAt: serverTimestamp() }, { merge: true });
+        toast({ title: 'Supplier Node Committed & Activated' });
         onSave();
     } catch (error: any) {
         toast({ variant: 'destructive', title: 'Commit Failed', description: error.message });
