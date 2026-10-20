@@ -481,7 +481,7 @@ export function EditClientWizard({ client, onSave, onBack, targetCollection = 'l
         const reviewResponse = await fetch('/api/admin', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'ensureGlobalFacilityReview', payload: { clientId: ref.id } }),
+          body: JSON.stringify({ action: 'ensureGlobalFacilityReview', payload: { clientId: ref.id, clientCollection: targetCollection } }),
         });
         const reviewResult = await reviewResponse.json();
         if (!reviewResponse.ok || !reviewResult.success) throw new Error(reviewResult.error || 'Global facility review could not be created.');

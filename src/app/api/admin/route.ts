@@ -670,7 +670,10 @@ export async function POST(request: Request) {
       if (!clientId) {
         return NextResponse.json({ success: false, error: 'clientId is required.' }, { status: 400 });
       }
-      const clientSnapshot = await db.collection('lendingClients').doc(clientId).get();
+      const requestedCollection = String(resolvedPayload.clientCollection || 'lendingClients').trim();
+      const allowedClientCollections = ['lendingClients', 'lendingDebtors'];
+      const clientCollection = allowedClientCollections.includes(requestedCollection) ? requestedCollection : 'lendingClients';
+      const clientSnapshot = await db.collection(clientCollection).doc(clientId).get();
       if (!clientSnapshot.exists) {
         return NextResponse.json({ success: false, error: 'Client application was not found.' }, { status: 404 });
       }
@@ -729,7 +732,7 @@ export async function POST(request: Request) {
         facilityType: 'Global Client Facility',
         fundingNeed: 'broad_client_facility',
         status: existingCase?.data()?.status || 'submitted',
-        sourceCollections: ['lendingClients', 'facilities', 'agreements'],
+        sourceCollections: [clientCollection, 'facilities', 'agreements'],
         originationType: existingCase?.data()?.originationType || 'direct',
         engagementEvents: existingCase?.data()?.engagementEvents || [],
         facilityIndication: { status: 'non_binding', committeeDetermined: true },
