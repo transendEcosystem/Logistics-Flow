@@ -678,8 +678,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: 'Client application was not found.' }, { status: 404 });
       }
 
+      const isDebtorRecord = clientCollection === 'lendingDebtors';
+
       const client = clientSnapshot.data() || {};
-      const globalSnapshot = await db.collection('facilities')
+      const globalSnapshot = isDebtorRecord
+        ? await db.collection('facilities').where('debtorId', '==', clientId).get()
+        : await db.collection('facilities')
         .where('clientId', '==', clientId)
         .get();
       const existingGlobal = globalSnapshot.docs.find((document) => {
@@ -689,17 +693,18 @@ export async function POST(request: Request) {
       const facilityRef = existingGlobal?.ref || db.collection('facilities').doc();
       const facilityData = {
         id: facilityRef.id,
-        ownerType: 'client',
-        clientId,
+        ownerType: isDebtorRecord ? 'debtor' : 'client',
+        clientId: isDebtorRecord ? null : clientId,
+        debtorId: isDebtorRecord ? clientId : null,
         facilityClass: 'global',
         parentId: null,
-        type: 'Global Client Facility',
+        type: isDebtorRecord ? 'Global Debtor Facility' : 'Global Client Facility',
         limit: Number(existingGlobal?.data()?.limit || 0),
         status: existingGlobal?.data()?.status || 'pending_credit',
         onboardingStage: existingGlobal?.data()?.onboardingStage || 'application',
         onboardingTasks: existingGlobal?.data()?.onboardingTasks || {},
         onboardingEvidence: existingGlobal?.data()?.onboardingEvidence || {},
-        source: 'completed_client_application',
+        source: isDebtorRecord ? 'completed_debtor_application' : 'completed_client_application',
         clientApplicationId: clientId,
         createdBy: existingGlobal?.data()?.createdBy || adminUid,
         createdAt: existingGlobal?.data()?.createdAt || FieldValue.serverTimestamp(),
@@ -729,8 +734,8 @@ export async function POST(request: Request) {
         phone: String(client.phone || ''),
         amountRequested: 0,
         termMonths: 0,
-        facilityType: 'Global Client Facility',
-        fundingNeed: 'broad_client_facility',
+        facilityType: isDebtorRecord ? 'Global Debtor Facility' : 'Global Client Facility',
+        fundingNeed: isDebtorRecord ? 'broad_debtor_facility' : 'broad_client_facility',
         status: existingCase?.data()?.status || 'submitted',
         sourceCollections: [clientCollection, 'facilities', 'agreements'],
         originationType: existingCase?.data()?.originationType || 'direct',
