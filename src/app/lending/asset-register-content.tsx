@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Loader2, Plus, PlusCircle, Truck, Edit, Trash2, Warehouse, Wrench, ArrowLeft, FileText, Handshake, Car, Bus, Monitor, RefreshCcw, ShoppingBag, User, CheckCircle2, ShieldCheck, Filter, Search, Scale } from "lucide-react";
+import { Loader2, Plus, PlusCircle, Truck, Edit, Trash2, Warehouse, Wrench, ArrowLeft, FileText, Handshake, Car, Bus, Monitor, RefreshCcw, ShoppingBag, User, CheckCircle2, ShieldCheck, Filter, Search, Scale, Receipt } from "lucide-react";
 import { DataTable } from '@/components/ui/data-table';
 import { type ColumnDef } from '@/hooks/use-data-table';
 import { Badge } from '@/components/ui/badge';
@@ -60,6 +60,8 @@ function AssetTypeSelection({ onSelect, onBack }: { onSelect: (type: string) => 
         { id: 'Car', label: 'Car', icon: Car },
         { id: 'Bus', label: 'Bus', icon: Bus },
         { id: 'Equipment', label: 'Equipment', icon: Wrench },
+        { id: 'Invoice', label: 'Invoice', icon: Receipt },
+        { id: 'Receivable Right', label: 'Receivable Right', icon: Scale },
     ];
 
     return (
@@ -74,7 +76,7 @@ function AssetTypeSelection({ onSelect, onBack }: { onSelect: (type: string) => 
                         <Button variant="ghost" onClick={onBack} className="text-white hover:text-primary"><ArrowLeft className="mr-2 h-4 w-4"/> Back to Registry</Button>
                     </div>
                 </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 p-8 text-left text-foreground">
+                <CardContent className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-6 p-8 text-left text-foreground">
                     {types.map(type => {
                         const Icon = type.icon;
                         return (
