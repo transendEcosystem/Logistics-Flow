@@ -14,7 +14,7 @@ import {
     Truck, Building, User, Banknote, Database, Info, Search, 
     CheckCircle2, Scale, UserCheck, Zap, Handshake, ShieldCheck,
     ClipboardCheck, Landmark, Lock, RefreshCcw, Table as TableIcon,
-    AlertTriangle, Unlock
+    AlertTriangle, Unlock, PlusCircle
 } from 'lucide-react';
 import { getClientSideAuthToken, useFirestore, useMemoFirebase, useCollection, useDoc } from '@/firebase';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -104,6 +104,7 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
     const isLoanWorkingCapital = agreementType === 'loan-pv-term';
     const shouldShowPhysicalAssetBind = agreementType === 'installment-sale-term' || agreementType === 'rental-term';
     const eligibleFacilities = useMemo(() => facilities.filter((facility: any) => facility.facilityClass === 'sub' && facility.clientId === clientId && (facility.status === 'approved' || facility.status === 'active')), [facilities, clientId]);
+    const clientReceivables = useMemo(() => receivableAssets.filter((a: any) => !clientId || a.clientId === clientId || a.debtorId === clientId), [receivableAssets, clientId]);
     return (
         <div className="space-y-10 animate-in fade-in duration-500 text-left text-foreground">
             <h3 className="text-xl font-black font-headline flex items-center gap-2 text-left"><Scale className="h-6 w-6 text-primary"/> 2. Facility Protocol</h3>
@@ -139,7 +140,24 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
                     <div className="p-8 border-2 border-dashed rounded-[2rem] bg-slate-50 space-y-4 text-left">
                         <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 text-left"><Truck className="h-4 w-4" /> Receivable Rights Bind</h4>
                         <div className="space-y-4">
-                            <p className="text-sm text-muted-foreground">Discounting does not transfer ownership of the underlying asset. Select a registered invoice / receivable asset from the register — its cession references will be bound automatically — then confirm the cession instrument below.</p>
+                            <p className="text-sm text-muted-foreground">Discounting does not transfer ownership of the underlying asset. Select a registered invoice / receivable asset for this client, or open the Asset Register to capture a new invoice batch for this debtor.</p>
+                            <div className="flex items-center gap-3">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="gap-2 font-bold border-primary text-primary hover:bg-primary/5"
+                                    onClick={() => {
+                                        const returnTo = encodeURIComponent('/lending?view=agreements');
+                                        const debtor = clientId ? `&debtor=${clientId}` : '';
+                                        window.location.href = `/lending?view=assets&type=Invoice${debtor}&returnTo=${returnTo}`;
+                                    }}
+                                >
+                                    <PlusCircle className="h-4 w-4" /> Open Asset Register (New Invoice Batch)
+                                </Button>
+                                {clientReceivables.length === 0 && (
+                                    <p className="text-xs text-amber-700 font-medium">No invoice assets registered for this client yet.</p>
+                                )}
+                            </div>
                             <FormField control={control} name="agreement.assetId" render={({ field }) => (
                                 <FormItem className="text-left text-foreground">
                                     <FormLabel>Invoice / Receivable Asset (from Asset Register)</FormLabel>
@@ -159,7 +177,7 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
                                             </SelectTrigger>
                                         </FormControl>
                                         <SelectContent>
-                                            {receivableAssets?.map((a: any) => (
+                                            {clientReceivables?.map((a: any) => (
                                                 <SelectItem key={a.id} value={a.id}>{a.make} - {a.model} ({formatCurrency(a.costOfSale || 0)})</SelectItem>
                                             ))}
                                         </SelectContent>

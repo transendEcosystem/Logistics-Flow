@@ -150,6 +150,9 @@ export default function AssetRegisterContent() {
         }
     }, [forceRefresh, searchParams]);
 
+    const debtorParam = searchParams.get('debtor');
+    const returnToParam = searchParams.get('returnTo');
+
     const handleEdit = (asset: any) => {
         setSelectedAsset(asset);
         setAssetType(asset.classification || null);
@@ -158,7 +161,14 @@ export default function AssetRegisterContent() {
 
     const handleAddNew = () => setView('select-type');
     const handleBackToList = () => { setView('list'); setSelectedAsset(null); setAssetType(null); };
-    const handleSaveSuccess = () => { forceRefresh(); handleBackToList(); };
+    const handleSaveSuccess = () => {
+        if (returnToParam) {
+            window.location.href = decodeURIComponent(returnToParam);
+            return;
+        }
+        forceRefresh();
+        handleBackToList();
+    };
     const handleTypeSelect = (type: string) => { setSelectedAsset(null); setAssetType(type); setView('wizard'); };
 
     const handleDelete = async () => {
@@ -245,7 +255,7 @@ export default function AssetRegisterContent() {
     ];
     
     if (view === 'select-type') return <AssetTypeSelection onSelect={handleTypeSelect} onBack={handleBackToList} />;
-    if (view === 'wizard') return <EditAssetWizard asset={selectedAsset} assetType={assetType} onSave={handleSaveSuccess} onBack={handleBackToList} />;
+    if (view === 'wizard') return <EditAssetWizard asset={selectedAsset} assetType={assetType} debtorId={debtorParam} onSave={handleSaveSuccess} onBack={handleBackToList} />;
 
     return (
         <div className="space-y-8 text-left text-foreground">

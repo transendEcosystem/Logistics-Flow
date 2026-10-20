@@ -135,7 +135,7 @@ const steps = [
     { id: 'audit', title: '4. Forensic Audit', icon: ShieldCheck, fields: [] },
 ];
 
-export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType, clientId: initialClientId }: { asset?: any, onSave: () => void, onBack: () => void, assetType?: string | null, clientId?: string | null }) {
+export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType, clientId: initialClientId, debtorId: initialDebtorId }: { asset?: any, onSave: () => void, onBack: () => void, assetType?: string | null, clientId?: string | null, debtorId?: string | null }) {
     const [isLoading, setIsLoading] = useState(false);
     const [currentStep, setCurrentStep] = useState(0);
     const { toast } = useToast();
@@ -148,6 +148,7 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
             sourceType: 'dealer',
             classification: initialType || 'Truck',
             clientId: initialClientId || null,
+            debtorId: initialDebtorId || null,
             status: 'pending_acquisition',
             costOfSale: 0
         }
