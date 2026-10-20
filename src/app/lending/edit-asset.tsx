@@ -22,6 +22,7 @@ import { collection, query, where, doc, setDoc, serverTimestamp } from 'firebase
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { LendingAssetControlRecord } from '@/lib/lending/asset-architecture';
 
 const invoiceLineItemSchema = z.object({
@@ -176,6 +177,34 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
     // 3. Fetch Debtors for financial asset (invoice/right) linking
     const debtorsQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'lendingDebtors'), where('status', '==', 'active')) : null, [firestore]);
     const { data: debtors } = useCollection(debtorsQuery);
+
+    // 4. Fetch debtor sub-facilities to resolve payment terms for the selected debtor
+    const watchedDebtorId = methods.watch('debtorId');
+    const debtorFacilitiesQuery = useMemoFirebase(() => {
+        if (!firestore || !watchedDebtorId) return null;
+        return query(collection(firestore, 'facilities'), where('debtorId', '==', watchedDebtorId), where('facilityClass', '==', 'sub'));
+    }, [firestore, watchedDebtorId]);
+    const { data: debtorFacilities } = useCollection(debtorFacilitiesQuery);
+
+    const resolvedPaymentTermsDays = useMemo(() => {
+        if (!debtorFacilities || debtorFacilities.length === 0) return null;
+        const withTerms = debtorFacilities.filter((f: any) => typeof f.paymentTermsDays === 'number' && f.paymentTermsDays >= 0);
+        if (withTerms.length === 0) return null;
+        // Prefer a discounting facility's terms if present
+        const discounting = withTerms.find((f: any) => String(f.type || '').toLowerCase().startsWith('discounting'));
+        return (discounting || withTerms[0]).paymentTermsDays as number;
+    }, [debtorFacilities]);
+
+    // Auto-compute invoice due date when the invoice date changes and terms are known
+    const watchedInvoiceDate = methods.watch('invoiceDate');
+    useEffect(() => {
+        if (!watchedInvoiceDate || resolvedPaymentTermsDays === null) return;
+        const issueDate = new Date(watchedInvoiceDate);
+        if (isNaN(issueDate.getTime())) return;
+        const dueDate = new Date(issueDate);
+        dueDate.setDate(dueDate.getDate() + resolvedPaymentTermsDays);
+        methods.setValue('invoiceDueDate', dueDate.toISOString().slice(0, 10));
+    }, [watchedInvoiceDate, resolvedPaymentTermsDays]);
 
     const wizardSteps = useMemo(() => {
         if (isInvoiceClass(watchedClass)) {
@@ -542,6 +571,15 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
                             <h3 className="text-xl font-black uppercase flex items-center gap-2"><Receipt className="h-6 w-6 text-primary" /> Invoice Header</h3>
                             <p className="text-sm text-muted-foreground">Capture the invoice meta-data. The total amount should equal the sum of line items.</p>
                         </div>
+                        {resolvedPaymentTermsDays !== null && (
+                            <Alert className="border-primary/20 bg-primary/5">
+                                <Info className="h-4 w-4" />
+                                <AlertTitle className="text-xs font-black uppercase tracking-widest">Debtor Terms Detected: {resolvedPaymentTermsDays} days</AlertTitle>
+                                <AlertDescription className="text-xs">
+                                    The due date will auto-compute from the invoice date based on the debtor sub-facility payment terms. You can overwrite it if needed.
+                                </AlertDescription>
+                            </Alert>
+                        )}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <FormField control={methods.control} name="invoiceNumber" render={({ field }) => (
                                 <FormItem className="text-left"><FormLabel>Invoice Number</FormLabel><FormControl><Input {...field} placeholder="INV-2026-001" className="border-2 bg-white font-mono" /></FormControl></FormItem>
@@ -553,7 +591,10 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
                                 <FormItem className="text-left"><FormLabel>Invoice Date</FormLabel><FormControl><Input type="date" {...field} className="border-2 bg-white" /></FormControl></FormItem>
                             )} />
                             <FormField control={methods.control} name="invoiceDueDate" render={({ field }) => (
-                                <FormItem className="text-left"><FormLabel>Due Date</FormLabel><FormControl><Input type="date" {...field} className="border-2 bg-white" /></FormControl></FormItem>
+                                <FormItem className="text-left">
+                                    <FormLabel>Due Date{resolvedPaymentTermsDays !== null && <span className="ml-2 text-[10px] font-black uppercase text-primary">Auto: invoice date + {resolvedPaymentTermsDays}d</span>}</FormLabel>
+                                    <FormControl><Input type="date" {...field} className="border-2 bg-white" /></FormControl>
+                                </FormItem>
                             )} />
                         </div>
                         <FormField control={methods.control} name="invoiceNotes" render={({ field }) => (

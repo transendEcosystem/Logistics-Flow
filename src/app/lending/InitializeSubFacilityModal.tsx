@@ -52,6 +52,7 @@ export function InitializeSubFacilityModal({ parent, clients, onComplete, isOpen
     // --- FORM STATE ---
     const [type, setType] = useState('loan-pv-term'); 
     const [discountingSubType, setDiscountingSubType] = useState('factoring');
+    const [paymentTermsDays, setPaymentTermsDays] = useState<string>('30');
     const [limit, setLimit] = useState<string>('');
     const [associatedClientId, setAssociatedClientId] = useState<string>('');
 
@@ -125,6 +126,7 @@ export function InitializeSubFacilityModal({ parent, clients, onComplete, isOpen
                 sourceDealerId: parent.sourceDealerId || null,
                 type: isDiscounting ? `Discounting: ${discountingSubType}` : type,
                 associatedClientId: isDebtorMode ? associatedClientId : null,
+                paymentTermsDays: isDiscounting ? Number(paymentTermsDays) || 30 : null,
                 limit: Number(limit),
                 status: 'pending_credit',
                 createdByName: user?.displayName || 'Admin',
@@ -287,6 +289,29 @@ export function InitializeSubFacilityModal({ parent, clients, onComplete, isOpen
                                             </div>
                                         ))}
                                      </RadioGroup>
+
+                                     <Separator />
+
+                                     <div className="space-y-3 p-6 bg-primary/5 border-2 border-primary/20 rounded-2xl text-left">
+                                        <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 text-left">Debtor Payment Terms (Days)</Label>
+                                        <p className="text-xs text-muted-foreground text-left">The negotiated number of days this debtor takes to settle invoices for the bound client. Used to auto-compute invoice due dates at asset capture.</p>
+                                        <div className="flex items-center gap-4 max-w-xs text-left">
+                                            <Input
+                                                type="number"
+                                                min={0}
+                                                value={paymentTermsDays}
+                                                onChange={(e) => setPaymentTermsDays(e.target.value)}
+                                                placeholder="30"
+                                                className="h-12 border-2 bg-white font-black text-2xl text-left"
+                                            />
+                                            <span className="text-sm font-bold text-muted-foreground">days</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2 pt-1">
+                                            {[7, 14, 30, 45, 60, 90].map(d => (
+                                                <Badge key={d} variant={Number(paymentTermsDays) === d ? 'default' : 'outline'} className="cursor-pointer h-7 px-3 text-xs font-bold" onClick={() => setPaymentTermsDays(String(d))}>{d}d</Badge>
+                                            ))}
+                                        </div>
+                                     </div>
                                 </div>
                             )}
 
