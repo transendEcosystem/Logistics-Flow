@@ -26,9 +26,19 @@ import { LendingAssetControlRecord } from '@/lib/lending/asset-architecture';
 
 const invoiceLineItemSchema = z.object({
     description: z.string().min(1, 'Item description required'),
+    itemType: z.enum(['load', 'standing_time', 'demurrage', 'other']).default('load'),
+    loadReference: z.string().optional(),
     quantity: z.coerce.number().min(0).default(1),
     unitPrice: z.coerce.number().min(0).default(0),
     amount: z.coerce.number().min(0).default(0),
+});
+
+const batchInvoiceSchema = z.object({
+    invoiceNumber: z.string().min(1, 'Invoice number required'),
+    invoiceDate: z.string().optional(),
+    invoiceDueDate: z.string().optional(),
+    notes: z.string().optional(),
+    items: z.array(invoiceLineItemSchema).default([]),
 });
 
 const assetSchema = z.object({
@@ -46,6 +56,8 @@ const assetSchema = z.object({
   registrationNumber: z.string().optional(),
   vin: z.string().optional(),
   engineNumber: z.string().optional(),
+  // Invoice (receivable) structure branch
+  invoiceStructure: z.enum(['single', 'batch']).default('single'),
   // Invoice (receivable) header fields
   invoiceNumber: z.string().optional(),
   invoiceDate: z.string().optional(),
@@ -53,6 +65,8 @@ const assetSchema = z.object({
   invoiceReference: z.string().optional(),
   invoiceNotes: z.string().optional(),
   invoiceItems: z.array(invoiceLineItemSchema).default([]),
+  // Batch mode: multiple invoices, each with its own number and line items
+  invoiceBatch: z.array(batchInvoiceSchema).default([]),
   // Receivable right (cession) fields
   contractReference: z.string().optional(),
   contractName: z.string().optional(),
@@ -70,6 +84,49 @@ const FINANCIAL_CLASSES = ['Invoice', 'Receivable Right'];
 const isInvoiceClass = (classification?: string) => classification === 'Invoice';
 const isReceivableRightClass = (classification?: string) => classification === 'Receivable Right';
 const isFinancialClass = (classification?: string) => FINANCIAL_CLASSES.includes(classification || '');
+
+// Nested field array for batch invoice items
+function BatchItemsArray({ nestIndex, control, setValue, getValues, watch }: { nestIndex: number, control: any, setValue: any, getValues: any, watch: any }) {
+    const { fields, append, remove } = useFieldArray({ control, name: `invoiceBatch.${nestIndex}.items` });
+    const items = watch(`invoiceBatch.${nestIndex}.items`) || [];
+    const subtotal = items.reduce((sum: number, item: any) => sum + (Number(item.amount) || (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)), 0);
+
+    return (
+        <div className="space-y-3">
+            {fields.map((item, itemIndex) => (
+                <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 rounded-lg border bg-white p-3">
+                    <div className="md:col-span-2">
+                        <FormField control={control} name={`invoiceBatch.${nestIndex}.items.${itemIndex}.itemType`} render={({ field }) => (
+                            <FormItem><FormLabel className="text-xs">Type</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="load">Load</SelectItem><SelectItem value="standing_time">Standing</SelectItem><SelectItem value="demurrage">Demurrage</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent></Select></FormItem>
+                        )} />
+                    </div>
+                    <div className="md:col-span-4">
+                        <FormField control={control} name={`invoiceBatch.${nestIndex}.items.${itemIndex}.description`} render={({ field }) => <FormItem><FormLabel className="text-xs">Description</FormLabel><FormControl><Input {...field} className="h-8 text-xs" /></FormControl></FormItem>} />
+                    </div>
+                    <div className="md:col-span-1">
+                        <FormField control={control} name={`invoiceBatch.${nestIndex}.items.${itemIndex}.quantity`} render={({ field }) => <FormItem><FormLabel className="text-xs">Qty</FormLabel><FormControl><Input type="number" {...field} className="h-8 text-xs" onChange={(e) => { field.onChange(e); const qty = Number(e.target.value) || 0; const price = getValues(`invoiceBatch.${nestIndex}.items.${itemIndex}.unitPrice`) || 0; setValue(`invoiceBatch.${nestIndex}.items.${itemIndex}.amount`, qty * price); }} /></FormControl></FormItem>} />
+                    </div>
+                    <div className="md:col-span-2">
+                        <FormField control={control} name={`invoiceBatch.${nestIndex}.items.${itemIndex}.unitPrice`} render={({ field }) => <FormItem><FormLabel className="text-xs">Unit Price</FormLabel><FormControl><Input type="number" {...field} className="h-8 text-xs" onChange={(e) => { field.onChange(e); const price = Number(e.target.value) || 0; const qty = getValues(`invoiceBatch.${nestIndex}.items.${itemIndex}.quantity`) || 0; setValue(`invoiceBatch.${nestIndex}.items.${itemIndex}.amount`, qty * price); }} /></FormControl></FormItem>} />
+                    </div>
+                    <div className="md:col-span-2">
+                        <FormField control={control} name={`invoiceBatch.${nestIndex}.items.${itemIndex}.amount`} render={({ field }) => <FormItem><FormLabel className="text-xs">Amount</FormLabel><FormControl><Input type="number" {...field} readOnly className="h-8 text-xs font-black bg-slate-50" /></FormControl></FormItem>} />
+                    </div>
+                    <div className="md:col-span-1 flex items-end justify-end">
+                        <Button type="button" variant="ghost" size="sm" className="text-destructive h-8 w-8 p-0" onClick={() => remove(itemIndex)}><Trash2 className="h-3 w-3" /></Button>
+                    </div>
+                </div>
+            ))}
+            <div className="flex items-center justify-between pt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => append({ description: '', itemType: 'load', quantity: 1, unitPrice: 0, amount: 0 })}><PlusCircle className="mr-2 h-3 w-3" />Add Item</Button>
+                <div className="text-right">
+                    <p className="text-[10px] font-black uppercase text-muted-foreground">Invoice Subtotal</p>
+                    <p className="text-lg font-black text-primary">{formatCurrency(subtotal)}</p>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 const steps = [
     { id: 'source', title: '1. Asset Source', icon: ShoppingBag, fields: ['sourceType', 'sourceDealerId', 'sourceClientId'] },
@@ -98,10 +155,14 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
 
     const watchedSource = methods.watch('sourceType');
     const watchedClass = methods.watch('classification');
+    const watchedInvoiceStructure = methods.watch('invoiceStructure') || 'single';
     const watchedInvoiceItems = methods.watch('invoiceItems') || [];
+    const watchedInvoiceBatch = methods.watch('invoiceBatch') || [];
     const invoiceTotal = useMemo(() => watchedInvoiceItems.reduce((sum, item) => sum + (Number(item.amount) || (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)), 0), [watchedInvoiceItems]);
+    const batchTotal = useMemo(() => watchedInvoiceBatch.reduce((sum, inv) => sum + (inv.items || []).reduce((s, item) => s + (Number(item.amount) || (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)), 0), 0), [watchedInvoiceBatch]);
 
     const { fields: invoiceItemFields, append: appendInvoiceItem, remove: removeInvoiceItem } = useFieldArray({ control: methods.control, name: 'invoiceItems' });
+    const { fields: invoiceBatchFields, append: appendBatchInvoice, remove: removeBatchInvoice } = useFieldArray({ control: methods.control, name: 'invoiceBatch' });
 
     // 1. Fetch Suppliers (Dealers) for the source dropdown
     const suppliersQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'lendingSuppliers'), where('status', '==', 'active')) : null, [firestore]);
@@ -117,11 +178,20 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
 
     const wizardSteps = useMemo(() => {
         if (isInvoiceClass(watchedClass)) {
+            if (watchedInvoiceStructure === 'batch') {
+                return [
+                    { id: 'source', title: '1. Debtor (Invoice)', icon: Building, fields: ['debtorId'] },
+                    { id: 'invoice-structure', title: '2. Invoice Structure', icon: Receipt, fields: ['invoiceStructure'] },
+                    { id: 'invoice-batch', title: '3. Invoice Batch', icon: FileText, fields: ['invoiceBatch'] },
+                    { id: 'audit', title: '4. Forensic Audit', icon: ShieldCheck, fields: [] },
+                ];
+            }
             return [
                 { id: 'source', title: '1. Debtor (Invoice)', icon: Building, fields: ['debtorId'] },
-                { id: 'invoice-header', title: '2. Invoice Header', icon: Receipt, fields: ['invoiceNumber', 'invoiceDate', 'invoiceDueDate', 'costOfSale'] },
-                { id: 'invoice-items', title: '3. Invoice Items', icon: FileText, fields: ['invoiceItems'] },
-                { id: 'audit', title: '4. Forensic Audit', icon: ShieldCheck, fields: [] },
+                { id: 'invoice-structure', title: '2. Invoice Structure', icon: Receipt, fields: ['invoiceStructure'] },
+                { id: 'invoice-header', title: '3. Invoice Header', icon: Receipt, fields: ['invoiceNumber', 'invoiceDate', 'invoiceDueDate', 'costOfSale'] },
+                { id: 'invoice-items', title: '4. Invoice Items', icon: FileText, fields: ['invoiceItems'] },
+                { id: 'audit', title: '5. Forensic Audit', icon: ShieldCheck, fields: [] },
             ];
         }
         if (isReceivableRightClass(watchedClass)) {
@@ -132,7 +202,7 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
             ];
         }
         return steps;
-    }, [watchedClass]);
+    }, [watchedClass, watchedInvoiceStructure]);
 
     const onSubmit = async (values: AssetFormValues) => {
         setIsLoading(true);
@@ -160,11 +230,43 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
                     treatment: 'acquired_for_resale',
                 };
 
+            // Normalize invoice data: compute totals from items
+            let normalizedInvoiceNumber = values.invoiceNumber;
+            let normalizedCostOfSale = values.costOfSale;
+            let normalizedInvoiceItems = values.invoiceItems || [];
+            if (isInvoiceClass(values.classification)) {
+                if (values.invoiceStructure === 'batch') {
+                    const batch = (values.invoiceBatch || []).map(inv => ({
+                        ...inv,
+                        items: (inv.items || []).map(item => ({
+                            ...item,
+                            amount: Number(item.amount) || (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0),
+                        })),
+                    }));
+                    normalizedInvoiceNumber = batch.map(inv => inv.invoiceNumber).join(', ');
+                    normalizedCostOfSale = batch.reduce((sum, inv) => sum + inv.items.reduce((s, item) => s + item.amount, 0), 0);
+                    normalizedInvoiceItems = batch.flatMap(inv => inv.items);
+                    values.invoiceBatch = batch;
+                } else {
+                    normalizedInvoiceItems = normalizedInvoiceItems.map(item => ({
+                        ...item,
+                        amount: Number(item.amount) || (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0),
+                    }));
+                    normalizedCostOfSale = normalizedInvoiceItems.reduce((sum, item) => sum + item.amount, 0);
+                    values.invoiceItems = normalizedInvoiceItems;
+                }
+                values.costOfSale = normalizedCostOfSale;
+            }
+
             const displayMake = financial
-                ? (isInvoiceClass(values.classification) ? `Invoice ${values.invoiceNumber || ''}`.trim() : `Receivable Right ${values.contractReference || ''}`.trim())
+                ? (isInvoiceClass(values.classification) 
+                    ? (values.invoiceStructure === 'batch' ? `Batch: ${normalizedInvoiceNumber}` : `Invoice ${normalizedInvoiceNumber || ''}`.trim())
+                    : `Receivable Right ${values.contractReference || ''}`.trim())
                 : values.make;
             const displayModel = financial
-                ? (isInvoiceClass(values.classification) ? 'Debtor Invoice' : 'Contract Right (Cession)')
+                ? (isInvoiceClass(values.classification) 
+                    ? (values.invoiceStructure === 'batch' ? `Invoice Batch (${values.invoiceBatch?.length || 0} invoices)` : 'Debtor Invoice')
+                    : 'Contract Right (Cession)')
                 : values.model;
 
             await setDoc(ref, { 
@@ -393,6 +495,45 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
                         )}
                     </div>
                 );
+            case 'invoice-structure':
+                return (
+                    <div className="space-y-8 animate-in fade-in duration-500 text-left">
+                        <div>
+                            <h3 className="text-xl font-black uppercase flex items-center gap-2"><Receipt className="h-6 w-6 text-primary" /> Invoice Structure</h3>
+                            <p className="text-sm text-muted-foreground">Select how the factored invoices are organized. This determines the capture workflow that follows.</p>
+                        </div>
+                        <FormField control={methods.control} name="invoiceStructure" render={({ field }) => (
+                            <FormItem className="space-y-4">
+                                <FormControl>
+                                    <RadioGroup onValueChange={field.onChange} value={field.value} className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                                        <div className={cn("p-6 border-2 rounded-2xl cursor-pointer transition-all", field.value === 'single' ? "border-primary bg-primary/5 shadow-md" : "bg-white")}>
+                                            <div className="flex items-center gap-2">
+                                                <RadioGroupItem value="single" id="struct-single" />
+                                                <Label htmlFor="struct-single" className="font-bold text-sm uppercase cursor-pointer text-foreground">Single Invoice</Label>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground mt-3 leading-relaxed">One invoice number covering multiple loads. The invoice has a header and multiple line items (e.g. 1 line per load, plus standing time or demurrage charges).</p>
+                                        </div>
+                                        <div className={cn("p-6 border-2 rounded-2xl cursor-pointer transition-all", field.value === 'batch' ? "border-primary bg-primary/5 shadow-md" : "bg-white")}>
+                                            <div className="flex items-center gap-2">
+                                                <RadioGroupItem value="batch" id="struct-batch" />
+                                                <Label htmlFor="struct-batch" className="font-bold text-sm uppercase cursor-pointer text-foreground">Invoice Batch</Label>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground mt-3 leading-relaxed">Multiple separate invoices, each with a unique invoice number. Each invoice may contain its own line items (load, standing time, demurrage, etc.).</p>
+                                        </div>
+                                    </RadioGroup>
+                                </FormControl>
+                            </FormItem>
+                        )} />
+                        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                            <p className="text-xs text-amber-800 font-medium">
+                                <Info className="h-3 w-3 inline mr-1" />
+                                {watchedInvoiceStructure === 'single' 
+                                    ? 'Next: capture the invoice header (number, dates), then add line items for each load and charge.' 
+                                    : 'Next: add each invoice with its own number and line items. The system will compute the batch total automatically.'}
+                            </p>
+                        </div>
+                    </div>
+                );
             case 'invoice-header':
                 return (
                     <div className="space-y-8 animate-in fade-in duration-500 text-left">
@@ -425,7 +566,7 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
                         <div className="flex items-center justify-between">
                             <div>
                                 <h3 className="text-xl font-black uppercase flex items-center gap-2"><FileText className="h-6 w-6 text-primary" /> Invoice Line Items</h3>
-                                <p className="text-sm text-muted-foreground">Capture each line item exactly as it appears on the invoice body.</p>
+                                <p className="text-sm text-muted-foreground">Capture each line item exactly as it appears on the invoice body. Use item type to distinguish loads from charges.</p>
                             </div>
                             <div className="text-right">
                                 <p className="text-[10px] font-black uppercase text-muted-foreground">Computed Total</p>
@@ -433,25 +574,74 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
                             </div>
                         </div>
                         {invoiceItemFields.map((item, index) => (
-                            <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 rounded-xl border bg-slate-50 p-4">
-                                <div className="md:col-span-5">
-                                    <FormField control={methods.control} name={`invoiceItems.${index}.description`} render={({ field }) => <FormItem><FormLabel>Description</FormLabel><FormControl><Input {...field} className="bg-white" /></FormControl></FormItem>} />
+                            <div key={item.id} className="rounded-xl border bg-slate-50 p-4 space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                                    <div className="md:col-span-3">
+                                        <FormField control={methods.control} name={`invoiceItems.${index}.itemType`} render={({ field }) => (
+                                            <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="load">Load</SelectItem><SelectItem value="standing_time">Standing Time</SelectItem><SelectItem value="demurrage">Demurrage</SelectItem><SelectItem value="other">Other Charge</SelectItem></SelectContent></Select></FormItem>
+                                        )} />
+                                    </div>
+                                    <div className="md:col-span-6">
+                                        <FormField control={methods.control} name={`invoiceItems.${index}.description`} render={({ field }) => <FormItem><FormLabel>Description</FormLabel><FormControl><Input {...field} className="bg-white" placeholder="e.g. Load: Johannesburg to Durban, or Standing time 2 days" /></FormControl></FormItem>} />
+                                    </div>
+                                    <div className="md:col-span-3">
+                                        <FormField control={methods.control} name={`invoiceItems.${index}.loadReference`} render={({ field }) => <FormItem><FormLabel>Load Ref (optional)</FormLabel><FormControl><Input {...field} className="bg-white font-mono" placeholder="LD-0001" /></FormControl></FormItem>} />
+                                    </div>
                                 </div>
-                                <div className="md:col-span-2">
-                                    <FormField control={methods.control} name={`invoiceItems.${index}.quantity`} render={({ field }) => <FormItem><FormLabel>Qty</FormLabel><FormControl><Input type="number" {...field} className="bg-white" onChange={(e) => { field.onChange(e); const qty = Number(e.target.value) || 0; const price = methods.getValues(`invoiceItems.${index}.unitPrice`) || 0; methods.setValue(`invoiceItems.${index}.amount`, qty * price); }} /></FormControl></FormItem>} />
-                                </div>
-                                <div className="md:col-span-2">
-                                    <FormField control={methods.control} name={`invoiceItems.${index}.unitPrice`} render={({ field }) => <FormItem><FormLabel>Unit Price</FormLabel><FormControl><Input type="number" {...field} className="bg-white" onChange={(e) => { field.onChange(e); const price = Number(e.target.value) || 0; const qty = methods.getValues(`invoiceItems.${index}.quantity`) || 0; methods.setValue(`invoiceItems.${index}.amount`, qty * price); }} /></FormControl></FormItem>} />
-                                </div>
-                                <div className="md:col-span-2">
-                                    <FormField control={methods.control} name={`invoiceItems.${index}.amount`} render={({ field }) => <FormItem><FormLabel>Amount</FormLabel><FormControl><Input type="number" {...field} readOnly className="bg-white font-black" /></FormControl></FormItem>} />
-                                </div>
-                                <div className="md:col-span-1 flex items-end">
-                                    <Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => removeInvoiceItem(index)}><Trash2 className="h-4 w-4" /></Button>
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                                    <div className="md:col-span-2">
+                                        <FormField control={methods.control} name={`invoiceItems.${index}.quantity`} render={({ field }) => <FormItem><FormLabel>Qty</FormLabel><FormControl><Input type="number" {...field} className="bg-white" onChange={(e) => { field.onChange(e); const qty = Number(e.target.value) || 0; const price = methods.getValues(`invoiceItems.${index}.unitPrice`) || 0; methods.setValue(`invoiceItems.${index}.amount`, qty * price); }} /></FormControl></FormItem>} />
+                                    </div>
+                                    <div className="md:col-span-3">
+                                        <FormField control={methods.control} name={`invoiceItems.${index}.unitPrice`} render={({ field }) => <FormItem><FormLabel>Unit Price</FormLabel><FormControl><Input type="number" {...field} className="bg-white" onChange={(e) => { field.onChange(e); const price = Number(e.target.value) || 0; const qty = methods.getValues(`invoiceItems.${index}.quantity`) || 0; methods.setValue(`invoiceItems.${index}.amount`, qty * price); }} /></FormControl></FormItem>} />
+                                    </div>
+                                    <div className="md:col-span-3">
+                                        <FormField control={methods.control} name={`invoiceItems.${index}.amount`} render={({ field }) => <FormItem><FormLabel>Amount</FormLabel><FormControl><Input type="number" {...field} readOnly className="bg-white font-black" /></FormControl></FormItem>} />
+                                    </div>
+                                    <div className="md:col-span-4 flex justify-end">
+                                        <Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => removeInvoiceItem(index)}><Trash2 className="h-4 w-4" /></Button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
-                        <Button type="button" variant="outline" onClick={() => appendInvoiceItem({ description: '', quantity: 1, unitPrice: 0, amount: 0 })}><PlusCircle className="mr-2 h-4 w-4" />Add Line Item</Button>
+                        <Button type="button" variant="outline" onClick={() => appendInvoiceItem({ description: '', itemType: 'load', loadReference: '', quantity: 1, unitPrice: 0, amount: 0 })}><PlusCircle className="mr-2 h-4 w-4" />Add Line Item</Button>
+                    </div>
+                );
+            case 'invoice-batch':
+                return (
+                    <div className="space-y-8 animate-in fade-in duration-500 text-left">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="text-xl font-black uppercase flex items-center gap-2"><FileText className="h-6 w-6 text-primary" /> Invoice Batch</h3>
+                                <p className="text-sm text-muted-foreground">Add each invoice with its unique number and line items. The batch total is computed automatically.</p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[10px] font-black uppercase text-muted-foreground">Batch Total</p>
+                                <p className="text-2xl font-black text-primary">{formatCurrency(batchTotal)}</p>
+                            </div>
+                        </div>
+                        {invoiceBatchFields.map((invoice, invIndex) => (
+                            <div key={invoice.id} className="p-6 border-2 rounded-2xl bg-slate-50 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                                        <Receipt className="h-4 w-4" /> Invoice #{invIndex + 1}
+                                    </h4>
+                                    <Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => removeBatchInvoice(invIndex)}><Trash2 className="h-4 w-4" /></Button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <FormField control={methods.control} name={`invoiceBatch.${invIndex}.invoiceNumber`} render={({ field }) => <FormItem><FormLabel>Invoice Number</FormLabel><FormControl><Input {...field} className="bg-white font-mono" /></FormControl></FormItem>} />
+                                    <FormField control={methods.control} name={`invoiceBatch.${invIndex}.invoiceDate`} render={({ field }) => <FormItem><FormLabel>Date</FormLabel><FormControl><Input type="date" {...field} className="bg-white" /></FormControl></FormItem>} />
+                                    <FormField control={methods.control} name={`invoiceBatch.${invIndex}.invoiceDueDate`} render={({ field }) => <FormItem><FormLabel>Due Date</FormLabel><FormControl><Input type="date" {...field} className="bg-white" /></FormControl></FormItem>} />
+                                </div>
+                                <FormField control={methods.control} name={`invoiceBatch.${invIndex}.notes`} render={({ field }) => <FormItem><FormLabel>Notes</FormLabel><FormControl><Input {...field} className="bg-white" placeholder="Optional notes for this invoice..." /></FormControl></FormItem>} />
+                                
+                                <div className="space-y-3">
+                                    <Label className="text-xs font-black uppercase text-muted-foreground">Line Items</Label>
+                                    <BatchItemsArray nestIndex={invIndex} control={methods.control} setValue={methods.setValue} getValues={methods.getValues} watch={methods.watch} />
+                                </div>
+                            </div>
+                        ))}
+                        <Button type="button" variant="outline" onClick={() => appendBatchInvoice({ invoiceNumber: '', invoiceDate: '', invoiceDueDate: '', notes: '', items: [] })}><PlusCircle className="mr-2 h-4 w-4" />Add Invoice to Batch</Button>
                     </div>
                 );
             case 'right-details':

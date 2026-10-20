@@ -96,8 +96,8 @@ function StepBorrower({ clients, isLocked }: { clients: any[], isLocked: boolean
     );
 }
 
-function StepProtocol({ availableAssets, isLoadingAssets, facilities, isLocked }: { availableAssets: any[], isLoadingAssets: boolean, facilities: any[], isLocked: boolean }) {
-    const { control, watch } = useFormContext<WizardFormValues>();
+function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, facilities, isLocked }: { availableAssets: any[], receivableAssets: any[], isLoadingAssets: boolean, facilities: any[], isLocked: boolean }) {
+    const { control, watch, setValue } = useFormContext<WizardFormValues>();
     const clientId = watch('agreement.clientId');
     const agreementType = watch('agreement.type');
     const isDiscounting = isDiscountingAgreement(agreementType);
@@ -139,7 +139,34 @@ function StepProtocol({ availableAssets, isLoadingAssets, facilities, isLocked }
                     <div className="p-8 border-2 border-dashed rounded-[2rem] bg-slate-50 space-y-4 text-left">
                         <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 text-left"><Truck className="h-4 w-4" /> Receivable Rights Bind</h4>
                         <div className="space-y-4">
-                            <p className="text-sm text-muted-foreground">Discounting does not transfer ownership of the underlying asset. Record the receivable rights and attach the out-and-out cession instrument.</p>
+                            <p className="text-sm text-muted-foreground">Discounting does not transfer ownership of the underlying asset. Select a registered invoice / receivable asset from the register — its cession references will be bound automatically — then confirm the cession instrument below.</p>
+                            <FormField control={control} name="agreement.assetId" render={({ field }) => (
+                                <FormItem className="text-left text-foreground">
+                                    <FormLabel>Invoice / Receivable Asset (from Asset Register)</FormLabel>
+                                    <Select onValueChange={(value) => {
+                                        field.onChange(value);
+                                        const selected = receivableAssets.find((a: any) => a.id === value);
+                                        if (selected) {
+                                            if (selected.cessionDocumentId) setValue('agreement.cessionDocumentId', selected.cessionDocumentId, { shouldDirty: true });
+                                            if (selected.cessionDocumentUrl) setValue('agreement.cessionDocumentUrl', selected.cessionDocumentUrl, { shouldDirty: true });
+                                            if (selected.costOfSale) setValue('agreement.totalAdvanced', selected.costOfSale, { shouldDirty: true });
+                                            if (selected.debtorId || selected.clientId) setValue('agreement.clientId', selected.debtorId || selected.clientId, { shouldDirty: true });
+                                        }
+                                    }} value={field.value || ''}>
+                                        <FormControl>
+                                            <SelectTrigger className="h-14 border-2 bg-white font-bold text-left text-foreground">
+                                                <SelectValue placeholder={isLoadingAssets ? "Scanning Register..." : "Select invoice / receivable asset..."} />
+                                            </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                            {receivableAssets?.map((a: any) => (
+                                                <SelectItem key={a.id} value={a.id}>{a.make} - {a.model} ({formatCurrency(a.costOfSale || 0)})</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                </FormItem>
+                            )} />
                             <FormField control={control} name="agreement.cessionDocumentId" render={({ field }) => (<FormItem><FormLabel>Cession agreement reference</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Cession document ID" /></FormControl></FormItem>)} />
                             <FormField control={control} name="agreement.cessionDocumentUrl" render={({ field }) => (<FormItem><FormLabel>Cession agreement URL</FormLabel><FormControl><Input {...field} value={field.value || ''} placeholder="Uploaded out-and-out cession URL" /></FormControl></FormItem>)} />
                         </div>
@@ -443,6 +470,12 @@ export function AgreementWizard({ agreement, clients, facilities = [], onSave, o
     }, [firestore]);
     const { data: availableAssets, isLoading: isLoadingAssets } = useCollection(assetsQuery);
 
+    const receivableAssetsQuery = useMemoFirebase(() => {
+        if (!firestore) return null;
+        return query(collection(firestore, 'lendingAssets'), where('classification', 'in', ['Invoice', 'Receivable Right']));
+    }, [firestore]);
+    const { data: receivableAssets, isLoading: isLoadingReceivables } = useCollection(receivableAssetsQuery);
+
     const steps = [
         { id: 'client', title: '1. Borrower Identity', icon: User, fields: ['agreement.clientId'] },
         { id: 'protocol', title: '2. Facility Protocol', icon: Scale, fields: ['agreement.type', 'agreement.facilityId'] },
@@ -574,7 +607,7 @@ export function AgreementWizard({ agreement, clients, facilities = [], onSave, o
                             </div>
                             <div className="p-12 space-y-12 bg-white min-h-[600px] text-left">
                                 {steps[currentStep].id === 'client' && <StepBorrower clients={clients} isLocked={isLocked} />}
-                                {steps[currentStep].id === 'protocol' && <StepProtocol availableAssets={availableAssets || []} facilities={facilities || []} isLoadingAssets={isLoadingAssets} isLocked={isLocked} />}
+                                {steps[currentStep].id === 'protocol' && <StepProtocol availableAssets={availableAssets || []} receivableAssets={receivableAssets || []} facilities={facilities || []} isLoadingAssets={isLoadingAssets || isLoadingReceivables} isLocked={isLocked} />}
                                 {steps[currentStep].id === 'details' && <StepTerms isLocked={isLocked} />}
                                 {steps[currentStep].id === 'schedule' && <StepSchedule />}
                                 {steps[currentStep].id === 'collateral-security' && <StepCollateralPending />}
