@@ -186,25 +186,35 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
     }, [firestore, watchedDebtorId]);
     const { data: debtorFacilities } = useCollection(debtorFacilitiesQuery);
 
-    const resolvedPaymentTermsDays = useMemo(() => {
+    const resolvedPaymentTerms = useMemo(() => {
         if (!debtorFacilities || debtorFacilities.length === 0) return null;
         const withTerms = debtorFacilities.filter((f: any) => typeof f.paymentTermsDays === 'number' && f.paymentTermsDays >= 0);
         if (withTerms.length === 0) return null;
         // Prefer a discounting facility's terms if present
         const discounting = withTerms.find((f: any) => String(f.type || '').toLowerCase().startsWith('discounting'));
-        return (discounting || withTerms[0]).paymentTermsDays as number;
+        const chosen = discounting || withTerms[0];
+        return {
+            days: chosen.paymentTermsDays as number,
+            basis: (chosen.paymentTermsBasis === 'statement_date' ? 'statement_date' : 'invoice_date') as 'invoice_date' | 'statement_date',
+        };
     }, [debtorFacilities]);
 
     // Auto-compute invoice due date when the invoice date changes and terms are known
     const watchedInvoiceDate = methods.watch('invoiceDate');
     useEffect(() => {
-        if (!watchedInvoiceDate || resolvedPaymentTermsDays === null) return;
+        if (!watchedInvoiceDate || !resolvedPaymentTerms) return;
         const issueDate = new Date(watchedInvoiceDate);
         if (isNaN(issueDate.getTime())) return;
-        const dueDate = new Date(issueDate);
-        dueDate.setDate(dueDate.getDate() + resolvedPaymentTermsDays);
+        let dueDate: Date;
+        if (resolvedPaymentTerms.basis === 'statement_date') {
+            // Statement terms: due N days after the end of the invoice's month
+            dueDate = new Date(issueDate.getFullYear(), issueDate.getMonth() + 1, 0);
+        } else {
+            dueDate = new Date(issueDate);
+        }
+        dueDate.setDate(dueDate.getDate() + resolvedPaymentTerms.days);
         methods.setValue('invoiceDueDate', dueDate.toISOString().slice(0, 10));
-    }, [watchedInvoiceDate, resolvedPaymentTermsDays]);
+    }, [watchedInvoiceDate, resolvedPaymentTerms]);
 
     const wizardSteps = useMemo(() => {
         if (isInvoiceClass(watchedClass)) {
@@ -571,12 +581,14 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
                             <h3 className="text-xl font-black uppercase flex items-center gap-2"><Receipt className="h-6 w-6 text-primary" /> Invoice Header</h3>
                             <p className="text-sm text-muted-foreground">Capture the invoice meta-data. The total amount should equal the sum of line items.</p>
                         </div>
-                        {resolvedPaymentTermsDays !== null && (
+                        {resolvedPaymentTerms && (
                             <Alert className="border-primary/20 bg-primary/5">
                                 <Info className="h-4 w-4" />
-                                <AlertTitle className="text-xs font-black uppercase tracking-widest">Debtor Terms Detected: {resolvedPaymentTermsDays} days</AlertTitle>
+                                <AlertTitle className="text-xs font-black uppercase tracking-widest">Debtor Terms Detected: {resolvedPaymentTerms.days} days {resolvedPaymentTerms.basis === 'statement_date' ? 'from statement' : 'from invoice'}</AlertTitle>
                                 <AlertDescription className="text-xs">
-                                    The due date will auto-compute from the invoice date based on the debtor sub-facility payment terms. You can overwrite it if needed.
+                                    {resolvedPaymentTerms.basis === 'statement_date'
+                                        ? 'The due date auto-computes as the end of the invoice month plus the statement terms. You can overwrite it if needed.'
+                                        : 'The due date will auto-compute from the invoice date based on the debtor sub-facility payment terms. You can overwrite it if needed.'}
                                 </AlertDescription>
                             </Alert>
                         )}
@@ -592,7 +604,7 @@ export function EditAssetWizard({ asset, onSave, onBack, assetType: initialType,
                             )} />
                             <FormField control={methods.control} name="invoiceDueDate" render={({ field }) => (
                                 <FormItem className="text-left">
-                                    <FormLabel>Due Date{resolvedPaymentTermsDays !== null && <span className="ml-2 text-[10px] font-black uppercase text-primary">Auto: invoice date + {resolvedPaymentTermsDays}d</span>}</FormLabel>
+                                    <FormLabel>Due Date{resolvedPaymentTerms && <span className="ml-2 text-[10px] font-black uppercase text-primary">Auto: {resolvedPaymentTerms.basis === 'statement_date' ? 'month-end' : 'invoice date'} + {resolvedPaymentTerms.days}d</span>}</FormLabel>
                                     <FormControl><Input type="date" {...field} className="border-2 bg-white" /></FormControl>
                                 </FormItem>
                             )} />
