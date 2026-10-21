@@ -334,7 +334,7 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                                                             className="gap-2 font-bold text-white"
                                                             onClick={() => { setSelectedMasterId(global.id); setIsSubModalOpen(true); }}
                                                         >
-                                                            <FileSignature className="h-4 w-4" /> Internal Agreement Facility
+                                                            <FileSignature className="h-4 w-4" /> Client Sub Facility
                                                         </Button>
                                                     </div>
 
