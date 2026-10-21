@@ -827,6 +827,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, deletedId: facilityId, collection: 'facilities' }, { status: 200 });
     }
 
+    if (action === 'saveLendingDocument') {
+      const document = resolvedPayload.document;
+      if (!document || typeof document !== 'object') {
+        return NextResponse.json({ success: false, error: 'Document data is required.' }, { status: 400 });
+      }
+      const { id, ...documentData } = removeUndefinedValues(document) as Record<string, any>;
+      const docRef = id ? db.collection('documents').doc(String(id)) : db.collection('documents').doc();
+      await docRef.set({
+        ...documentData,
+        id: docRef.id,
+        createdBy: documentData.createdBy || adminUid,
+        updatedAt: FieldValue.serverTimestamp(),
+        createdAt: documentData.createdAt || FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return NextResponse.json({ success: true, id: docRef.id, collection: 'documents' }, { status: 200 });
+    }
+
+    if (action === 'deleteLendingDocument') {
+      const documentId = String(resolvedPayload.documentId || '').trim();
+      if (!documentId) {
+        return NextResponse.json({ success: false, error: 'documentId is required.' }, { status: 400 });
+      }
+      await db.collection('documents').doc(documentId).delete();
+      return NextResponse.json({ success: true, deletedId: documentId, collection: 'documents' }, { status: 200 });
+    }
+
     if (action === 'saveLendingAgreement') {
       const agreement = resolvedPayload.agreement;
       if (!agreement || typeof agreement !== 'object') {

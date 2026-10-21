@@ -78,6 +78,7 @@ const FacilitiesContent = dynamic(() => import('@/app/lending/facilities-content
 const ClientFacilityOnboarding = dynamic(() => import('@/app/lending/client-facility-onboarding'), { ssr: false });
 const FacilityBookingControl = dynamic(() => import('@/app/lending/facility-booking-control'), { ssr: false });
 const TemplatesContent = dynamic(() => import('@/app/lending/templates-content'), { ssr: false });
+const DocumentLibraryContent = dynamic(() => import('@/app/lending/document-library-content'), { ssr: false });
 const LenderDeskContent = dynamic(() => import('@/app/lending/lender-desk-content'), { ssr: false });
 const PaymentsContent = dynamic(() => import('@/app/lending/payments-content'), { ssr: false });
 const TransactionLedgerContent = dynamic(() => import('@/app/lending/transaction-ledger-content'), { ssr: false });
@@ -130,6 +131,7 @@ function LendingPortalContent() {
       case 'facilities-clients': return <ClientFacilityOnboarding />;
       case 'facility-booking': return <FacilityBookingControl />;
       case 'templates': return <TemplatesContent />;
+      case 'document-library': return <DocumentLibraryContent />;
       case 'facilities-debtors': return <FacilitiesContent mode="debtor" />;
       case 'facilities-suppliers': return <FacilitiesContent mode="facilities-suppliers" />;
       case 'documents': return <DocumentVaultContent />;
@@ -202,7 +204,6 @@ function LendingPortalContent() {
                 </SidebarMenuButton>
                 <SidebarMenuSub>
                   <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'facilities-clients'} onClick={() => navigate('facilities-clients')}>Client facility</SidebarMenuSubButton></SidebarMenuSubItem>
-                  <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'facility-booking'} onClick={() => navigate('facility-booking')}>Facility letter &amp; booking</SidebarMenuSubButton></SidebarMenuSubItem>
                   <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'facilities-debtors'} onClick={() => navigate('facilities-debtors')}>Debtor facility</SidebarMenuSubButton></SidebarMenuSubItem>
                   <SidebarMenuSubItem><SidebarMenuSubButton isActive={activeView === 'facilities-suppliers'} onClick={() => navigate('facilities-suppliers')}>Supplier facility</SidebarMenuSubButton></SidebarMenuSubItem>
                 </SidebarMenuSub>
@@ -226,6 +227,7 @@ function LendingPortalContent() {
             <SidebarGroupLabel>Templates</SidebarGroupLabel>
             <SidebarMenu>
               <SidebarMenuItem><SidebarMenuButton tooltip="Document Templates" isActive={activeView === 'templates'} onClick={() => navigate('templates')}><FileText /><span>Document Templates</span></SidebarMenuButton></SidebarMenuItem>
+              <SidebarMenuItem><SidebarMenuButton tooltip="Document Library" isActive={activeView === 'document-library'} onClick={() => navigate('document-library')}><FileText /><span>Document Library</span></SidebarMenuButton></SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>
 
