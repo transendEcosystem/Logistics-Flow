@@ -158,10 +158,15 @@ export function EditFacilityWizard({
             const nextStage = tasksComplete ? getNextOnboardingStage(allValues.onboardingStage) : allValues.onboardingStage;
             const shouldAdvance = tasksComplete && nextStage !== allValues.onboardingStage;
 
+            // Credit discipline: completing the Credit stage's tasks approves the facility
+            const creditApproved = allValues.onboardingStage === 'credit' && tasksComplete;
+            const resolvedStatus = creditApproved && allValues.status === 'pending_credit' ? 'active' : allValues.status;
+
             const finalPayload = {
                 ...allValues,
                 id: facility?.id || undefined,
                 limit: Number(allValues.limit),
+                status: resolvedStatus,
                 parentId: parentFacility?.id || allValues.parentId || null,
                 facilityClass: isSubLimitMode ? 'sub' : 'global',
                 ownerType: initialOwnerType || parentFacility?.ownerType || facility?.ownerType || allValues.ownerType,

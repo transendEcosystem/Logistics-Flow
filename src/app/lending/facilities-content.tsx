@@ -292,6 +292,11 @@ export default function FacilitiesContent({ mode = 'client-global' }: Facilities
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="text-left">
                                                     <DropdownMenuItem onClick={() => { setSelectedFacility(global); setView('wizard'); }}><Edit className="h-4 w-4 mr-2" /> Continue Onboarding</DropdownMenuItem>
+                                                    {(global.status === 'pending_credit' || !global.status) && (
+                                                        <DropdownMenuItem onClick={() => handleStatusUpdate(global, 'active')}>
+                                                            <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" /> Approve Credit
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     <DropdownMenuSeparator />
                                                     <DropdownMenuItem onClick={() => handleStatusUpdate(global, global.status === 'inactive' ? 'active' : 'inactive')}>
                                                         {global.status === 'inactive' ? <><CheckCircle className="h-4 w-4 mr-2 text-green-600" /> Reactivate</> : <><XCircle className="h-4 w-4 mr-2 text-amber-600" /> Suspend</>}
