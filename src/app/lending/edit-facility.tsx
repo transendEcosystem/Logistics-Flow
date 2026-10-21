@@ -146,6 +146,45 @@ export function EditFacilityWizard({
         });
     };
 
+    const persistOnboardingProgress = async (taskId: string, completed: boolean) => {
+        // Only auto-persist for existing facilities; new records persist on Commit.
+        if (!facility?.id) return;
+        const allValues = methods.getValues();
+        const tasks = { ...(allValues.onboardingTasks || {}), [taskId]: completed };
+        const activeStage = getOnboardingStageDefinition(allValues.onboardingStage);
+        const tasksComplete = activeStage.tasks.length > 0 && activeStage.tasks.every(task => tasks[task.id]);
+        const nextStage = tasksComplete ? getNextOnboardingStage(allValues.onboardingStage) : allValues.onboardingStage;
+        const shouldAdvance = tasksComplete && nextStage !== allValues.onboardingStage;
+        const creditApproved = allValues.onboardingStage === 'credit' && tasksComplete;
+        const resolvedStatus = creditApproved && allValues.status === 'pending_credit' ? 'active' : allValues.status;
+
+        try {
+            const token = await getClientSideAuthToken();
+            if (!token) return;
+            await fetchFromAdminAPI(token, 'saveLendingFacility', {
+                facility: {
+                    id: facility.id,
+                    onboardingStage: nextStage,
+                    onboardingTasks: shouldAdvance ? {} : tasks,
+                    onboardingEvidence: shouldAdvance ? {} : (allValues.onboardingEvidence || {}),
+                    status: resolvedStatus,
+                }
+            });
+            methods.setValue('onboardingTasks', shouldAdvance ? {} : tasks, { shouldDirty: false });
+            if (shouldAdvance) {
+                methods.setValue('onboardingStage', nextStage, { shouldDirty: false });
+                methods.setValue('onboardingEvidence', {}, { shouldDirty: false });
+                toast({ title: 'Milestone Advanced', description: `Moved to ${getOnboardingStageDefinition(nextStage).label}.` });
+            }
+            if (creditApproved) {
+                methods.setValue('status', resolvedStatus, { shouldDirty: false });
+                toast({ title: 'Credit Approved', description: 'Facility status set to active.' });
+            }
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Auto-save failed', description: e.message });
+        }
+    };
+
     const onSubmit = async (values: FacilityFormValues) => {
         setIsLoading(true);
         try {
@@ -302,7 +341,7 @@ export function EditFacilityWizard({
                     <FormField key={task.id} control={methods.control} name={`onboardingTasks.${task.id}` as any} render={({ field }) => (
                         <FormItem className="flex flex-col gap-3 rounded-md border bg-white p-3 md:flex-row md:items-center md:justify-between">
                             <div className="flex items-center gap-3">
-                                <FormControl><input type="checkbox" checked={Boolean(field.value)} onChange={(event) => field.onChange(event.target.checked)} /></FormControl>
+                                <FormControl><input type="checkbox" checked={Boolean(field.value)} onChange={(event) => { field.onChange(event.target.checked); persistOnboardingProgress(task.id, event.target.checked); }} /></FormControl>
                                 <FormLabel className="m-0 text-sm font-semibold">{task.label}</FormLabel>
                             </div>
                             <Button type="button" variant="outline" size="sm" className="h-8 text-[10px] font-black uppercase" onClick={() => setReviewTaskId(task.id)}>
@@ -313,7 +352,7 @@ export function EditFacilityWizard({
                 ))}
                 <div className="flex flex-col gap-3 border-t pt-4 md:flex-row md:items-center md:justify-between">
                     <Badge variant="outline" className="w-fit text-[10px] font-black uppercase">{completedTaskCount}/{currentStage.tasks.length} tasks complete</Badge>
-                    <p className="text-xs font-semibold text-muted-foreground">Complete all tasks, then commit to ledger to advance automatically.</p>
+                    <p className="text-xs font-semibold text-muted-foreground">Tasks auto-save as you tick them. Complete all tasks to advance automatically.</p>
                 </div>
             </CardContent>
             <Dialog open={Boolean(reviewTask)} onOpenChange={(open) => !open && setReviewTaskId(null)}>
