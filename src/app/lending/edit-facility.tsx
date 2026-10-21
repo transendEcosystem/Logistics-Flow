@@ -151,12 +151,6 @@ export function EditFacilityWizard({
         if (!facility?.id) return;
         const allValues = methods.getValues();
         const tasks = { ...(allValues.onboardingTasks || {}), [taskId]: completed };
-        const activeStage = getOnboardingStageDefinition(allValues.onboardingStage);
-        const tasksComplete = activeStage.tasks.length > 0 && activeStage.tasks.every(task => tasks[task.id]);
-        const nextStage = tasksComplete ? getNextOnboardingStage(allValues.onboardingStage) : allValues.onboardingStage;
-        const shouldAdvance = tasksComplete && nextStage !== allValues.onboardingStage;
-        const creditApproved = allValues.onboardingStage === 'credit' && tasksComplete;
-        const resolvedStatus = creditApproved && allValues.status === 'pending_credit' ? 'active' : allValues.status;
 
         try {
             const token = await getClientSideAuthToken();
@@ -164,22 +158,12 @@ export function EditFacilityWizard({
             await fetchFromAdminAPI(token, 'saveLendingFacility', {
                 facility: {
                     id: facility.id,
-                    onboardingStage: nextStage,
-                    onboardingTasks: shouldAdvance ? {} : tasks,
-                    onboardingEvidence: shouldAdvance ? {} : (allValues.onboardingEvidence || {}),
-                    status: resolvedStatus,
+                    onboardingStage: allValues.onboardingStage,
+                    onboardingTasks: tasks,
+                    onboardingEvidence: allValues.onboardingEvidence || {},
                 }
             });
-            methods.setValue('onboardingTasks', shouldAdvance ? {} : tasks, { shouldDirty: false });
-            if (shouldAdvance) {
-                methods.setValue('onboardingStage', nextStage, { shouldDirty: false });
-                methods.setValue('onboardingEvidence', {}, { shouldDirty: false });
-                toast({ title: 'Milestone Advanced', description: `Moved to ${getOnboardingStageDefinition(nextStage).label}.` });
-            }
-            if (creditApproved) {
-                methods.setValue('status', resolvedStatus, { shouldDirty: false });
-                toast({ title: 'Credit Approved', description: 'Facility status set to active.' });
-            }
+            methods.setValue('onboardingTasks', tasks, { shouldDirty: false });
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Auto-save failed', description: e.message });
         }
@@ -229,6 +213,14 @@ export function EditFacilityWizard({
 
     const handleNext = (e: React.MouseEvent) => {
         e.preventDefault();
+        // Milestone discipline: advance only when all tasks for the current stage are complete.
+        const allValues = methods.getValues();
+        const activeStage = getOnboardingStageDefinition(allValues.onboardingStage);
+        const tasksComplete = activeStage.tasks.length > 0 && activeStage.tasks.every(task => allValues.onboardingTasks?.[task.id]);
+        if (!tasksComplete) {
+            toast({ variant: 'destructive', title: 'Milestone Incomplete', description: 'Complete all tasks for this milestone before advancing.' });
+            return;
+        }
         const stepFields = steps[currentStep].fields;
         methods.trigger(stepFields as any).then(isValid => {
             if (isValid && currentStep < steps.length - 1) {
@@ -352,7 +344,7 @@ export function EditFacilityWizard({
                 ))}
                 <div className="flex flex-col gap-3 border-t pt-4 md:flex-row md:items-center md:justify-between">
                     <Badge variant="outline" className="w-fit text-[10px] font-black uppercase">{completedTaskCount}/{currentStage.tasks.length} tasks complete</Badge>
-                    <p className="text-xs font-semibold text-muted-foreground">Tasks auto-save as you tick them. Complete all tasks to advance automatically.</p>
+                    <p className="text-xs font-semibold text-muted-foreground">Tasks auto-save as you tick them. Click Next to advance when all are complete.</p>
                 </div>
             </CardContent>
             <Dialog open={Boolean(reviewTask)} onOpenChange={(open) => !open && setReviewTaskId(null)}>
@@ -529,15 +521,16 @@ export function EditFacilityWizard({
                             <ArrowLeft className="mr-2 h-4 w-4" /> Back
                         </Button>
                         <div className="flex gap-3">
-                            {currentStep < steps.length - 1 && (
+                            {currentStep < steps.length - 1 ? (
                                 <Button type="button" onClick={handleNext} className="h-12 px-12 font-black uppercase text-xs text-white shadow-lg">
                                     Next Protocol Stage <ArrowRight className="ml-2 h-4 w-4"/>
                                 </Button>
+                            ) : (
+                                <Button type="submit" disabled={isLoading} className="h-14 px-16 bg-primary hover:bg-primary/90 shadow-2xl font-black uppercase tracking-tight text-white">
+                                    {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Save className="mr-2 h-5 w-5" />}
+                                    Commit Node to Ledger
+                                </Button>
                             )}
-                            <Button type="submit" disabled={isLoading} className="h-14 px-16 bg-primary hover:bg-primary/90 shadow-2xl font-black uppercase tracking-tight text-white">
-                                {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Save className="mr-2 h-5 w-5" />}
-                                Commit Node to Ledger
-                            </Button>
                         </div>
                     </CardFooter>
                 </form>
