@@ -28,7 +28,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { computeDeal } from '@/lib/lending/deal-calculator';
-import { getAgreementTypeByCode } from '@/lib/lending/agreement-hierarchy';
+import { getAgreementTypeByCode, getProduct } from '@/lib/lending/agreement-hierarchy';
 import { getAgreementAssetControl, isDiscountingAgreement } from '@/lib/lending/asset-architecture';
 import { DEFAULT_BOOKING_CHECKLIST, LendingBookingChecklist } from '@/lib/lending/booking';
 
@@ -54,6 +54,10 @@ const agreementSubSchema = z.object({
   liabilityAmount: z.coerce.number().min(0).optional(),
     rentToOwn: z.boolean().default(false),
     residualAmount: z.coerce.number().min(0).default(0),
+    residualPercent: z.coerce.number().min(0).optional().nullable(),
+    depositPercent: z.coerce.number().min(0).optional().nullable(),
+    balloonPercent: z.coerce.number().min(0).optional().nullable(),
+    escalationPercent: z.coerce.number().min(0).optional().nullable(),
     status: z.enum(['booking', 'live', 'active', 'settled', 'cancelled']).default('booking'),
     bookingChecklist: z.object({
         depositReceived: z.boolean().default(false),
@@ -109,6 +113,9 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
     const clientReceivables = useMemo(() => receivableAssets.filter((a: any) => !clientId || a.clientId === clientId || a.debtorId === clientId), [receivableAssets, clientId]);
     const selectedFacility = useMemo(() => facilities.find((f: any) => f.id === watch('agreement.facilityId')), [facilities, watch]);
     const facilityVariables = (selectedFacility?.productVariables || {}) as Record<string, number>;
+    // Resolve the hierarchy type + product definition for the dependent variable dropdowns.
+    const hierarchyType = useMemo(() => getAgreementTypeByCode(agreementType) || getAgreementTypeByCode(selectedFacility?.agreementType), [agreementType, selectedFacility]);
+    const hierarchyProduct = useMemo(() => getProduct(hierarchyType?.id, selectedFacility?.productType), [hierarchyType, selectedFacility]);
     return (
         <div className="space-y-10 animate-in fade-in duration-500 text-left text-foreground">
             <h3 className="text-xl font-black font-headline flex items-center gap-2 text-left"><Scale className="h-6 w-6 text-primary"/> 2. Facility Protocol</h3>
@@ -122,7 +129,7 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
                                 <SelectItem value="loan-pv-term">Loan / Working Capital</SelectItem>
                                 <SelectItem value="installment-sale-term">Installment Sale</SelectItem>
                                 <SelectItem value="rental-term">Lease / Rental</SelectItem>
-                                <SelectItem value="discounting">Factoring / Discounting</SelectItem>
+                                <SelectItem value="discounting">Discounting</SelectItem>
                             </SelectContent>
                         </Select>
                         <FormMessage />
@@ -141,7 +148,10 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
                         }} value={field.value || ''}>
                             <FormControl><SelectTrigger className="h-12 border-2 bg-white font-bold text-left text-foreground"><SelectValue placeholder="Choose approved product..." /></SelectTrigger></FormControl>
                             <SelectContent>
-                                {eligibleFacilities.map((facility: any) => <SelectItem key={facility.id} value={facility.id}>{facility.type} - {formatCurrency(facility.limit)}</SelectItem>)}
+                                {eligibleFacilities.map((facility: any) => {
+                                    const productName = facility.productType ? String(facility.productType).replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : facility.type;
+                                    return <SelectItem key={facility.id} value={facility.id}>{productName} - {formatCurrency(facility.limit)}</SelectItem>;
+                                })}
                             </SelectContent>
                         </Select>
                         <p className="text-[11px] text-muted-foreground mt-1.5 ml-1">
@@ -157,6 +167,36 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
                         )}
                     </FormItem>
                 )} />
+
+                {hierarchyProduct && hierarchyProduct.variables.length > 0 && (
+                    <div className="p-6 bg-primary/5 border-2 border-primary/20 rounded-2xl space-y-4 text-left">
+                        <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 text-left">Product Variables</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {hierarchyProduct.variables.map((variable, index) => (
+                                <FormField key={variable.key} control={control} name={`agreement.${variable.key === 'residualPercent' ? 'residualPercent' : variable.key}` as any} render={({ field }) => (
+                                    <FormItem className="text-left">
+                                        <FormLabel className="text-[10px] font-black uppercase text-muted-foreground ml-1">Variable {index + 1}: {variable.label}</FormLabel>
+                                        <Select
+                                            value={field.value !== undefined && field.value !== null ? String(field.value) : String(facilityVariables[variable.key] ?? '')}
+                                            onValueChange={(v) => {
+                                                const num = Number(v);
+                                                field.onChange(num);
+                                                if (variable.key === 'residualPercent') {
+                                                    setValue('agreement.residualAmount', Math.round((Number(watch('agreement.totalAdvanced')) || 0) * num / 100), { shouldDirty: true });
+                                                }
+                                            }}
+                                        >
+                                            <FormControl><SelectTrigger className="h-11 border-2 bg-white font-bold text-left"><SelectValue placeholder={`Select ${variable.label.toLowerCase()}...`} /></SelectTrigger></FormControl>
+                                            <SelectContent>
+                                                {variable.options.map(opt => <SelectItem key={opt.id} value={opt.id}>{opt.label}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </FormItem>
+                                )} />
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {isDiscounting && (
                     <div className="p-8 border-2 border-dashed rounded-[2rem] bg-slate-50 space-y-4 text-left">
