@@ -33,6 +33,7 @@ const facilitySchema = z.object({
   debtorId: z.string().optional().nullable(),
   sourceDealerId: z.string().optional().nullable(),
   associatedClientId: z.string().optional().nullable(), 
+  agreementType: z.string().optional().nullable(),
   type: z.string().min(1, 'Product type or identifier is required'),
   limit: z.coerce.number().min(0, 'Limit must be a positive number'),
   status: z.string().default('active'),
@@ -417,6 +418,24 @@ export function EditFacilityWizard({
                             <FormControl><Input type="number" {...field} onChange={e => field.onChange(Number(e.target.value))} className="h-12 border-2 bg-white text-xl font-black" /></FormControl>
                         </FormItem>
                     )} />
+
+                    {!isSubLimitMode && (
+                        <FormField control={methods.control} name="agreementType" render={({ field }) => (
+                            <FormItem className="text-left">
+                                <FormLabel className="text-primary font-black uppercase text-[10px]">Agreement Type (structure & calculation)</FormLabel>
+                                <Select onValueChange={field.onChange} value={field.value || ''}>
+                                    <FormControl><SelectTrigger className="h-12 border-2 bg-white font-bold"><SelectValue placeholder="Select agreement type..." /></SelectTrigger></FormControl>
+                                    <SelectContent>
+                                        <SelectItem value="loans">Loans (Working Capital)</SelectItem>
+                                        <SelectItem value="installment-sale">Installment Sale</SelectItem>
+                                        <SelectItem value="leases">Leases</SelectItem>
+                                        <SelectItem value="discounting">Discounting (Cession)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[11px] text-muted-foreground mt-1.5 ml-1">Sets the legal structure and calculation method inherited by all sub-facilities and agreements under this ceiling.</p>
+                            </FormItem>
+                        )} />
+                    )}
                 </div>
             );
             case 'agreement_limit': return (

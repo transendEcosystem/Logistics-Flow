@@ -106,6 +106,8 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
     const shouldShowPhysicalAssetBind = agreementType === 'installment-sale-term' || agreementType === 'rental-term';
     const eligibleFacilities = useMemo(() => facilities.filter((facility: any) => facility.facilityClass === 'sub' && facility.clientId === clientId && (facility.status === 'approved' || facility.status === 'active')), [facilities, clientId]);
     const clientReceivables = useMemo(() => receivableAssets.filter((a: any) => !clientId || a.clientId === clientId || a.debtorId === clientId), [receivableAssets, clientId]);
+    const selectedFacility = useMemo(() => facilities.find((f: any) => f.id === watch('agreement.facilityId')), [facilities, watch]);
+    const facilityVariables = (selectedFacility?.productVariables || {}) as Record<string, number>;
     return (
         <div className="space-y-10 animate-in fade-in duration-500 text-left text-foreground">
             <h3 className="text-xl font-black font-headline flex items-center gap-2 text-left"><Scale className="h-6 w-6 text-primary"/> 2. Facility Protocol</h3>
@@ -128,7 +130,14 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
                 <FormField control={control} name="agreement.facilityId" render={({ field }) => (
                     <FormItem className="text-left text-foreground">
                         <FormLabel className="text-[10px] font-black uppercase text-primary tracking-widest ml-1 text-left">Agreement Product</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || ''}>
+                        <Select onValueChange={(value) => {
+                            field.onChange(value);
+                            const facility = facilities.find((f: any) => f.id === value);
+                            if (facility?.productVariables) {
+                                const vars = facility.productVariables as Record<string, number>;
+                                if (vars.residualPercent != null) setValue('agreement.residualAmount', Math.round((Number(watch('agreement.totalAdvanced')) || 0) * vars.residualPercent / 100), { shouldDirty: true });
+                            }
+                        }} value={field.value || ''}>
                             <FormControl><SelectTrigger className="h-12 border-2 bg-white font-bold text-left text-foreground"><SelectValue placeholder="Choose approved product..." /></SelectTrigger></FormControl>
                             <SelectContent>
                                 {eligibleFacilities.map((facility: any) => <SelectItem key={facility.id} value={facility.id}>{facility.type} - {formatCurrency(facility.limit)}</SelectItem>)}
@@ -137,6 +146,14 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
                         <p className="text-[11px] text-muted-foreground mt-1.5 ml-1">
                             The product is a variant of the agreement type (e.g. Confirmed Factoring, Unconfirmed Factoring, Invoice Discounting, Rights Discounting) and may be classified by industry — the underlying agreement wording is customised to the specific industry (e.g. transport vs construction).
                         </p>
+                        {selectedFacility && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                {selectedFacility.productType && <Badge variant="secondary" className="text-[10px] font-black uppercase">{String(selectedFacility.productType).replace(/-/g, ' ')}</Badge>}
+                                {Object.entries(facilityVariables).map(([key, value]) => (
+                                    <Badge key={key} variant="outline" className="text-[10px] font-black uppercase">{key.replace(/Percent$/, '')}: {value}%</Badge>
+                                ))}
+                            </div>
+                        )}
                     </FormItem>
                 )} />
 

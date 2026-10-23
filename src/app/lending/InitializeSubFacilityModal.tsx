@@ -22,6 +22,7 @@ import { Switch } from '@/components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { getAgreementTypeByCode, getAgreementTypeById } from '@/lib/lending/agreement-hierarchy';
 
 interface InitializeSubFacilityModalProps {
     parent: any;
@@ -52,6 +53,8 @@ export function InitializeSubFacilityModal({ parent, clients, onComplete, isOpen
     // --- FORM STATE ---
     const [type, setType] = useState('loan-pv-term'); 
     const [discountingSubType, setDiscountingSubType] = useState('factoring');
+    const [productType, setProductType] = useState<string>('');
+    const [variableValues, setVariableValues] = useState<Record<string, number | null>>({});
     const [paymentTermsDays, setPaymentTermsDays] = useState<string>('30');
     const [paymentTermsBasis, setPaymentTermsBasis] = useState<'invoice_date' | 'statement_date'>('invoice_date');
     const [limit, setLimit] = useState<string>('');
@@ -73,6 +76,10 @@ export function InitializeSubFacilityModal({ parent, clients, onComplete, isOpen
     const isAssetBased = type === 'installment-sale-term' || type === 'rental-term';
     const isDiscounting = type === 'discounting';
 
+    // Resolve the agreement type (hierarchy) from the parent master facility, falling back to the selected type code.
+    const inheritedType = useMemo(() => getAgreementTypeById(parent?.agreementType) || getAgreementTypeByCode(type), [parent, type]);
+    const selectedProduct = useMemo(() => inheritedType?.products.find(p => p.id === productType), [inheritedType, productType]);
+
     const cities = useMemo(() => {
         const prov = provinces.find(p => p.name === selectedProvince);
         return prov ? prov.cities : [];
@@ -86,14 +93,12 @@ export function InitializeSubFacilityModal({ parent, clients, onComplete, isOpen
         if (isAssetBased) {
             base.push({ id: 'assets', title: '2. Asset Vetting', icon: Truck, fields: ['makeList'] });
         }
-        if (isDiscounting) {
-            base.push({ id: 'discounting', title: '2. Product Spec', icon: Banknote, fields: ['discountingSubType'] });
-        }
-        base.push({ id: 'geography', title: (isAssetBased || isDiscounting) ? '3. Regional Control' : '2. Regional Control', icon: Globe, fields: [] });
-        base.push({ id: 'authorization', title: (isAssetBased || isDiscounting) ? '4. Authorization' : '3. Authorization', icon: Zap, fields: ['limit'] });
+        base.push({ id: 'discounting', title: isAssetBased ? '3. Product Spec' : '2. Product Spec', icon: Banknote, fields: ['productType'] });
+        base.push({ id: 'geography', title: isAssetBased ? '4. Regional Control' : '3. Regional Control', icon: Globe, fields: [] });
+        base.push({ id: 'authorization', title: isAssetBased ? '5. Authorization' : '4. Authorization', icon: Zap, fields: ['limit'] });
         base.push({ id: 'audit', title: 'Audit Summary', icon: ListChecks, fields: [] });
         return base;
-    }, [isDebtorMode, isAssetBased, isDiscounting]);
+    }, [isDebtorMode, isAssetBased]);
 
     const handleAddMake = (val: string) => {
         if (!val || makeList.includes(val)) return;
@@ -118,6 +123,11 @@ export function InitializeSubFacilityModal({ parent, clients, onComplete, isOpen
             const token = await getClientSideAuthToken();
             if (!token) throw new Error("Auth failed");
 
+            const productLabel = selectedProduct?.label || null;
+            const typeLabel = isDiscounting
+                ? `Discounting: ${productLabel || discountingSubType}`
+                : (productLabel || type);
+
             const payload = {
                 parentId: parent.id,
                 ownerType: parent.ownerType || 'client',
@@ -125,7 +135,10 @@ export function InitializeSubFacilityModal({ parent, clients, onComplete, isOpen
                 clientId: isDebtorMode ? associatedClientId : (parent.clientId || null),
                 debtorId: parent.debtorId || null,
                 sourceDealerId: parent.sourceDealerId || null,
-                type: isDiscounting ? `Discounting: ${discountingSubType}` : type,
+                type: typeLabel,
+                agreementType: inheritedType?.id || null,
+                productType: productType || null,
+                productVariables: variableValues,
                 associatedClientId: isDebtorMode ? associatedClientId : null,
                 paymentTermsDays: isDiscounting ? Number(paymentTermsDays) || 30 : null,
                 paymentTermsBasis: isDiscounting ? paymentTermsBasis : null,
@@ -282,59 +295,82 @@ export function InitializeSubFacilityModal({ parent, clients, onComplete, isOpen
 
                             {currentStepId === 'discounting' && (
                                 <div className="space-y-6 animate-in fade-in duration-500 text-left text-foreground text-foreground">
-                                     <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 text-left">Discounting Sub-Type</Label>
-                                     <RadioGroup value={discountingSubType} onValueChange={setDiscountingSubType} className="grid grid-cols-1 gap-4 text-left">
-                                        {discountingTypes.map(dt => (
-                                            <div key={dt.id} className={cn("flex items-center space-x-3 p-4 border-2 rounded-2xl cursor-pointer transition-all", discountingSubType === dt.id ? "border-primary bg-primary/5 shadow-md" : "bg-white")}>
-                                                <RadioGroupItem value={dt.id} id={dt.id} />
-                                                <Label htmlFor={dt.id} className="font-bold text-sm cursor-pointer text-left">{dt.label}</Label>
-                                            </div>
-                                        ))}
-                                     </RadioGroup>
-
-                                     <Separator />
-
-                                     <div className="space-y-3 p-6 bg-primary/5 border-2 border-primary/20 rounded-2xl text-left">
-                                        <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 text-left">Debtor Payment Terms</Label>
-                                        <p className="text-xs text-muted-foreground text-left">The negotiated settlement terms this debtor applies to the bound client's invoices. Used to auto-compute invoice due dates at asset capture.</p>
-                                        
-                                        <div className="space-y-2 pt-1">
-                                            <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-left">Terms Basis</Label>
-                                            <RadioGroup value={paymentTermsBasis} onValueChange={(v) => setPaymentTermsBasis(v as 'invoice_date' | 'statement_date')} className="grid grid-cols-2 gap-3 text-left">
-                                                <div className={cn("flex items-center space-x-2 p-3 border-2 rounded-xl cursor-pointer transition-all", paymentTermsBasis === 'invoice_date' ? "border-primary bg-white shadow-sm" : "bg-white/60")}>
-                                                    <RadioGroupItem value="invoice_date" id="basis-invoice" />
-                                                    <Label htmlFor="basis-invoice" className="font-bold text-xs cursor-pointer text-left">Days from Invoice Date</Label>
-                                                </div>
-                                                <div className={cn("flex items-center space-x-2 p-3 border-2 rounded-xl cursor-pointer transition-all", paymentTermsBasis === 'statement_date' ? "border-primary bg-white shadow-sm" : "bg-white/60")}>
-                                                    <RadioGroupItem value="statement_date" id="basis-statement" />
-                                                    <Label htmlFor="basis-statement" className="font-bold text-xs cursor-pointer text-left">Days from Statement Date</Label>
-                                                </div>
-                                            </RadioGroup>
-                                        </div>
-
-                                        <div className="space-y-2 pt-1">
-                                            <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-left">Days</Label>
-                                            <div className="flex items-center gap-4 max-w-xs text-left">
-                                                <Input
-                                                    type="number"
-                                                    min={0}
-                                                    value={paymentTermsDays}
-                                                    onChange={(e) => setPaymentTermsDays(e.target.value)}
-                                                    placeholder="30"
-                                                    className="h-12 border-2 bg-white font-black text-2xl text-left"
-                                                />
-                                                <span className="text-sm font-bold text-muted-foreground">days</span>
-                                            </div>
-                                            <div className="flex flex-wrap gap-2 pt-1">
-                                                {[7, 14, 30, 45, 60, 90].map(d => (
-                                                    <Badge key={d} variant={Number(paymentTermsDays) === d && paymentTermsBasis === 'invoice_date' ? 'default' : 'outline'} className="cursor-pointer h-7 px-3 text-xs font-bold" onClick={() => { setPaymentTermsDays(String(d)); setPaymentTermsBasis('invoice_date'); }}>{d}d</Badge>
-                                                ))}
-                                                {[30, 60, 90].map(d => (
-                                                    <Badge key={`s${d}`} variant={Number(paymentTermsDays) === d && paymentTermsBasis === 'statement_date' ? 'default' : 'outline'} className="cursor-pointer h-7 px-3 text-xs font-bold border-primary/40 text-primary" onClick={() => { setPaymentTermsDays(String(d)); setPaymentTermsBasis('statement_date'); }}>{d}d statement</Badge>
-                                                ))}
-                                            </div>
-                                        </div>
+                                     <div className="space-y-3">
+                                        <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 text-left">Agreement Product</Label>
+                                        <p className="text-xs text-muted-foreground text-left">The product variant of the {inheritedType?.label || 'agreement'} structure. Products are approved combinations; variables are fixed approved lists.</p>
+                                        <Select value={productType} onValueChange={(v) => { setProductType(v); setVariableValues({}); }}>
+                                            <SelectTrigger className="h-12 border-2 bg-white font-bold text-left text-foreground"><SelectValue placeholder="Choose product..." /></SelectTrigger>
+                                            <SelectContent>
+                                                {(inheritedType?.products || []).map(p => <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
                                      </div>
+
+                                     {selectedProduct && selectedProduct.variables.length > 0 && (
+                                        <div className="space-y-4 p-6 bg-primary/5 border-2 border-primary/20 rounded-2xl text-left">
+                                            <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 text-left">Product Variables</Label>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {selectedProduct.variables.map(variable => (
+                                                    <div key={variable.key} className="space-y-2">
+                                                        <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-left">{variable.label}</Label>
+                                                        <Select value={variableValues[variable.key] !== null && variableValues[variable.key] !== undefined ? String(variableValues[variable.key]) : ''} onValueChange={(v) => setVariableValues(prev => ({ ...prev, [variable.key]: Number(v) }))}>
+                                                            <SelectTrigger className="h-11 border-2 bg-white font-bold text-left"><SelectValue placeholder={`Select ${variable.label.toLowerCase()}...`} /></SelectTrigger>
+                                                            <SelectContent>
+                                                                {variable.options.map(opt => <SelectItem key={opt.id} value={opt.id}>{opt.label}</SelectItem>)}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                     )}
+
+                                     {isDiscounting && (
+                                        <>
+                                            <Separator />
+                                            <div className="space-y-3 p-6 bg-primary/5 border-2 border-primary/20 rounded-2xl text-left">
+                                                <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1 text-left">Debtor Payment Terms</Label>
+                                                <p className="text-xs text-muted-foreground text-left">The negotiated settlement terms this debtor applies to the bound client's invoices. Used to auto-compute invoice due dates at asset capture.</p>
+                                                
+                                                <div className="space-y-2 pt-1">
+                                                    <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-left">Terms Basis</Label>
+                                                    <RadioGroup value={paymentTermsBasis} onValueChange={(v) => setPaymentTermsBasis(v as 'invoice_date' | 'statement_date')} className="grid grid-cols-2 gap-3 text-left">
+                                                        <div className={cn("flex items-center space-x-2 p-3 border-2 rounded-xl cursor-pointer transition-all", paymentTermsBasis === 'invoice_date' ? "border-primary bg-white shadow-sm" : "bg-white/60")}>
+                                                            <RadioGroupItem value="invoice_date" id="basis-invoice" />
+                                                            <Label htmlFor="basis-invoice" className="font-bold text-xs cursor-pointer text-left">Days from Invoice Date</Label>
+                                                        </div>
+                                                        <div className={cn("flex items-center space-x-2 p-3 border-2 rounded-xl cursor-pointer transition-all", paymentTermsBasis === 'statement_date' ? "border-primary bg-white shadow-sm" : "bg-white/60")}>
+                                                            <RadioGroupItem value="statement_date" id="basis-statement" />
+                                                            <Label htmlFor="basis-statement" className="font-bold text-xs cursor-pointer text-left">Days from Statement Date</Label>
+                                                        </div>
+                                                    </RadioGroup>
+                                                </div>
+
+                                                <div className="space-y-2 pt-1">
+                                                    <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-left">Days</Label>
+                                                    <div className="flex items-center gap-4 max-w-xs text-left">
+                                                        <Input
+                                                            type="number"
+                                                            min={0}
+                                                            value={paymentTermsDays}
+                                                            onChange={(e) => setPaymentTermsDays(e.target.value)}
+                                                            placeholder="30"
+                                                            className="h-12 border-2 bg-white font-black text-2xl text-left"
+                                                        />
+                                                        <span className="text-sm font-bold text-muted-foreground">days</span>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2 pt-1">
+                                                        {[7, 14, 30, 45, 60, 90].map(d => (
+                                                            <Badge key={d} variant={Number(paymentTermsDays) === d && paymentTermsBasis === 'invoice_date' ? 'default' : 'outline'} className="cursor-pointer h-7 px-3 text-xs font-bold" onClick={() => { setPaymentTermsDays(String(d)); setPaymentTermsBasis('invoice_date'); }}>{d}d</Badge>
+                                                        ))}
+                                                        {[30, 60, 90].map(d => (
+                                                            <Badge key={`s${d}`} variant={Number(paymentTermsDays) === d && paymentTermsBasis === 'statement_date' ? 'default' : 'outline'} className="cursor-pointer h-7 px-3 text-xs font-bold border-primary/40 text-primary" onClick={() => { setPaymentTermsDays(String(d)); setPaymentTermsBasis('statement_date'); }}>{d}d statement</Badge>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </>
+                                     )}
                                 </div>
                             )}
 
