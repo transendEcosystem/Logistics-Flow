@@ -111,14 +111,14 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
             <fieldset disabled={isLocked} className="space-y-10 text-left text-foreground">
                 <FormField control={control} name="agreement.type" render={({ field }) => (
                     <FormItem className="text-left text-foreground text-foreground">
-                        <FormLabel className="text-[10px] font-black uppercase text-primary tracking-widest ml-1 text-left">Agreement Class</FormLabel>
+                        <FormLabel className="text-[10px] font-black uppercase text-primary tracking-widest ml-1 text-left">Agreement Type</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value || ''}>
                             <FormControl><SelectTrigger className="h-12 border-2 bg-white font-black text-left text-foreground"><SelectValue placeholder="Select type..." /></SelectTrigger></FormControl>
                             <SelectContent>
                                 <SelectItem value="loan-pv-term">Loan / Working Capital</SelectItem>
                                 <SelectItem value="installment-sale-term">Installment Sale</SelectItem>
                                 <SelectItem value="rental-term">Lease / Rental</SelectItem>
-                                <SelectItem value="discounting">Discounting / Factoring</SelectItem>
+                                <SelectItem value="discounting">Factoring / Discounting</SelectItem>
                             </SelectContent>
                         </Select>
                         <FormMessage />
@@ -126,13 +126,16 @@ function StepProtocol({ availableAssets, receivableAssets, isLoadingAssets, faci
                 )} />
                 <FormField control={control} name="agreement.facilityId" render={({ field }) => (
                     <FormItem className="text-left text-foreground">
-                        <FormLabel className="text-[10px] font-black uppercase text-primary tracking-widest ml-1 text-left">Sub-Facility Allocation</FormLabel>
+                        <FormLabel className="text-[10px] font-black uppercase text-primary tracking-widest ml-1 text-left">Agreement Product</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value || ''}>
-                            <FormControl><SelectTrigger className="h-12 border-2 bg-white font-bold text-left text-foreground"><SelectValue placeholder="Choose approved sub-facility..." /></SelectTrigger></FormControl>
+                            <FormControl><SelectTrigger className="h-12 border-2 bg-white font-bold text-left text-foreground"><SelectValue placeholder="Choose approved product..." /></SelectTrigger></FormControl>
                             <SelectContent>
                                 {eligibleFacilities.map((facility: any) => <SelectItem key={facility.id} value={facility.id}>{facility.type} - {formatCurrency(facility.limit)}</SelectItem>)}
                             </SelectContent>
                         </Select>
+                        <p className="text-[11px] text-muted-foreground mt-1.5 ml-1">
+                            The product is a variant of the agreement type (e.g. Confirmed Factoring, Unconfirmed Factoring, Invoice Discounting, Rights Discounting) and may be classified by industry — the underlying agreement wording is customised to the specific industry (e.g. transport vs construction).
+                        </p>
                     </FormItem>
                 )} />
 
