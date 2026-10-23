@@ -27,7 +27,8 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { generateAmortizationSchedule } from './loan-calculations';
+import { computeDeal } from '@/lib/lending/deal-calculator';
+import { getAgreementTypeByCode } from '@/lib/lending/agreement-hierarchy';
 import { getAgreementAssetControl, isDiscountingAgreement } from '@/lib/lending/asset-architecture';
 import { DEFAULT_BOOKING_CHECKLIST, LendingBookingChecklist } from '@/lib/lending/booking';
 
@@ -307,20 +308,34 @@ function StepTerms({ isLocked }: { isLocked: boolean }) {
     );
 }
 
-function StepSchedule() {
+function StepSchedule({ facilities }: { facilities: any[] }) {
     const { watch } = useFormContext<WizardFormValues>();
     const principal = watch('agreement.totalAdvanced') || 0;
     const rate = watch('agreement.interestRate') || 0;
     const term = watch('agreement.numberOfInstallments') || 0;
+    const agreementType = watch('agreement.type');
+    const facilityId = watch('agreement.facilityId');
 
-    const schedule = useMemo(() => {
-        if (principal <= 0 || term <= 0) return [];
-        return generateAmortizationSchedule(principal, rate, term, undefined, false);
-    }, [principal, rate, term]);
+    const facility = useMemo(() => (facilities || []).find((f: any) => f.id === facilityId), [facilities, facilityId]);
+    const typeDef = useMemo(() => getAgreementTypeByCode(agreementType) || getAgreementTypeByCode(facility?.agreementType), [agreementType, facility]);
+    const vars = (facility?.productVariables || {}) as Record<string, number>;
 
-    const totalInterest = useMemo(() => {
-        return schedule.reduce((sum, s) => sum + s.interest, 0);
-    }, [schedule]);
+    const deal = useMemo(() => {
+        if (principal <= 0 || term <= 0) return null;
+        return computeDeal({
+            principal,
+            annualRatePercent: rate,
+            termMonths: term,
+            calculation: typeDef?.calculation || 'pv',
+            scheduleDisplay: typeDef?.scheduleDisplay || 'split',
+            depositPercent: vars.depositPercent,
+            balloonPercent: vars.balloonPercent,
+            residualPercent: vars.residualPercent,
+            escalationPercent: vars.escalationPercent,
+        });
+    }, [principal, rate, term, typeDef, vars.depositPercent, vars.balloonPercent, vars.residualPercent, vars.escalationPercent]);
+
+    const isRentalVat = deal?.scheduleDisplay === 'rental_vat';
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500 text-left text-foreground">
@@ -328,14 +343,24 @@ function StepSchedule() {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
                 <div className="p-6 bg-slate-900 text-white rounded-2xl shadow-lg text-left">
-                    <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1 text-left">Monthly Installment</p>
-                    <p className="text-3xl font-black text-primary text-left">{formatCurrency(schedule[0]?.payment || 0)}</p>
+                    <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1 text-left">{isRentalVat ? 'Monthly Rental (incl VAT)' : 'Monthly Installment'}</p>
+                    <p className="text-3xl font-black text-primary text-left">{formatCurrency(isRentalVat ? (deal?.monthlyRentalIncVat || 0) : (deal?.monthlyPayment || 0))}</p>
+                    {isRentalVat && <p className="text-[10px] text-slate-400 mt-1">{formatCurrency(deal?.monthlyRentalExVat || 0)} ex VAT + {formatCurrency(deal?.monthlyVat || 0)} VAT</p>}
                 </div>
                 <div className="p-6 bg-slate-100 rounded-2xl border-2 border-dashed text-left">
                     <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-1 text-left">Total Interest Yield</p>
-                    <p className="text-2xl font-bold text-slate-900 text-left">{formatCurrency(totalInterest)}</p>
+                    <p className="text-2xl font-bold text-slate-900 text-left">{formatCurrency(deal?.totalInterest || 0)}</p>
                 </div>
             </div>
+
+            {deal && (deal.depositAmount > 0 || deal.balloonAmount > 0) && (
+                <div className="flex flex-wrap gap-2">
+                    {deal.depositAmount > 0 && <Badge variant="outline" className="text-[10px] font-black uppercase">Deposit: {formatCurrency(deal.depositAmount)}</Badge>}
+                    {deal.balloonAmount > 0 && <Badge variant="outline" className="text-[10px] font-black uppercase">Balloon: {formatCurrency(deal.balloonAmount)}</Badge>}
+                    <Badge variant="secondary" className="text-[10px] font-black uppercase">Financed: {formatCurrency(deal.financedAmount)}</Badge>
+                    {deal.calculation === 'flat' && <Badge variant="secondary" className="text-[10px] font-black uppercase">Flat Rate</Badge>}
+                </div>
+            )}
 
             <Card className="border shadow-inner bg-slate-50/50 text-left">
                 <ScrollArea className="h-80 w-full text-left">
@@ -343,17 +368,37 @@ function StepSchedule() {
                         <TableHeader className="bg-white sticky top-0 z-10 text-left text-foreground">
                             <TableRow>
                                 <TableHead className="text-[10px] font-black uppercase text-left">Month</TableHead>
-                                <TableHead className="text-[10px] font-black uppercase text-right text-left">Principal</TableHead>
-                                <TableHead className="text-[10px] font-black uppercase text-right text-left text-foreground">Interest</TableHead>
+                                {isRentalVat ? (
+                                    <>
+                                        <TableHead className="text-[10px] font-black uppercase text-right text-left">Rental (ex VAT)</TableHead>
+                                        <TableHead className="text-[10px] font-black uppercase text-right text-left">VAT</TableHead>
+                                        <TableHead className="text-[10px] font-black uppercase text-right text-left">Rental (incl VAT)</TableHead>
+                                    </>
+                                ) : (
+                                    <>
+                                        <TableHead className="text-[10px] font-black uppercase text-right text-left">Principal</TableHead>
+                                        <TableHead className="text-[10px] font-black uppercase text-right text-left text-foreground">Interest</TableHead>
+                                    </>
+                                )}
                                 <TableHead className="text-[10px] font-black uppercase text-right text-left text-foreground">Balance</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="text-left text-foreground">
-                            {schedule.map((s) => (
+                            {(deal?.rows || []).map((s) => (
                                 <TableRow key={s.month} className="text-left text-foreground">
                                     <TableCell className="font-bold text-xs">{s.month}</TableCell>
-                                    <TableCell className="text-right text-xs">{formatCurrency(s.principal)}</TableCell>
-                                    <TableCell className="text-right text-xs text-amber-600">{formatCurrency(s.interest)}</TableCell>
+                                    {isRentalVat ? (
+                                        <>
+                                            <TableCell className="text-right text-xs">{formatCurrency(s.rentalExVat || 0)}</TableCell>
+                                            <TableCell className="text-right text-xs text-amber-600">{formatCurrency(s.vat || 0)}</TableCell>
+                                            <TableCell className="text-right text-xs font-bold">{formatCurrency(s.rentalIncVat || 0)}</TableCell>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <TableCell className="text-right text-xs">{formatCurrency(s.principal)}</TableCell>
+                                            <TableCell className="text-right text-xs text-amber-600">{formatCurrency(s.interest)}</TableCell>
+                                        </>
+                                    )}
                                     <TableCell className="text-right text-xs font-mono">{formatCurrency(s.remainingBalance)}</TableCell>
                                 </TableRow>
                             ))}
@@ -648,7 +693,7 @@ export function AgreementWizard({ agreement, clients, facilities = [], onSave, o
                                 {steps[currentStep].id === 'client' && <StepBorrower clients={clients} isLocked={isLocked} />}
                                 {steps[currentStep].id === 'protocol' && <StepProtocol availableAssets={availableAssets || []} receivableAssets={receivableAssets || []} facilities={facilities || []} isLoadingAssets={isLoadingAssets || isLoadingReceivables} isLocked={isLocked} />}
                                 {steps[currentStep].id === 'details' && <StepTerms isLocked={isLocked} />}
-                                {steps[currentStep].id === 'schedule' && <StepSchedule />}
+                                {steps[currentStep].id === 'schedule' && <StepSchedule facilities={facilities || []} />}
                                 {steps[currentStep].id === 'collateral-security' && <StepCollateralPending />}
                                 {steps[currentStep].id === 'liability' && <StepLiability availableAssets={availableAssets || []} isLocked={isLocked} />}
                                 {steps[currentStep].id === 'booking' && <StepBookingChecklist isLocked={isLocked} />}
