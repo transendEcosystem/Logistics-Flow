@@ -20,6 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 
 // Import content components
 import CompanyProfile from './content/CompanyProfile';
+import MahalaOffer from './content/MahalaOffer';
 import TechArchitecture from './content/TechArchitecture';
 import RevenueModel from './content/RevenueModel';
 import PitchDeck from './content/PitchDeck';
@@ -87,6 +88,7 @@ const ALL_ENGAGEMENT_TABS = [
     { id: 'supplier-value-prop', label: 'Supplier 5,400 Engine', icon: Sparkles },
     { id: 'digital-handshake', label: 'Digital Handshake', icon: ShieldCheck, hideFor: ['associate'] },
     { id: 'strategic-intro', label: 'Strategic Intro', icon: Handshake },
+    { id: 'mahala-offer', label: 'Mahala Offer', icon: Gift },
     { id: 'platform-dm', label: 'Platform DM Script', icon: MessageSquare, hideFor: ['supplier', 'transporter', 'investor'] },
     { id: 'company-profile', label: 'Company Profile', icon: Building },
     { id: 'incentive-handshake', label: 'Welcome Incentive', icon: Gift },
@@ -270,6 +272,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
   }, [currentPartner]);
 
   const getSubject = (tabId: string) => {
+      if (tabId === 'mahala-offer') return 'Save on your household spending with Mahala, plus 25% back in your wallet';
       if (tabId === 'deep-dive-strategy') {
           return currentPartner?.commercialProfile?.engagementPack?.emailSubject || `Logistics Flow: supplier opportunity for ${currentPartner?.companyName || 'your business'}`;
       }
@@ -455,7 +458,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto bg-slate-50 p-8 text-left">
+                <div className="flex-1 overflow-y-auto bg-white p-8 text-left">
                     <div id={`engage-content-wrapper-${activeTab}`} className="bg-white p-10 rounded-lg shadow-sm border min-h-full text-left">
                         <Suspense fallback={<div className="flex justify-center items-center py-20"><Loader2 className="animate-spin h-10 w-10 text-primary mx-auto" /></div>}>
                             {activeTab === 'deep-dive-strategy' && (
@@ -474,6 +477,7 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
                                     </p>
                                 </div>
                             )}
+                            {activeTab === 'mahala-offer' && <MahalaOffer partner={currentPartner} contactName={contact.name} />}
                             {activeTab === 'strategic-intro' && (
                                 <div style={{ fontFamily: 'Calibri, sans-serif', fontSize: '12pt', color: '#000000', lineHeight: '1.4' }}>
                                     <p style={{ fontWeight: 'bold', textTransform: 'uppercase', borderBottom: '2px solid #000000', paddingBottom: '4pt', marginBottom: '15pt' }}>

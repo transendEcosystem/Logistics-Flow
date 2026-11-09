@@ -4,6 +4,7 @@ export const ENGAGEMENT_CONTENT_TYPES = [
   { id: 'pitch', label: 'The Pitch', shortLabel: 'P' },
   { id: 'digital-handshake', label: 'Digital Handshake', shortLabel: 'DH' },
   { id: 'strategic-intro', label: 'Strategic Intro', shortLabel: 'SI' },
+  { id: 'mahala-offer', label: 'Mahala Offer', shortLabel: 'MH' },
   { id: 'platform-dm', label: 'Platform DM Script', shortLabel: 'DM' },
   { id: 'incentive-handshake', label: 'Welcome Incentive', shortLabel: 'WI' },
   { id: 'tech-architecture', label: 'Tech Architecture', shortLabel: 'TA' },
