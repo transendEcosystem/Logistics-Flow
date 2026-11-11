@@ -33,6 +33,8 @@ export async function GET(req: NextRequest, { params }: { params: { partnerId: s
   const advertiserId = searchParams.get('advertiserId');
   const dest = searchParams.get('dest'); // Support for redirect after tracking
   const contentType = normalizeEngagementContentType(searchParams.get('contentType'));
+    const registry = String(searchParams.get('registry') || '').trim();
+    const trackedRegistries = ['partners', 'leads', 'suppliers', 'transporters', 'strategic_partners', 'isa_agents', 'digital_associates', 'investors', 'finance_co', 'developers', 'drivers'];
   
   const { app } = getAdminApp();
 
@@ -129,6 +131,19 @@ export async function GET(req: NextRequest, { params }: { params: { partnerId: s
                     indexSyncTargets.push({ collection: trackedCollections[index], id: viewerId });
                 }
             });
+
+            if (campaignId && trackedRegistries.includes(registry)) {
+                const eventRef = db.collection('engagementMetrics').doc();
+                batch.set(eventRef, {
+                    campaignId,
+                    registry,
+                    recordId: viewerId,
+                    contentType: contentType || null,
+                    eventType: source === 'app' ? 'click' : 'open',
+                    source,
+                    timestamp: FieldValue.serverTimestamp(),
+                });
+            }
 
             const auditRef = db.collection('auditLogs').doc();
             batch.set(auditRef, {

@@ -180,15 +180,16 @@ function escapeHtml(value: string) {
     return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function deepDiveEmailHtml(partner: any) {
+function deepDiveEmailHtml(partner: any, campaignId?: string, registry?: string) {
     const text = deepDiveContent(partner, 'outlook');
     const baseUrl = APP_BASE_URL;
     const partnerId = partner?.id || 'PROSPECT';
     const optInPath = `/opt-in/${partnerId}`;
     const contentType = 'deep-dive-strategy';
-    const optInLink = `${baseUrl}/api/trackEmailOpen/${partnerId}?source=app&contentType=${contentType}&dest=${encodeURIComponent(optInPath)}`;
+    const trackingContext = `campaignId=${encodeURIComponent(campaignId || '')}&registry=${encodeURIComponent(registry || 'partners')}`;
+    const optInLink = `${baseUrl}/api/trackEmailOpen/${partnerId}?source=app&contentType=${contentType}&${trackingContext}&dest=${encodeURIComponent(optInPath)}`;
     const displayOptInLink = `${baseUrl}${optInPath}`;
-    const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partnerId}?contentType=${contentType}`;
+    const pixelUrl = `${baseUrl}/api/trackEmailOpen/${partnerId}?contentType=${contentType}&${trackingContext}`;
     const paragraphs = text
         .split(/\n{2,}/)
         .map(paragraph => `<p style="margin: 0 0 12pt 0;">${escapeHtml(paragraph).replace(/\n/g, '<br />')}</p>`)
@@ -197,23 +198,26 @@ function deepDiveEmailHtml(partner: any) {
     return `<div style="font-family: Calibri, sans-serif; font-size: 12pt; color: #000000; line-height: 1.45;">${paragraphs}<p style="margin: 16pt 0; padding: 12pt; border: 2px dashed #228B22; border-radius: 8pt; background-color: #f9fff9; text-align: center;"><strong>Review your free supplier profile here:</strong><br /><a href="${optInLink}" target="_blank" style="color: #228B22; font-weight: bold; text-decoration: underline;">${displayOptInLink}</a></p><img src="${pixelUrl}" width="1" height="1" style="display:none" alt="" /></div>`;
 }
 
-function addContentTypeToTrackingUrls(html: string, contentType: string, partnerId: string): string {
+function addContentTypeToTrackingUrls(html: string, contentType: string, partnerId: string, campaignId?: string, registry?: string): string {
+    const trackingContext = `campaignId=${encodeURIComponent(campaignId || '')}&registry=${encodeURIComponent(registry || 'partners')}`;
     const withContentType = html.replace(
         /(\/api\/trackEmailOpen\/[^"'?\s<]+)(\?[^"'<\s]*)?/g,
         (url, path, query = '') => {
-            if (String(query).includes('contentType=')) return url;
-            return `${path}${query ? `${query}&` : '?'}contentType=${encodeURIComponent(contentType)}`;
+            let nextQuery = String(query || '');
+            if (!nextQuery.includes('contentType=')) nextQuery += `${nextQuery ? '&' : '?'}contentType=${encodeURIComponent(contentType)}`;
+            if (!nextQuery.includes('campaignId=')) nextQuery += `&${trackingContext}`;
+            return `${path}${nextQuery}`;
         }
     );
     const withTrackedLinks = withContentType.replace(
         /href=(["'])(https?:\/\/[^/"']+)?(\/(?:join|opt-in)\/?[^"']*)\1/gi,
         (_match, quote, _origin, destination) => {
-            const trackingUrl = `${APP_BASE_URL}/api/trackEmailOpen/${partnerId}?source=app&contentType=${encodeURIComponent(contentType)}&dest=${encodeURIComponent(destination)}`;
+            const trackingUrl = `${APP_BASE_URL}/api/trackEmailOpen/${partnerId}?source=app&contentType=${encodeURIComponent(contentType)}&${trackingContext}&dest=${encodeURIComponent(destination)}`;
             return `href=${quote}${trackingUrl}${quote}`;
         }
     );
     if (/<img[^>]+\/api\/trackEmailOpen\//i.test(withTrackedLinks)) return withTrackedLinks;
-    const pixelUrl = `${APP_BASE_URL}/api/trackEmailOpen/${partnerId}?contentType=${encodeURIComponent(contentType)}`;
+    const pixelUrl = `${APP_BASE_URL}/api/trackEmailOpen/${partnerId}?contentType=${encodeURIComponent(contentType)}&${trackingContext}`;
     return `${withTrackedLinks}<img src="${pixelUrl}" width="1" height="1" style="display:none" alt="" />`;
 }
 
@@ -349,9 +353,10 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
 
         const subject = getSubject(activeTab);
 
+        const campaignId = crypto.randomUUID();
         const deepDiveHtml = activeTab === 'deep-dive-strategy'
-                ? deepDiveEmailHtml(currentPartner)
-            : addContentTypeToTrackingUrls(contentElement.innerHTML, activeTab, currentPartner.id);
+                ? deepDiveEmailHtml(currentPartner, campaignId, targetCollection)
+            : addContentTypeToTrackingUrls(contentElement.innerHTML, activeTab, currentPartner.id, campaignId, targetCollection);
 
         await performAdminAction(token, 'dispatchEngagement', {
             partnerId: currentPartner.id,
@@ -360,7 +365,8 @@ export function EngageDialog({ open, onOpenChange, partners, initialIndex = 0, a
             html: deepDiveHtml,
             contentType: activeTab,
             contentLabel: engagementContentLabel(activeTab),
-            collection: targetCollection
+            collection: targetCollection,
+            campaignId,
         });
 
         toast({ title: "Dispatch Successful" });

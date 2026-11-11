@@ -71,6 +71,8 @@ import React from 'react';
 import AdminDashboardContent from '@/app/backend/dashboard-content';
 import ActivityFeed from '@/app/backend/activity-feed';
 import LeadsAgent from '@/app/adminaccount/leads-agent';
+import AgentOperationsContent from '@/app/adminaccount/agent-operations-content';
+import EngagementAnalytics from '@/app/adminaccount/engagement-analytics';
 import LeadsDatabase from '@/app/adminaccount/leads-database';
 import MarketingPage from '@/app/adminaccount/marketing/MarketingPage';
 import BrandingStudio from '@/app/adminaccount/branding-studio';
@@ -173,6 +175,8 @@ function AdminAccountContent() {
       case 'handshake-oversight': return <HandshakeOversight />;
       case 'activity': return <ActivityFeed />;
       case 'leads-agent': return <LeadsAgent />;
+      case 'agent-operations': return <AgentOperationsContent />;
+      case 'engagement-analytics': return <EngagementAnalytics />;
       case 'leads-database': return <LeadsDatabase />;
       case 'branding-studio': return <BrandingStudio />;
       case 'tts-studio': return <TTSStudio />;
@@ -271,6 +275,18 @@ function AdminAccountContent() {
                       <Zap className="text-primary fill-primary/20" /><span>Auto-Pilot</span>
                   </SidebarMenuButton>
               </SidebarMenuItem>
+
+                <SidebarMenuItem>
+                  <SidebarMenuButton tooltip="Engagement Analytics" isActive={activeView === 'engagement-analytics'} onClick={() => navigate('engagement-analytics')}>
+                      <Activity className="text-primary" /><span>Engagement Analytics</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+
+                <SidebarMenuItem>
+                  <SidebarMenuButton tooltip="Agent Operations" isActive={activeView === 'agent-operations'} onClick={() => navigate('agent-operations')}>
+                    <ListChecks /><span>Agent Operations</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
 
               <SidebarMenuItem>
                   <SidebarMenuButton tooltip="Follow-Up Register" isActive={activeView === 'follow-up-register'} onClick={() => navigate('follow-up-register')}>

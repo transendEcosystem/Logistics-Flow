@@ -1607,6 +1607,7 @@ export async function POST(request: Request) {
       const contentType = normalizeEngagementContentType(resolvedPayload?.contentType, subject, 'Email');
       const contentLabel = String(resolvedPayload?.contentLabel || engagementContentLabel(contentType)).trim();
       const targetCollection = String(resolvedPayload?.collection || 'partners').trim();
+      const campaignId = String(resolvedPayload?.campaignId || '').trim();
       const allowedCollections = ['partners', 'leads', 'strategic_partners', 'suppliers', 'transporters', 'finance_co', 'investors', 'isa_agents', 'digital_associates'];
 
       if (!partnerId || !email || !subject || !html) {
@@ -1653,6 +1654,16 @@ export async function POST(request: Request) {
         updatedAt: now,
         engagementLogs: FieldValue.arrayUnion(logEntry)
       }, { merge: true });
+      if (campaignId) {
+        await db.collection('engagementMetrics').doc(`${campaignId}__sent`).set({
+          campaignId,
+          registry: targetCollection,
+          recordId: partnerId,
+          contentType,
+          eventType: 'sent',
+          timestamp: now,
+        });
+      }
       await syncRegistryIndexDocument(db, targetCollection, partnerId);
 
       return NextResponse.json({ success: true, message: 'Engagement email dispatched successfully.' }, { status: 200 });
